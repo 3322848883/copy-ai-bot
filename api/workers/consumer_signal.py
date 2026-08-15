@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import signal
 
 import redis.asyncio as aioredis
 
@@ -92,6 +93,4 @@ async def _main() -> None:
 
 
 if __name__ == "__main__":
-    import signal
-
     asyncio.run(_main())

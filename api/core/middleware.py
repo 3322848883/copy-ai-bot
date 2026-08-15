@@ -46,7 +46,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         rule = self._match(path)
         if rule is not None:
             limit, window = rule
-            client_ip = request.client.host if request.client else "unknown"
+            client_ip = self._real_client_ip(request)
             key = f"ratelimit:{client_ip}:{path.split('/')[2] if len(path.split('/')) > 2 else 'root'}:{int(time.time()) // window}"
             try:
                 import redis
@@ -65,3 +65,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             except Exception:  # noqa: BLE001 Redis 不可用降级放行
                 pass
         return await call_next(request)
+
+    @staticmethod
+    def _real_client_ip(request: Request) -> str:
+        """★ H5 修复：优先取 X-Forwarded-For 首段（nginx 反代后真实用户 IP），防全站共桶。
+
+        仅信任第一个转发头值，且做基本合法性过滤（IPv4/IPv6），防伪造注入。
+        """
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first and len(first) <= 64 and all(c.isalnum() or c in ".:-_" for c in first):
+                return first
+        xri = request.headers.get("x-real-ip", "")
+        if xri:
+            return xri
+        return request.client.host if request.client else "unknown"

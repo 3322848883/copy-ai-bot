@@ -82,7 +82,7 @@ export default function AdminWithdrawalsPage() {
               <tr key={w.id} style={{ borderTop: "1px solid var(--rule)" }}>
                 <td style={td}>#{w.id}</td>
                 <td style={td}>{w.user_id}</td>
-                <td style={{ ...td, fontWeight: 700 }}>{w.amount_usdt.toFixed(2)} <span style={{ color: "var(--muted)", fontWeight: 400 }}>-1 费</span></td>
+                <td style={{ ...td, fontWeight: 700 }}>{w.amount_usdt.toFixed(2)} <span style={{ color: "var(--muted)", fontWeight: 400 }}>-{w.fee_usdt.toFixed(2)} 费</span></td>
                 <td style={td}>{w.network}</td>
                 <td style={{ ...td, fontSize: 11 }}>{w.address}</td>
                 <td style={td}>

@@ -20,9 +20,9 @@ def _run_scan() -> int:
     """供测试直接同步调用（无运行中 loop 时）或 celery worker 调用。"""
     try:
         asyncio.get_running_loop()
-        raise RuntimeError("存在运行中的 event loop，请直接 await scan_verifying_rewards_async()")
     except RuntimeError:
         return asyncio.run(scan_verifying_rewards_async())
+    raise RuntimeError("存在运行中的 event loop，请直接 await scan_verifying_rewards_async()")
 
 
 async def scan_verifying_rewards_async() -> int:

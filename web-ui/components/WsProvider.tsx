@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { tokenStore } from "@/lib/api";
 import { WsClient, WsHandler } from "@/lib/ws";
 
@@ -8,14 +8,25 @@ type WsContextValue = { connected: boolean; subscribe: (channel: string, handler
 
 const WsContext = createContext<WsContextValue>({ connected: false, subscribe: () => () => {} });
 
-/** 全局 WS 连接：登录态建立，登出断开；订阅频道实时推送（M6 P0）。 */
+/** 全局 WS 连接：登录态建立，登出断开；订阅频道实时推送（M6 P0）。
+ *  ★ M1 修复：监听 ss:token-change 事件（tokenStore.set/clear 触发），
+ *    登录/登出软导航后自动重建连接，无需整页刷新。
+ */
 export function WsProvider({ children }: { children: React.ReactNode }) {
   const [connected, setConnected] = useState(false);
   const clientRef = useRef<WsClient | null>(null);
   const [client, setClient] = useState<WsClient | null>(null);
+  const [token, setToken] = useState<string | undefined>(undefined);
+
+  // token 同步：挂载 + 事件驱动（登录/登出/刷新令牌）
+  useEffect(() => {
+    const sync = () => setToken(tokenStore.access);
+    sync();
+    window.addEventListener("ss:token-change", sync);
+    return () => window.removeEventListener("ss:token-change", sync);
+  }, []);
 
   useEffect(() => {
-    const token = tokenStore.access;
     if (!token) {
       clientRef.current?.close();
       clientRef.current = null;
@@ -28,7 +39,6 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
     setClient(c);
     setConnected(false);
     c.connect();
-    // 连接状态轮询（简单方案：监听 open/close 事件）
     const check = window.setInterval(() => {
       const ws = (c as unknown as { ws: WebSocket | null }).ws;
       setConnected(!!ws && ws.readyState === WebSocket.OPEN);
@@ -39,12 +49,15 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
       clientRef.current = null;
       setClient(null);
     };
-  }, []);
+  }, [token]);
 
-  const subscribe = (channel: string, handler: WsHandler) => {
-    if (!client) return () => {};
-    return client.subscribe(channel, handler);
-  };
+  const subscribe = useCallback(
+    (channel: string, handler: WsHandler) => {
+      if (!client) return () => {};
+      return client.subscribe(channel, handler);
+    },
+    [client],
+  );
 
   return <WsContext.Provider value={{ connected, subscribe }}>{children}</WsContext.Provider>;
 }

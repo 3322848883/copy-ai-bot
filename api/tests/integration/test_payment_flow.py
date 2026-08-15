@@ -66,7 +66,6 @@ class TestPaymentFlow:
 
     async def test_submit_tx_below_threshold_verifying(self, db_env, monkeypatch):
         engine, Session = db_env
-        from api.models.billing import PaymentOrder
         from api.services.payment.service import PaymentService
 
         import api.services.payment.service as payment_mod

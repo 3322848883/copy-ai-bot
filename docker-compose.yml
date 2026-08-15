@@ -38,6 +38,7 @@ services:
 
   api:
     build: .
+    image: ai-api:latest
     command: sh -c "alembic upgrade head && uvicorn api.main:app --host 0.0.0.0 --port 8000"
     environment:
       APP_ENV: ${APP_ENV:-prod}
@@ -116,9 +117,10 @@ services:
     restart: unless-stopped
 
   beat:
-    build: .
     image: ai-api:latest
     command: celery -A api.workers.celery_app:celery_app beat --loglevel=info
+    healthcheck:
+      disable: true
     environment:
       APP_ENV: ${APP_ENV:-prod}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
@@ -143,9 +145,10 @@ services:
 
   # ★ 信号事件消费者（独立进程：订阅 Redis signal.new → 派发跟单任务）
   consumer:
-    build: .
     image: ai-api:latest
     command: python -m api.workers.consumer_signal
+    healthcheck:
+      disable: true
     environment:
       APP_ENV: ${APP_ENV:-prod}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}

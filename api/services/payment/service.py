@@ -64,12 +64,22 @@ class PaymentService:
         if order.status not in ("pending", "verifying", "polling"):
             raise PaymentError(f"订单当前状态 {order.status} 不允许提交 TxHash")
 
-        order.tx_hash = tx_hash
-        client = get_chain_client(order.network)
-
         # 生产环境 TxHash 格式预校验（dev mock 不拦截 mock_ 前缀）
         if get_settings().app_env != "dev" and not self._valid_tx_format(order.network, tx_hash):
             raise PaymentError("TxHash 格式不合法")
+
+        # ★ H1 修复：TxHash 重放检查——同一链上转账不可重复激活多个订单
+        used = await self.db.scalar(
+            select(PaymentOrder.id).where(
+                PaymentOrder.tx_hash == tx_hash,
+                PaymentOrder.status != "failed",
+            ).limit(1)
+        )
+        if used is not None:
+            raise PaymentError("该 TxHash 已被其他订单使用")
+
+        order.tx_hash = tx_hash
+        client = get_chain_client(order.network)
 
         # ★ G09 即时校验：to/value/status 三校验（任一失败拒绝）
         to_ok, to_reason = await self._verify_to(order)
@@ -82,18 +92,18 @@ class PaymentService:
             order.status = "failed"
             await self.db.commit()
             raise PaymentError("到账金额不足")
-        status_ok = await self._verify_tx_status(order, client)
-        if not status_ok:
-            order.status = "failed"
-            await self.db.commit()
-            raise PaymentError("交易状态异常")
 
-        # 即时确认数判断
+        # ★ H2 修复：一次 RPC 取状态，按错误三态分流（仅明确失败判死）
         exists, confirmations, meta = await client.get_confirmations(tx_hash)
         order.confirmations = confirmations
+        if meta.get("error") == "failed":
+            order.status = "failed"
+            await self.db.commit()
+            raise PaymentError("链上交易回执失败")
         if exists and confirmations >= order.required_confirmations:
             await self._confirm(order)
         else:
+            # 未上链 / RPC 故障 / 确认数不足 → 转轮询（不判死）
             order.status = "verifying"
             await self.db.commit()
         await self.db.refresh(order)
@@ -126,8 +136,13 @@ class PaymentService:
             await self.db.commit()
             return order
         order.confirmations = confirmations
+        if meta.get("error") == "failed":
+            order.status = "failed"  # 链上回执明确失败 → 判死
+            await self.db.commit()
+            return order
         if not exists:
-            order.status = "failed"
+            # 未上链 / RPC 故障 → 继续轮询（不判死），由 attempts 超限兜底转 manual
+            order.status = "polling"
             await self.db.commit()
             return order
         if confirmations >= order.required_confirmations:
@@ -139,9 +154,19 @@ class PaymentService:
         return order
 
     async def _confirm(self, order: PaymentOrder) -> None:
-        """确认支付：状态 confirmed → 激活订阅 → 触发奖励。"""
-        order.status = "confirmed"
-        order.confirmations = order.required_confirmations
+        """确认支付（★ H3 修复：原子 CAS 幂等——仅首个执行者生效）。"""
+        from sqlalchemy import update
+
+        result = await self.db.execute(
+            update(PaymentOrder)
+            .where(
+                PaymentOrder.id == order.id,
+                PaymentOrder.status.in_(["pending", "verifying", "polling"]),
+            )
+            .values(status="confirmed", confirmations=order.required_confirmations)
+        )
+        if result.rowcount == 0:
+            return  # 已被其他路径确认，幂等退出
         await self.db.commit()
         billing = BillingService(self.db)
         await billing.activate_subscription(order.user_id, order.plan_id, order.id)
@@ -158,6 +183,12 @@ class PaymentService:
             await self.db.execute(select(Invite).where(Invite.invitee_id == order.user_id))
         ).scalars().first()
         if invite is None:
+            return
+        # ★ H3 修复：奖励幂等查重（同一订单只发一次奖励）
+        existing_reward = await self.db.scalar(
+            select(Reward.id).where(Reward.source_payment_order_id == order.id)
+        )
+        if existing_reward is not None:
             return
         # ★ G11：48h 风控延长（detect_batch_abuse → verifying_hours=48）
         verifying_hours = await self._check_risk_extension(invite.inviter_id)
@@ -244,13 +275,5 @@ class PaymentService:
             expected_to = getattr(self, "_platform_address", "")
             ok, reason = await client.validate_tx(order.tx_hash, expected_to, order.amount_usdt)
             return ok
-        except Exception:  # noqa: BLE001
-            return False
-
-    async def _verify_tx_status(self, order: PaymentOrder, client) -> bool:
-        """校验交易状态（success）。"""
-        try:
-            exists, _, _ = await client.get_confirmations(order.tx_hash)
-            return exists
         except Exception:  # noqa: BLE001
             return False

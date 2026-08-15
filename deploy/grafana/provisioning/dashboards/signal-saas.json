@@ -49,20 +49,20 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "跟单成功/失败",
+      "title": "跟单成功/失败（当前值）",
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 12 },
       "targets": [
-        { "expr": "increase(app_copy_orders_filled_total[5m])", "legendFormat": "成功" },
-        { "expr": "increase(app_copy_orders_failed_total[5m])", "legendFormat": "失败" }
+        { "expr": "app_copy_orders_filled_total", "legendFormat": "成功" },
+        { "expr": "app_copy_orders_failed_total", "legendFormat": "失败" }
       ]
     },
     {
       "id": 6,
       "type": "timeseries",
-      "title": "支付确认 & 风控决策",
+      "title": "支付确认（当前值） & 风控决策",
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 12 },
       "targets": [
-        { "expr": "increase(app_payments_confirmed_total[5m])", "legendFormat": "支付确认" },
+        { "expr": "app_payments_confirmed_total", "legendFormat": "支付确认" },
         { "expr": "sum(rate(risk_decisions_total[5m])) by (decision)", "legendFormat": "风控-{{decision}}" }
       ]
     },

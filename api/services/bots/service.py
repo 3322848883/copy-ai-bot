@@ -45,6 +45,15 @@ class BotService:
         if sub is None:
             raise ValidationError("无有效订阅，请先开通套餐再跟单")
 
+        # ★ M4 修复（合规）：未确认风险揭示禁止建跟单（前端首次跟单弹窗 + 后端强制）
+        from sqlalchemy import select as _select
+
+        from api.models.user import User
+
+        user = await self.db.scalar(_select(User).where(User.id == user_id))
+        if user is None or not user.risk_disclosure_accepted:
+            raise ValidationError("请先阅读并确认风险揭示后再开启跟单")
+
         # 校验策略存在且上架
         strategy = await self.db.get(Strategy, strategy_id)
         if strategy is None or strategy.status != "listed":

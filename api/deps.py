@@ -42,11 +42,14 @@ def get_bearer(authorization: str | None = Header(None)):
     return authorization.removeprefix("Bearer ")
 
 
-def get_current_user(authorization: str = Depends(get_bearer)):
-    """JWT 校验（aud=web，前台用户身份）。"""
+async def get_current_user(db: DbDep, authorization: str = Depends(get_bearer)):
+    """JWT 校验（aud=web，前台用户身份）+ ★ M4 修复：DB 实时状态校验（冻结/停用即拒）。"""
     from api.core.config import get_settings
     from api.core.errors import AuthError
     from api.core.security import decode_token
+    from sqlalchemy import select
+
+    from api.models.user import User
 
     try:
         payload = decode_token(authorization, get_settings().jwt_audience)
@@ -54,15 +57,24 @@ def get_current_user(authorization: str = Depends(get_bearer)):
         raise AuthError("登录已失效，请重新登录") from exc
     if payload.get("type") != "access":
         raise AuthError("无效的令牌类型")
-    return int(payload["sub"])
+    user_id = int(payload["sub"])
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if user is None or not user.is_active:
+        raise AuthError("用户不存在或未激活")
+    if user.is_frozen:
+        raise AuthError("账号已被冻结")
+    return user_id
 
 
 # ── M5 T5.1：后台认证（aud=admin 独立 JWT + RBAC 角色）──
-def get_current_admin(authorization: str = Depends(get_bearer)):
-    """后台 JWT 校验（aud=admin）+ 管理员身份（admin/reviewer/support）。"""
+async def get_current_admin(db: DbDep, authorization: str = Depends(get_bearer)):
+    """后台 JWT 校验（aud=admin）+ 管理员身份（admin/reviewer/support）+ ★ M4 DB 状态校验。"""
     from api.core.config import get_settings
     from api.core.errors import AuthError, PermissionDenied
     from api.core.security import decode_token
+    from sqlalchemy import select
+
+    from api.models.user import User
 
     try:
         payload = decode_token(authorization, get_settings().jwt_admin_audience)
@@ -73,7 +85,13 @@ def get_current_admin(authorization: str = Depends(get_bearer)):
     role = payload.get("role", "user")
     if role not in ("admin", "reviewer", "support"):
         raise PermissionDenied("无后台访问权限")
-    return {"id": int(payload["sub"]), "role": role}
+    admin_id = int(payload["sub"])
+    user = await db.scalar(select(User).where(User.id == admin_id))
+    if user is None or not user.is_active:
+        raise AuthError("管理员不存在或已停用")
+    if user.is_frozen:
+        raise AuthError("账号已被冻结")
+    return {"id": admin_id, "role": role}
 
 
 def require_admin(admin: dict = Depends(get_current_admin)):

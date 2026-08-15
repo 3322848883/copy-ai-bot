@@ -14,8 +14,57 @@ from api.models.user import User
 from api.services.mailer.service import Mailer
 
 _EMAIL_CODE_TTL_MIN = 5  # 验证码 5 分钟 TTL
-# 开发环境内存验证码存储（生产用 Redis；无 Redis 时可用，重启失效）
+_EMAIL_CODE_MAX_ATTEMPTS = 5  # ★ H8：错误尝试 ≥5 次即作废
+# 开发环境内存验证码存储兜底（Redis 不可用时；生产用 Redis，多实例一致）
 _email_codes: dict[str, dict] = {}
+
+_VERIFY_CODE_KEY = "verify_code:{email}"
+
+
+def _store_email_code(email: str, code: str) -> None:
+    """验证码存储：优先 Redis（生产多实例一致），异常降级内存（单实例 dev）。"""
+    import json
+
+    from redis import Redis
+
+    record = {
+        "code": code,
+        "attempts": 0,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=_EMAIL_CODE_TTL_MIN)).isoformat(),
+    }
+    try:
+        r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+        r.set(_VERIFY_CODE_KEY.format(email=email), json.dumps(record), ex=_EMAIL_CODE_TTL_MIN * 60)
+        return
+    except Exception:  # noqa: BLE001
+        _email_codes[email] = record
+
+
+def _get_email_code(email: str) -> dict | None:
+    """读取验证码记录：Redis 优先，内存兜底。"""
+    import json
+
+    from redis import Redis
+
+    try:
+        r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+        raw = r.get(_VERIFY_CODE_KEY.format(email=email))
+        if raw:
+            return json.loads(raw)
+        return _email_codes.get(email) or None
+    except Exception:  # noqa: BLE001
+        return _email_codes.get(email) or None
+
+
+def _delete_email_code(email: str) -> None:
+    from redis import Redis
+
+    try:
+        r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+        r.delete(_VERIFY_CODE_KEY.format(email=email))
+    except Exception:  # noqa: BLE001
+        pass
+    _email_codes.pop(email, None)
 
 
 class AuthService:
@@ -39,10 +88,7 @@ class AuthService:
         # dev 环境固定验证码 123456，便于本地端到端测试
         if settings.app_env == "dev":
             code = "123456"
-        _email_codes[email] = {
-            "code": code,
-            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=_EMAIL_CODE_TTL_MIN),
-        }
+        _store_email_code(email, code)
 
         user = User(email=email, password_hash=hash_password(password), is_active=False)
         self.db.add(user)
@@ -55,15 +101,29 @@ class AuthService:
 
     # ── 邮箱验证激活 ──
     async def verify_email(self, email: str, code: str) -> User:
-        """验证码激活：校验 6 位码 + 5min TTL → is_active=True。"""
+        """验证码激活：校验 6 位码 + 5min TTL + ★ H8 尝试次数限制 → is_active=True。"""
         email = email.strip().lower()
-        record = _email_codes.get(email)
+        record = _get_email_code(email)
         if not record:
             raise AuthError("请先注册获取验证码")
-        if datetime.now(timezone.utc) > record["expires_at"]:
-            _email_codes.pop(email, None)
+        if datetime.now(timezone.utc) > datetime.fromisoformat(record["expires_at"]):
+            _delete_email_code(email)
             raise AuthError("验证码已过期，请重新注册")
+        if record["attempts"] >= _EMAIL_CODE_MAX_ATTEMPTS:
+            _delete_email_code(email)
+            raise AuthError("验证码错误次数过多，请重新注册获取新验证码")
         if record["code"] != code.strip():
+            record["attempts"] = record.get("attempts", 0) + 1
+            # 回写尝试次数（Redis 或内存）
+            import json
+
+            from redis import Redis
+
+            try:
+                r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+                r.set(_VERIFY_CODE_KEY.format(email=email), json.dumps(record), ex=_EMAIL_CODE_TTL_MIN * 60)
+            except Exception:  # noqa: BLE001
+                _email_codes[email] = record
             raise AuthError("验证码错误")
 
         user = await self.db.scalar(select(User).where(User.email == email))
@@ -72,7 +132,7 @@ class AuthService:
         user.is_active = True
         await self.db.commit()
         await self.db.refresh(user)
-        _email_codes.pop(email, None)
+        _delete_email_code(email)
         return user
 
     # ── 登录 ──

@@ -12,6 +12,8 @@ venv/
 .env
 *.key
 *.pem
+.env.local
+.env.*.local
 
 # Node（前端）
 node_modules/

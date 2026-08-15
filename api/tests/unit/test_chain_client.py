@@ -112,7 +112,7 @@ class TestMockChainClient:
         client = MockChainClient()
         ok, conf, meta = await client.get_confirmations("mock_confirm_abc")
         assert ok is True
-        assert conf == REQUIRED_CONFIRMATIONS["trc20"] + 1
+        assert conf == 999  # mock 固定 999，任何链阈值均满足
 
     async def test_slow_hash_below_threshold(self):
         client = MockChainClient()
@@ -160,7 +160,9 @@ class TestTronClient:
         ok, conf, meta = await TronClient().get_confirmations("tx")
         assert ok is False
         assert conf == 0
-        assert "timeout" in meta.get("error", "")
+        # ★ 修复语义：RPC 故障标记 network_error（可继续轮询），detail 携带原始错误
+        assert meta.get("error") == "network_error"
+        assert "timeout" in meta.get("detail", "")
 
     async def test_dev_uses_mock(self, monkeypatch):
         import api.services.payment.chain_client as cc
@@ -204,6 +206,7 @@ class TestEvmClient:
         ok, conf, meta = await BscClient().get_confirmations("0xabc")
         assert ok is False
         assert conf == 0
+        assert meta.get("error") == "network_error"
 
     async def test_validate_tx_ok(self, prod_env, monkeypatch):
         event = {"args": {"to": "0xPlatform", "value": int(10.0 * 10**6)}}

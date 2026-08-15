@@ -27,6 +27,10 @@ dependencies = [
     "jinja2>=3.1",                       # mailer 模板
     "aiosmtplib>=3.0",
     "python-multipart>=0.0.9",
+    # ★ 生产核查修复：CI/dev 需与生产 requirements 对齐的运行依赖
+    "playwright>=1.57",        # 真实信号源采集（M2）
+    "email-validator>=2.1",    # pydantic EmailStr
+    "websockets>=12",          # FastAPI WebSocket
 ]
 
 [project.optional-dependencies]

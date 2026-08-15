@@ -75,17 +75,16 @@ async def list_addresses(
 
 @router.post("/addresses", status_code=201)
 async def create_address(body: AddressIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
-    """新增平台收款地址（写操作审计）。"""
-    from sqlalchemy import select
+    """新增平台收款地址（写操作审计；同一网络仅保留 1 个 active）。"""
+    from sqlalchemy import update
 
     _validate_address(body.network, body.address)
-    existing_active = (
-        await db.execute(
-            select(PlatformAddress.id).where(
-                PlatformAddress.network == body.network, PlatformAddress.status == "active"
-            )
-        )
-    ).scalars().all()
+    # ★ M1 修复：同一网络仅允许 1 个 active 收款地址（切换时先停用旧地址，避免校验歧义）
+    await db.execute(
+        update(PlatformAddress)
+        .where(PlatformAddress.network == body.network, PlatformAddress.status == "active")
+        .values(status="inactive")
+    )
     addr = PlatformAddress(
         network=body.network,
         address=body.address,
@@ -108,7 +107,7 @@ async def create_address(body: AddressIn, db: DbDep = None, admin=Depends(requir
         "address": addr.address,
         "status": addr.status,
         "remark": addr.remark,
-        "coexists_active": len(existing_active) > 0,
+        "note": "同网络旧地址已自动停用",
     }
 
 
@@ -205,7 +204,9 @@ async def manual_set(order_id: int, body: ManualIn, db: DbDep = None, admin=Depe
 
     before = order.status
     if body.status == "confirmed":
+        # ★ L2 修复：人工确认同步确认数，避免列表展示 0/32 的矛盾
         order.status = "confirmed"
+        order.confirmations = order.required_confirmations
         await db.commit()
         billing = BillingService(db)
         await billing.activate_subscription(order.user_id, order.plan_id, order.id)

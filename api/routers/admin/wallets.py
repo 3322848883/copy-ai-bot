@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from api.core.errors import NotFoundError
+from api.core.errors import NotFoundError, ValidationError
 from api.deps import DbDep, get_current_admin, require_admin
 from api.models.billing import PaymentOrder, Reward
 from api.models.user import User
@@ -22,8 +22,9 @@ STATUS_LABEL = {
 
 
 class AdjustIn(BaseModel):
+    # ★ 修复：允许正（补发）/负（扣除）——Field(gt=0) 曾使"扣除"被 400 拦截
     user_id: int
-    amount_usdt: float = Field(gt=0)
+    amount_usdt: float = Field(ne=0)
     reason: str = Field(min_length=2, max_length=128)
 
 
@@ -98,6 +99,14 @@ async def adjust(body: AdjustIn, db: DbDep = None, admin=Depends(require_admin))
     user = await db.get(User, body.user_id)
     if user is None:
         raise NotFoundError("用户不存在")
+
+    # ★ 修复：扣除时校验可用余额不为负
+    if body.amount_usdt < 0:
+        from api.services.ledger.service import LedgerService
+
+        bal = await LedgerService(db).balance(body.user_id)
+        if bal.get("available_usdt", 0.0) + body.amount_usdt < -0.0001:
+            raise ValidationError("扣除金额超过可用余额")
 
     # 手工流水需要一个支付订单锚点（FK 约束），此处创建合成订单
     anchor = PaymentOrder(

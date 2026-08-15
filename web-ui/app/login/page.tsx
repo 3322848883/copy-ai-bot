@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
 import { apiFetch, tokenStore } from "@/lib/api";
@@ -8,11 +8,22 @@ import RiskDisclosureModal from "@/components/RiskDisclosureModal";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [riskOpen, setRiskOpen] = useState(false);
+
+  /** ★ M3 修复：回跳受保护页面（middleware 的 ?next= 参数，同源校验）。 */
+  function redirectAfterLogin() {
+    const next = searchParams.get("next");
+    if (next && next.startsWith("/") && !next.startsWith("//") && !next.includes(":")) {
+      router.push(next);
+      return;
+    }
+    router.push("/account");
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,7 +40,7 @@ export default function LoginPage() {
         setRiskOpen(true);
         return;
       }
-      router.push("/account");
+      redirectAfterLogin();
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败");
     } finally {
@@ -42,9 +53,9 @@ export default function LoginPage() {
       await apiFetch("/v1/auth/accept-risk-disclosure", { method: "POST" }, tokenStore.access);
       tokenStore.setRiskAccepted(true);
       setRiskOpen(false);
-      router.push("/account");
+      redirectAfterLogin();
     } catch {
-      router.push("/account");
+      redirectAfterLogin();
     }
   }
 

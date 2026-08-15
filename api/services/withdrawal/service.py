@@ -108,10 +108,24 @@ class WithdrawalService:
         wd = await self._get(withdrawal_id)
         if wd.status not in ("approved", "processing"):
             raise WithdrawalError(f"状态 {wd.status} 不允许填 TxHash")
-        wd.tx_hash = tx_hash
-        # 生产：链上校验 TxHash；dev 校验非空即通过
         if not tx_hash:
             raise WithdrawalError("TxHash 不能为空")
+        # ★ H7 修复：生产环境链上校验（to=用户提现地址、金额≥提现额），通过才置 paid
+        from api.core.config import get_settings
+
+        if get_settings().app_env != "dev":
+            from api.services.payment.chain_client import get_chain_client
+
+            client = get_chain_client(wd.network)
+            ok, reason = await client.validate_tx(tx_hash, wd.address, wd.amount_usdt)
+            if not ok:
+                wd.tx_hash = tx_hash
+                wd.status = "paid_failed"
+                wd.reviewed_by = reviewer_id
+                await self.db.commit()
+                await self._push_status(wd)
+                raise WithdrawalError(f"链上校验未通过（{reason}），已转发放失败待处理")
+        wd.tx_hash = tx_hash
         wd.status = "paid"
         wd.reviewed_by = reviewer_id
         # 奖励状态 withdrawing → paid

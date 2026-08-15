@@ -20,9 +20,9 @@ def remind_subscription_expiring() -> int:
     """订阅临期（24h/72h 窗口）推送站内消息 + 邮件，Redis 去重。"""
     try:
         asyncio.get_running_loop()
-        raise RuntimeError("存在运行中的 loop，请 await remind_subscription_expiring_async()")
     except RuntimeError:
         return asyncio.run(remind_subscription_expiring_async())
+    raise RuntimeError("存在运行中的 loop，请 await remind_subscription_expiring_async()")
 
 
 async def remind_subscription_expiring_async() -> int:

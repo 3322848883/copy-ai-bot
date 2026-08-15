@@ -27,12 +27,27 @@ class SubmitTxIn(BaseModel):
 async def create_order(body: CreateOrderIn, db: DbDep = None, user_id: int = Depends(get_current_user)) -> dict:
     svc = PaymentService(db)
     order = await svc.create_order(user_id, body.plan_id, body.network)
+    # ★ H4 修复：返回该网络 active 平台收款地址（未配置则明确提示，避免支付链路断）
+    from sqlalchemy import select
+
+    from api.models.billing import PlatformAddress
+
+    addr = (
+        await db.execute(
+            select(PlatformAddress.address)
+            .where(PlatformAddress.network == body.network, PlatformAddress.status == "active")
+            .order_by(PlatformAddress.id.desc())
+            .limit(1)
+        )
+    ).scalars().first()
     return {
         "order_id": order.id,
         "amount_usdt": order.amount_usdt,
         "network": order.network,
         "status": order.status,
         "required_confirmations": order.required_confirmations,
+        "platform_address": addr or "",
+        "note": "" if addr else f"{body.network} 网络暂未开放收款，请联系客服",
     }
 
 

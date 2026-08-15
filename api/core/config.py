@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # ── 交易所（决策 B 官方直连；V1 生产白名单默认仅 gate）──
-    enabled_exchanges: str = "gate,binance,okx,bybit,bitget"
+    enabled_exchanges: str = "gate"
 
     def enabled_exchange_list(self) -> list[str]:
         """逗号分隔解析为列表（与 CORS 同模式）。"""
@@ -47,8 +47,7 @@ class Settings(BaseSettings):
     withdraw_min_usdt: float = 10.0        # ★ G13
     withdraw_fee_usdt: float = 1.0
 
-    # ── 支付三链确认阈值（★ G09）──
-    confirmations_required: dict[str, int] = {"trc20": 12, "bep20": 15, "erc20": 32}
+    # ── 支付三链确认阈值（★ G09：唯一权威源为 chain_client.REQUIRED_CONFIRMATIONS，此处已废弃）──
 
     # ── 链上 RPC（生产必填/可换自建或付费节点）──
     tron_rpc_url: str = "https://api.trongrid.io"
@@ -87,7 +86,7 @@ class Settings(BaseSettings):
     signal_reconcile_interval: int = 600    # 全量对账间隔(秒)：强制重同步基线防漂移
     # ★ 测试符号过滤：真实数据中曾混入 TESTUSDT，symbol 含任一标记即丢弃
     signal_test_symbols: tuple[str, ...] = ("TEST", "DEMO", "FAKE")
-    # ★ 模式2 信号源：通过这些「跟单账户 leader_id」监控（带单员 leader_id 列表，逗号分隔）。
+    # ★ 模式2 信号源：通过这些「跟单账户 leader_id」监控（JSON 数组格式，如 ["32801","24264"]）。
     #   模式2 只监控「自己已跟单」的镜像仓位，按 leader_id 精确对应；未跟单的带单员无法监控。
     signal_follower_leader_ids: tuple[str, ...] = ()
 
@@ -112,12 +111,18 @@ class Settings(BaseSettings):
             errors.append("JWT_SECRET 必须 ≥32 位且非默认值")
         if self.vault_key_hex == "0" * 64 or len(self.vault_key_hex) != 64:
             errors.append("VAULT_KEY_HEX 必须为 64 位 hex 且非全 0")
+        else:
+            try:
+                bytes.fromhex(self.vault_key_hex)
+            except ValueError:
+                errors.append("VAULT_KEY_HEX 必须为合法 hex 字符集")
         if self.smtp_host in ("localhost", "mailhog"):
             errors.append("SMTP_HOST 不能为本地调试地址（mailhog）")
         if "*" in self.cors_origins or not self.cors_origins.strip():
             errors.append("CORS_ORIGINS 生产不能为 * 或空")
-        if self.database_url.startswith("postgresql+asyncpg://signal:signal@localhost"):
-            errors.append("DATABASE_URL 不能为本地默认连接串")
+        # ★ 修复：拦截任意 host 的默认弱口令连接串（含 signal:signal@db 等）
+        if "://signal:signal@" in self.database_url:
+            errors.append("DATABASE_URL 不能使用默认弱口令 signal:signal")
         if not self.enabled_exchange_list():
             errors.append("ENABLED_EXCHANGES 不能为空")
         if errors:

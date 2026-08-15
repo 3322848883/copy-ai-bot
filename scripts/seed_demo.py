@@ -7,16 +7,18 @@ import random
 from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///c:/Users/w6485/Desktop/AI 量化/信号聚合AI/dev.db"
+# ★ 修复：相对路径（跨平台）；须在项目根目录运行（README 已注明）
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./dev.db"
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from api.models import (
     Trader, TraderProfile, Strategy, CopyBot, CopyOrder, PositionSnapshot,
     Subscription, Invite, Reward, PaymentOrder, ApiKey, PlatformAddress,
+    SourceSignal,
 )
 from api.core.security import ApiKeyVault
 
-DB = "c:/Users/w6485/Desktop/AI 量化/信号聚合AI/dev.db"
+DB = "./dev.db"
 random.seed(42)
 
 
@@ -113,23 +115,36 @@ async def main():
             bot_id=bot.id, symbol="ETHUSDT", side="long", qty=0.5, entry_price=3200,
             mark_price=3350, unrealized_pnl=75.0, notional_usdt=1675, is_open=True,
         ))
+        # ★ H2 修复：先建 SourceSignal 再引用其真实 id（CopyOrder.signal_id FK 必填，
+        #   SQLite 不强制 FK 但 PostgreSQL 上悬空引用会导致 seed 失败）
+        now = datetime.now(timezone.utc)
+        sig = SourceSignal(
+            exchange="gate", source_trader_id="32801", symbol="ETHUSDT", side="long",
+            leverage=1, qty=0.0, percent=20.0, action="open", source_mode="A",
+            opened_at=now, received_at=now, dedupe_key="seed-ethusdt-open",
+        )
+        db.add(sig)
+        await db.flush()
         for act, status, cat, latency in [
             ("open", "filled", None, 320), ("open", "filled", None, 290),
             ("close", "filled", None, 305), ("open", "failed", "balance", None),
         ]:
             db.add(CopyOrder(
-                bot_id=bot.id, signal_id=1, action=act, qty=0.5, leverage=10,
+                bot_id=bot.id, signal_id=sig.id, action=act, qty=0.5, leverage=10,
                 required_margin_usdt=160, status=status, failure_category=cat,
                 latency_ms=latency, executed_at=datetime.now(timezone.utc) if status == "filled" else None,
             ))
 
         # ── 6. 邀请 + 奖励（用户 10002/10003 被 9999 邀请）──
-        for i, (invitee_id, amt, rstatus) in enumerate([(10002, 1.99, "available"), (10003, 1.99, "verifying")]):
+        for i, (invitee_id, amt, rstatus, code) in enumerate([
+            (10002, 1.99, "available", "FRIEND-A"),
+            (10003, 1.99, "verifying", "FRIEND-B"),
+        ]):
             now = datetime.now(timezone.utc)
             po = PaymentOrder(user_id=invitee_id, plan_id="monthly_19_9u", amount_usdt=19.9, network="trc20", status="confirmed")
             db.add(po)
             await db.flush()
-            db.add(Invite(inviter_id=9999, invitee_id=invitee_id, code="FRIEND-A", bound_at=now - timedelta(days=i), locked=False))
+            db.add(Invite(inviter_id=9999, invitee_id=invitee_id, code=code, bound_at=now - timedelta(days=i), locked=False))
             db.add(Reward(
                 owner_id=9999, source_user_id=invitee_id, source_payment_order_id=po.id,
                 amount_usdt=amt, status=rstatus,

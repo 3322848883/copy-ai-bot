@@ -127,7 +127,8 @@ export default function AccountPage() {
       }, tokenStore.access);
       setPwdMsg(res.message);
       setPwdForm({ old_password: "", new_password: "", confirm: "" });
-      setTimeout(() => router.push("/login"), 1500); // 改密后引导重新登录
+      // ★ H3 修复：改密后真正登出（吊销 refresh + 清 cookie + 跳登录），旧 access 失效
+      setTimeout(() => { void tokenStore.logout(); }, 1200);
     } catch (ex) {
       setPwdErr(ex instanceof Error ? ex.message : "修改失败");
     } finally {

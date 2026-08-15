@@ -33,7 +33,15 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan, docs_url="/docs", openapi_url="/openapi.json")
+# ★ 生产核查修复：prod 关闭 Swagger/OpenAPI 暴露（减少侦察面），dev 保留
+app = FastAPI(
+    title=settings.app_name,
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.app_env != "prod" else None,
+    openapi_url="/openapi.json" if settings.app_env != "prod" else None,
+    redoc_url="/redoc" if settings.app_env != "prod" else None,
+)
 
 # ── M6 T6.3 安全：CORS 白名单收紧（默认本地前端，生产经 CORS_ORIGINS 配置）──
 _origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]

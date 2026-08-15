@@ -163,6 +163,19 @@ export default function StrategyDetailPage() {
         router.push("/login");
         return;
       }
+      // ★ M4 修复（合规）：首次跟单强制确认风险揭示（后端 create_bot 亦强制校验）
+      if (!tokenStore.riskAccepted) {
+        if (!window.confirm("跟单交易具有高风险，可能导致全部本金损失。\n阅读并同意《服务条款》与《风险揭示》后，确认继续？")) {
+          return;
+        }
+        try {
+          await apiFetch("/v1/auth/accept-risk-disclosure", { method: "POST" }, tokenStore.access);
+          tokenStore.setRiskAccepted(true);
+        } catch {
+          setFormMsg("风险揭示确认失败，请稍后再试");
+          return;
+        }
+      }
       const keys = await apiFetch<{ items: Array<{ exchange: string; id: number }> }>("/v1/apikeys", {}, tokenStore.access);
       const gateKey = keys.items?.find((k) => k.exchange === "gate");
       if (!gateKey) {

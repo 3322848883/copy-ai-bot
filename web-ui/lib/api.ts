@@ -23,7 +23,15 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}, token
 
   let res = await doFetch();
   // 401 自动续期：非登录/刷新接口失败 → 尝试 refresh（cookie/body）→ 重试一次
-  if (res.status === 401 && !path.startsWith("/v1/auth/") && !path.startsWith("/admin/")) {
+  if (res.status === 401 && !path.startsWith("/v1/auth/")) {
+    if (path.startsWith("/admin/")) {
+      // ★ M2 修复：admin token 过期 → 清会话并回后台登录页（此前静默空白）
+      tokenStore.clearAdmin();
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/admin/login")) {
+        window.location.href = "/admin/login";
+      }
+      throw new ApiError(401, "unauthorized", "登录已过期，请重新登录");
+    }
     const ok = await tryRefresh();
     if (ok) res = await doFetch();
   }
@@ -98,6 +106,8 @@ export const tokenStore = {
     if (tokens.risk_disclosure_accepted !== undefined) {
       localStorage.setItem("ss_risk", String(tokens.risk_disclosure_accepted));
     }
+    // ★ M1 修复：通知 WsProvider 重建连接（登录/刷新令牌）
+    window.dispatchEvent(new Event("ss:token-change"));
   },
   get riskAccepted(): boolean {
     if (typeof window === "undefined") return true;
@@ -112,11 +122,16 @@ export const tokenStore = {
     localStorage.removeItem("ss_access");
     localStorage.removeItem("ss_refresh");
     localStorage.removeItem("ss_risk");
+    // ★ M1 修复：通知 WsProvider 断开
+    window.dispatchEvent(new Event("ss:token-change"));
   },
-  /** 登出：清 httpOnly cookie（后端）+ 本地 token + 跳登录页。 */
+  /** 登出：清 httpOnly cookie（后端）+ 吊销 refresh（★ H6 修复：必须带 access token）+ 跳登录页。 */
   async logout() {
     try {
-      await fetch(`${API_BASE}/v1/auth/logout`, { method: "POST", credentials: "include", cache: "no-store" });
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const at = this.access;
+      if (at) headers.Authorization = `Bearer ${at}`;
+      await fetch(`${API_BASE}/v1/auth/logout`, { method: "POST", headers, credentials: "include", cache: "no-store" });
     } catch {
       /* ignore */
     }

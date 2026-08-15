@@ -74,6 +74,8 @@ pip install -r requirements.txt
 
 # 3. 用 SQLite 本地库启动后端（无需 Docker）
 set DATABASE_URL=sqlite+aiosqlite:///./dev.db
+set REDIS_URL=redis://localhost:6379/0
+set JWT_SECRET=dev-secret-please-change-in-prod
 uvicorn api.main:app --reload
 # 健康检查: http://localhost:8000/healthz
 # API 文档: http://localhost:8000/docs
@@ -96,10 +98,10 @@ npm run dev
 | 变量 | 说明 | 本地默认 |
 |---|---|---|
 | `APP_ENV` / `DEBUG` | 运行环境 / 调试开关 | `dev` / `true` |
-| `JWT_SECRET` | JWT 签名密钥（生产必换） | `dev-secret-...` |
+| `JWT_SECRET` | JWT 签名密钥（生产必填 ≥32 位） | `dev-secret-please-change-in-prod` |
 | `VAULT_KEY_HEX` | API Key 加密主密钥（AES-256-GCM） | 64 位 hex |
 | `DATABASE_URL` | 数据库连接串 | PG `postgresql+asyncpg://signal:signal@localhost:5432/signal_saas` |
-| `REDIS_URL` | Redis（限流/Celery） | `redis://localhost:6380/0` |
+| `REDIS_URL` | Redis（限流/Celery） | `redis://localhost:6379/0` |
 | `SMTP_HOST/PORT/MAIL_FROM` | 邮件（验证码，Mailhog 本地调试） | `localhost:1025` |
 | `SCRAPER_REAL` / `SCRAPER_HEADLESS` | 模式 A 真实采集开关 / 有头模式 | `1` / `false` |
 | `SIGNAL_FOLLOWER_LEADER_IDS` | 模式 B 跟单 leader_id 列表 | `["32801","24264"]` |

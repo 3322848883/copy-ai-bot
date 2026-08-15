@@ -53,9 +53,10 @@ async def metrics(request: Request) -> str:
         async with factory() as db:
             M.app_users_total.set(await db.scalar(select(func.count(User.id))) or 0)
             M.app_audit_events_total.set(await db.scalar(select(func.count(AuditEvent.id))) or 0)
-            M.app_copy_orders_filled_total.inc(await db.scalar(select(func.count(CopyOrder.id)).where(CopyOrder.status == "filled")) or 0)
-            M.app_copy_orders_failed_total.inc(await db.scalar(select(func.count(CopyOrder.id)).where(CopyOrder.status == "failed")) or 0)
-            M.app_payments_confirmed_total.inc(await db.scalar(select(func.count(PaymentOrder.id)).where(PaymentOrder.status == "confirmed")) or 0)
+            # ★ 修复：改用 set（Gauge）而非 inc——Counter 全量累加会随抓取次数超线性膨胀
+            M.app_copy_orders_filled_total.set(await db.scalar(select(func.count(CopyOrder.id)).where(CopyOrder.status == "filled")) or 0)
+            M.app_copy_orders_failed_total.set(await db.scalar(select(func.count(CopyOrder.id)).where(CopyOrder.status == "failed")) or 0)
+            M.app_payments_confirmed_total.set(await db.scalar(select(func.count(PaymentOrder.id)).where(PaymentOrder.status == "confirmed")) or 0)
             M.withdrawal_pending_total.set(
                 await db.scalar(
                     select(func.count(Withdrawal.id)).where(Withdrawal.status.in_(["pending_review", "approved", "processing"]))

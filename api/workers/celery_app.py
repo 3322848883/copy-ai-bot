@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 
 from api.core.config import get_settings
 
@@ -17,6 +18,8 @@ celery_app = Celery(
         "api.workers.tasks_payment",
         "api.workers.tasks_reward",
         "api.workers.tasks_reminder",
+        # ★ 生产核查修复：copy.process_signal 任务定义于此，必须随 worker 注册
+        "api.workers.consumer_signal",
     ],
 )
 
@@ -30,7 +33,8 @@ celery_app.conf.update(
         # ★ M2 T2.7：每日画像同步 凌晨 00:00-05:00（UTC 00:00 = 北京 08:00；按需求窗口调整）
         "profile-sync-daily": {
             "task": "profile.sync_daily",
-            "schedule": 6 * 60 * 60,  # 每 6 小时（00/06/12/18 UTC）
+            # ★ 修复：0-5 点每小时一次（原 6h×4 次与"每日画像"语义不符）
+            "schedule": crontab(hour="0-5", minute="0"),
             "options": {"expires": 60 * 30},
         },
         # ★ M2 T2.1：公开带单广场采集（每 30 分钟）
@@ -43,7 +47,8 @@ celery_app.conf.update(
         "signal-poll-live": {
             "task": "signal.poll_live",
             "schedule": settings.signal_poll_loop_seconds,
-            "options": {"expires": max(settings.signal_poll_loop_seconds - 5, 5)},
+            # ★ 修复：expires 放宽至 2 倍，防任务慢跑导致消息队列过期形成轮询空窗
+            "options": {"expires": max(settings.signal_poll_loop_seconds * 2, 60)},
         },
         # ★ 全量对账（每 signal_reconcile_interval 秒强制重同步基线，兜底漂移）
         "signal-reconcile": {

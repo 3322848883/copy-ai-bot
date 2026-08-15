@@ -14,9 +14,9 @@ def poll_payment_sweep() -> str:
     """扫全部 verifying/polling 订单逐个轮询（Celery Beat 每 2 分钟）。"""
     try:
         asyncio.get_running_loop()
-        raise RuntimeError("存在运行中的 loop，请 await poll_payment_sweep_async()")
     except RuntimeError:
         return asyncio.run(poll_payment_sweep_async())
+    raise RuntimeError("存在运行中的 loop，请 await poll_payment_sweep_async()")
 
 
 async def poll_payment_sweep_async() -> str:

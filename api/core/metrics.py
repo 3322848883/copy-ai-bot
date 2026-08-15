@@ -24,9 +24,9 @@ signal_received_total = Counter(
 risk_decisions_total = Counter(
     "risk_decisions_total", "风控决策总数", ["decision"]
 )
-# 3. orders_placed_total{exchange,result}（沿用 app_copy_orders_* 命名兼容历史面板）
-app_copy_orders_filled_total = Counter("app_copy_orders_filled_total", "跟单成功订单数")
-app_copy_orders_failed_total = Counter("app_copy_orders_failed_total", "跟单失败订单数")
+# 3. orders_placed_total{exchange,result}（派生 gauge：/metrics 抓取时 set 全量值，避免 Counter 累加膨胀）
+app_copy_orders_filled_total = Gauge("app_copy_orders_filled_total", "跟单成功订单数（当前值）")
+app_copy_orders_failed_total = Gauge("app_copy_orders_failed_total", "跟单失败订单数（当前值）")
 # 4. payment_poll_attempts_total{network}
 payment_poll_attempts_total = Counter(
     "payment_poll_attempts_total", "支付轮询次数", ["network"]
@@ -37,7 +37,7 @@ withdrawal_pending_total = Gauge("withdrawal_pending_total", "待处理提现数
 
 # ── 补充派生指标 ──
 app_users_total = Gauge("app_users_total", "注册用户数")
-app_payments_confirmed_total = Counter("app_payments_confirmed_total", "已确认支付订单数")
+app_payments_confirmed_total = Gauge("app_payments_confirmed_total", "已确认支付订单数（当前值）")
 app_audit_events_total = Gauge("app_audit_events_total", "审计事件数")
 
 

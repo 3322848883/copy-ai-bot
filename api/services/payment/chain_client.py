@@ -62,13 +62,13 @@ class MockChainClient(ChainClient):
     network = "mock"
 
     async def get_confirmations(self, tx_hash: str) -> tuple[bool, int, dict]:
-        required = REQUIRED_CONFIRMATIONS.get(self.network, 12)
-        # mock：tx_hash 以 '0x' 前缀校验存在；模拟 3 次轮询后达到阈值
+        # ★ 修复：mock 固定返回 999（任何链 required ≤32 都立即达标）；
+        #   此前按自身 network="mock" 查阈值=12，导致 bep20(15)/erc20(32) 订单永不确认
         if tx_hash.startswith("mock_confirm"):
-            return True, required + 1, {"confirmations": required + 1}
+            return True, 999, {"confirmations": 999}
         if tx_hash.startswith("mock_slow"):
-            return True, max(1, required // 2), {"confirmations": required // 2}
-        return True, required + 1, {"confirmations": required + 1}
+            return True, 1, {"confirmations": 1}
+        return True, 999, {"confirmations": 999}
 
     async def validate_tx(self, tx_hash: str, expected_to: str, expected_value_usdt: float) -> tuple[bool, str]:
         # mock 始终校验通过（to/value 字段在 PaymentService 层校验）
@@ -81,6 +81,13 @@ class TronClient(ChainClient):
     network = "trc20"
 
     async def get_confirmations(self, tx_hash: str) -> tuple[bool, int, dict]:
+        """返回 (tx_exists, confirmations, meta)。
+
+        meta["error"] 三态语义（供上层区分"可继续轮询"与"判死"）：
+        - "unconfirmed"  : 交易已广播但未上链（继续轮询）
+        - "network_error": RPC 故障/超时（继续轮询）
+        - "failed"       : 链上回执明确失败（reverted/failed_receipt，判死）
+        """
         if get_settings().app_env == "dev":
             return await MockChainClient().get_confirmations(tx_hash)
         try:
@@ -92,13 +99,13 @@ class TronClient(ChainClient):
             if not info or "blockNumber" not in info:  # 未打包上链
                 return False, 0, {"error": "unconfirmed"}
             if info.get("receipt", {}).get("result") != "SUCCESS":
-                return False, 0, {"error": "failed_receipt"}
+                return False, 0, {"error": "failed"}
             current = client.get_now_block()["block_header"]["raw_data"]["number"]
             confirmations = current - info["blockNumber"] + 1
             return True, confirmations, {}
-        except Exception as exc:  # noqa: BLE001 RPC 故障降级 manual
+        except Exception as exc:  # noqa: BLE001 RPC 故障降级：继续轮询而非判死
             logger.warning("tron get_confirmations failed: %s", exc)
-            return False, 0, {"error": str(exc)}
+            return False, 0, {"error": "network_error", "detail": str(exc)}
 
     async def validate_tx(self, tx_hash: str, expected_to: str, expected_value_usdt: float) -> tuple[bool, str]:
         if get_settings().app_env == "dev":
@@ -137,6 +144,7 @@ class EvmClient(ChainClient):
     network = ""
 
     async def get_confirmations(self, tx_hash: str) -> tuple[bool, int, dict]:
+        """错误三态语义同 TronClient（unconfirmed / network_error / failed）。"""
         if get_settings().app_env == "dev":
             return await MockChainClient().get_confirmations(tx_hash)
         try:
@@ -148,13 +156,13 @@ class EvmClient(ChainClient):
             if receipt is None:  # 未打包
                 return False, 0, {"error": "unconfirmed"}
             if receipt["status"] != 1:
-                return False, 0, {"error": "reverted"}
+                return False, 0, {"error": "failed"}
             latest = w3.eth.get_block("latest")["number"]
             confirmations = latest - receipt["blockNumber"] + 1
             return True, confirmations, {}
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 RPC 故障：继续轮询而非判死
             logger.warning("%s get_confirmations failed: %s", self.network, exc)
-            return False, 0, {"error": str(exc)}
+            return False, 0, {"error": "network_error", "detail": str(exc)}
 
     async def validate_tx(self, tx_hash: str, expected_to: str, expected_value_usdt: float) -> tuple[bool, str]:
         if get_settings().app_env == "dev":

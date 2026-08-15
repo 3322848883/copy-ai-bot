@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///c:/Users/w6485/Desktop/AI 量化/信号聚合AI/dev.db"
+# ★ 修复：相对路径（跨平台）；须在项目根目录运行
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./dev.db"
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker

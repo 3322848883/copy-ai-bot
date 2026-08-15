@@ -17,16 +17,38 @@ services:
   api:
     environment:
       DATABASE_URL: postgresql+asyncpg://signal:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/signal_saas
+      # ★ 生产邮件必填（config prod fail-fast 拒绝 mailhog）
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST must be set}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
     ports: []
   worker:
     environment:
       DATABASE_URL: postgresql+asyncpg://signal:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/signal_saas
+      # ★ 邮件（reminder 任务）；否则 prod fail-fast 拒绝默认 mailhog 致 worker 无法启动
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST must be set}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
   beat:
     environment:
       DATABASE_URL: postgresql+asyncpg://signal:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/signal_saas
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST must be set}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
   consumer:
     environment:
       DATABASE_URL: postgresql+asyncpg://signal:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/signal_saas
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST must be set}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
   web:
     ports: []
 

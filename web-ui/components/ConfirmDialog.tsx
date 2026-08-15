@@ -13,6 +13,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const resolverRef = useRef<((v: boolean) => void) | null>(null);
 
   const confirm = useCallback((opts: ConfirmOptions) => {
+    // ★ L1 修复：弹窗未关闭时忽略重复触发，避免首个 promise 永不 resolve
+    if (resolverRef.current) return Promise.resolve(false);
     return new Promise<boolean>((resolve) => {
       resolverRef.current = resolve;
       setState(opts);
