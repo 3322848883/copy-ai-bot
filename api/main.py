@@ -51,6 +51,27 @@ from api.core.middleware import RateLimitMiddleware
 app.add_middleware(RateLimitMiddleware)
 
 
+# ── M6 T6.2 监控：HTTP 指标中间件（请求计数 + 耗时直方图）──
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    import time
+
+    from api.core import metrics as M
+
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start
+    path = request.url.path
+    method = request.method
+    status = getattr(response, "status_code", 500)
+    try:
+        M.http_requests_total.labels(method=method, path=path, status=str(status)).inc()
+        M.http_request_duration_seconds.labels(method=method, path=path).observe(duration)
+    except Exception:  # noqa: BLE001 指标失败不影响业务
+        pass
+    return response
+
+
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=exc.to_dict())

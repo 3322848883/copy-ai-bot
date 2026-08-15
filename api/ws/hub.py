@@ -19,6 +19,12 @@ class WsHub:
 
     async def connect(self, user_id: int, ws) -> None:
         self._connections.setdefault(user_id, set()).add(ws)
+        try:
+            from api.core import metrics as M
+
+            M.ws_connections_active.inc()
+        except Exception:  # noqa: BLE001
+            pass
 
     async def disconnect(self, user_id: int, ws) -> None:
         conns = self._connections.get(user_id)
@@ -26,6 +32,12 @@ class WsHub:
             conns.discard(ws)
             if not conns:
                 self._connections.pop(user_id, None)
+        try:
+            from api.core import metrics as M
+
+            M.ws_connections_active.dec()
+        except Exception:  # noqa: BLE001
+            pass
 
     async def push(self, user_id: int, channel: str, payload: dict) -> None:
         """推送给在线连接；离线用户下次连接拉取站内消息。"""
@@ -47,6 +59,11 @@ class WsHub:
     def online_user_ids(self) -> list[int]:
         """当前在线用户列表（供 pnl.tick 周期任务使用）。"""
         return [uid for uid, conns in self._connections.items() if conns]
+
+    async def broadcast(self, channel: str, payload: dict) -> None:
+        """广播给全部在线连接（strategy.update 等公共频道）。"""
+        for user_id in self.online_user_ids():
+            await self.push(user_id, channel, payload)
 
 
 # 全局单例：服务层直接 import 推送业务事件

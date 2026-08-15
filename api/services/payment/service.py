@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core.config import get_settings
 from api.core.errors import PaymentError, ValidationError
-from api.models.billing import Invite, PaymentOrder, Reward, Subscription
+from api.models.billing import Invite, PaymentOrder, Reward, PlatformAddress
 from api.models.user import Identity
 from api.services.billing.service import BillingService
 from api.services.payment.chain_client import REQUIRED_CONFIRMATIONS, get_chain_client
@@ -18,6 +20,10 @@ logger = logging.getLogger("signal-saas.payment")
 # 轮询间隔（分钟）
 POLL_INTERVALS_MIN = [1, 5, 10, 20]
 MAX_POLL_ATTEMPTS = 6  # 超过 6 次 → manual
+
+# TxHash 格式：TRON = 64 hex；EVM = 0x + 64 hex
+_TRON_TX_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+_EVM_TX_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 
 
 class PaymentService:
@@ -61,12 +67,16 @@ class PaymentService:
         order.tx_hash = tx_hash
         client = get_chain_client(order.network)
 
+        # 生产环境 TxHash 格式预校验（dev mock 不拦截 mock_ 前缀）
+        if get_settings().app_env != "dev" and not self._valid_tx_format(order.network, tx_hash):
+            raise PaymentError("TxHash 格式不合法")
+
         # ★ G09 即时校验：to/value/status 三校验（任一失败拒绝）
-        to_ok = await self._verify_to(order)
+        to_ok, to_reason = await self._verify_to(order)
         if not to_ok:
             order.status = "failed"
             await self.db.commit()
-            raise PaymentError("收款地址校验失败")
+            raise PaymentError(f"收款地址校验失败: {to_reason}")
         value_ok = await self._verify_value(order, client)
         if not value_ok:
             order.status = "failed"
@@ -96,6 +106,13 @@ class PaymentService:
             return order  # 非轮询态直接返回
 
         order.poll_attempts += 1
+        # ★ M6 T6.2 指标：支付轮询次数（按网络）
+        try:
+            from api.core import metrics as M
+
+            M.payment_poll_attempts_total.labels(network=order.network).inc()
+        except Exception:  # noqa: BLE001
+            pass
         if order.poll_attempts > MAX_POLL_ATTEMPTS:
             order.status = "manual"  # 超 6 次 → manual
             await self.db.commit()
@@ -171,6 +188,11 @@ class PaymentService:
                 "verifying_ends_at": reward.verifying_ends_at.isoformat() if reward.verifying_ends_at else None,
             },
         )
+        # ★ M6 T5.19：account.balance 余额变动推送
+        try:
+            await hub.push(invite.inviter_id, "account.balance", {"event": "reward_pending", "amount_usdt": reward.amount_usdt})
+        except Exception:  # noqa: BLE001
+            pass
 
     async def _check_risk_extension(self, inviter_id: int) -> int:
         """★ G11：1h 内 ≥3 个下级只买试用 → 48h 风控延长；否则 24h。"""
@@ -191,15 +213,36 @@ class PaymentService:
         return 48 if trial_count >= 3 else 24
 
     # ── ★ G09 三校验 ──
-    async def _verify_to(self, order: PaymentOrder) -> bool:
-        """校验收款地址：订单由系统生成，直接核验与平台地址一致（mock 通过）。"""
-        # dev：平台地址白名单模拟；生产配置平台 USDT 地址
-        return True
+    @staticmethod
+    def _valid_tx_format(network: str, tx_hash: str) -> bool:
+        """TxHash 格式校验：TRON=64 hex；EVM=0x+64 hex。"""
+        if network == "trc20":
+            return bool(_TRON_TX_RE.match(tx_hash))
+        return bool(_EVM_TX_RE.match(tx_hash))
+
+    async def _verify_to(self, order: PaymentOrder) -> tuple[bool, str]:
+        """校验收款方：从 DB 读取该链 active 平台地址，与链上 to 比对。"""
+        addr = (
+            await self.db.execute(
+                select(PlatformAddress)
+                .where(
+                    PlatformAddress.network == order.network,
+                    PlatformAddress.status == "active",
+                )
+                .order_by(PlatformAddress.id.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+        if addr is None:
+            return False, f"{order.network} 网络未配置收款地址"
+        self._platform_address = addr.address
+        return True, ""
 
     async def _verify_value(self, order: PaymentOrder, client) -> bool:
-        """校验到账金额 ≥ 订单金额。"""
+        """校验到账金额 ≥ 订单金额（收款方为该链 active 平台地址）。"""
         try:
-            ok, reason = await client.validate_tx(order.tx_hash, "", order.amount_usdt)
+            expected_to = getattr(self, "_platform_address", "")
+            ok, reason = await client.validate_tx(order.tx_hash, expected_to, order.amount_usdt)
             return ok
         except Exception:  # noqa: BLE001
             return False

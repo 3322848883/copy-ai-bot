@@ -35,7 +35,7 @@ async def pending_list(db: DbDep = None, _admin=Depends(get_current_admin)) -> d
     """待选池：无 Strategy 的 Trader + 最新画像快照。"""
     from sqlalchemy import select
 
-    from api.models.signal import Strategy, Trader, TraderProfile
+    from api.models.signal import Trader, TraderProfile
 
     # 简化：直接查最新画像（join 最新一条）
     items = []
@@ -73,7 +73,7 @@ async def list_strategies(
 ) -> dict:
     from sqlalchemy import select
 
-    from api.models.signal import Strategy, TraderProfile
+    from api.models.signal import TraderProfile
 
     stmt = select(Strategy).order_by(Strategy.id.desc())
     if status:
@@ -118,6 +118,13 @@ async def force_list(body: ForceListIn, db: DbDep = None, admin=Depends(get_curr
         force_reason=body.force_reason,
         actor_id=admin["id"],
     )
+    # ★ M6 T5.19：strategy.update 实时推送
+    from api.ws.hub import hub
+
+    await hub.broadcast(
+        "strategy.update",
+        {"strategy_id": strategy.id, "display_name": strategy.display_name, "status": strategy.status, "action": "listed"},
+    )
     return {"id": strategy.id, "status": strategy.status, "gate_passed": True, "forced": True, "failures": gate.failures}
 
 
@@ -125,6 +132,13 @@ async def force_list(body: ForceListIn, db: DbDep = None, admin=Depends(get_curr
 async def update_status(strategy_id: int, body: StatusIn, db: DbDep = None, admin=Depends(get_current_admin)) -> dict:
     svc = StrategyService(db)
     strategy = await svc.update_status(strategy_id, body.status, actor_id=admin["id"])
+    # ★ M6 T5.19：strategy.update 实时推送
+    from api.ws.hub import hub
+
+    await hub.broadcast(
+        "strategy.update",
+        {"strategy_id": strategy.id, "display_name": strategy.display_name, "status": strategy.status, "action": "status"},
+    )
     return {"id": strategy.id, "status": strategy.status}
 
 
@@ -133,7 +147,6 @@ async def set_gray(strategy_id: int, body: GrayIn, db: DbDep = None, admin=Depen
     """★ M6 T6.1 灰度发布：设置放量比例（0-100），audit 留痕。"""
     from api.core.errors import ValidationError
 
-    from api.models.signal import Strategy
 
     if not 0 <= body.gray_pct <= 100:
         raise ValidationError("gray_pct 必须在 0-100")

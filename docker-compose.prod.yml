@@ -1,0 +1,72 @@
+# 生产部署 override：与根 docker-compose.yml 叠加使用
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# 职责：nginx 统一入口（80/443）、api/web 不再对外暴露、监控栈（prometheus/grafana）、
+#        DB/Redis 不暴露、生产凭据强制注入（缺失即失败）
+services:
+  # ── 安全：DB/Redis/Mailhog 不对外暴露（仅内网）──
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    ports: []
+  redis:
+    # Redis AOF 持久化（M6 T6.6 灾备）
+    command: redis-server --appendonly yes
+    ports: []
+  mailhog:
+    ports: []
+  api:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://signal:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/signal_saas
+    ports: []
+  worker:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://signal:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/signal_saas
+  beat:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://signal:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/signal_saas
+  consumer:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://signal:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/signal_saas
+  web:
+    ports: []
+
+  # ── 统一入口：nginx 反代（cookie 同域前提 + TLS）──
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+
+  # ── 监控栈 ──
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  promdata:
+  grafanadata:

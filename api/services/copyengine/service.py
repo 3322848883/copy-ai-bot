@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import get_settings
-from api.core.errors import NotFoundError, ValidationError
+from api.core.errors import ValidationError
 from api.exchange_clients.registry import get_adapter
 from api.models.bot import CopyBot, CopyOrder, PositionSnapshot
 from api.models.exchange import ContractSpec
@@ -16,7 +16,7 @@ from api.models.signal import SourceSignal, Strategy, Trader
 from api.models.user import ApiKey
 from api.services.copyengine.sizer import Contract, InsufficientBalance, PositionSizer
 from api.services.executor.service import ExecResult, OrderRouter
-from api.services.riskengine.service import OrderIntent, RiskDecision, RiskEngine
+from api.services.riskengine.service import OrderIntent, RiskEngine
 
 logger = logging.getLogger("signal-saas.copyengine")
 
@@ -73,6 +73,25 @@ class CopyEngine:
         bots = await self.match_bots(sig.exchange, sig.source_trader_id)
         orders: list[CopyOrder] = []
         for bot in bots:
+            # ★ M6 T5.19：signal.new 实时推送（通知匹配该策略的机器人主人）
+            try:
+                from api.ws.hub import hub
+
+                await hub.push(
+                    bot.user_id,
+                    "signal.new",
+                    {
+                        "signal_id": sig.id,
+                        "strategy_id": bot.strategy_id,
+                        "symbol": sig.symbol,
+                        "side": sig.side,
+                        "action": sig.action,
+                        "percent": sig.percent,
+                        "source_mode": sig.source_mode,
+                    },
+                )
+            except Exception:  # noqa: BLE001
+                pass
             order = await self._process_bot(bot, sig)
             if order is not None:
                 orders.append(order)
@@ -170,6 +189,14 @@ class CopyEngine:
                 bot_max_total_position=bot.max_total_position_usdt,
             )
         )
+        # ★ M6 T6.2 指标：风控决策
+        try:
+            from api.core import metrics as M
+
+            M.risk_decisions_total.labels(decision="approved" if not risk_res.rejected else "rejected").inc()
+            M.signal_received_total.labels(exchange=bot.exchange, source=sig.source_mode or "A").inc()
+        except Exception:  # noqa: BLE001
+            pass
         if risk_res.rejected:
             return self._fail_order(bot, sig, "risk", f"{risk_res.rule}: {risk_res.reason}", latency=risk_res.latency_ms)
 

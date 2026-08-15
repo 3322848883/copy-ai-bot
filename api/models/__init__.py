@@ -14,6 +14,7 @@ from api.models.billing import (
     Reward,
     Withdrawal,
     Invite,
+    PlatformAddress,
 )
 from api.models.audit import AuditEvent, Notification
 
@@ -38,6 +39,7 @@ __all__ = [
     "Reward",
     "Withdrawal",
     "Invite",
+    "PlatformAddress",
     "AuditEvent",
     "Notification",
 ]

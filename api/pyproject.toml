@@ -49,3 +49,8 @@ testpaths = ["api/tests"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+
+[tool.ruff.lint]
+# CI 门禁聚焦硬错误：E9=语法/结构错误，F=pyflakes（未定义/未使用/导入）
+select = ["E9", "F"]
+ignore = []

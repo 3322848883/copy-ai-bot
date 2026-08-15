@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 type Wd = { id: number; user_id: number; amount_usdt: number; fee_usdt: number; network: string; address: string; status: string; tx_hash: string | null; reject_reason: string | null; created_at: string | null };
 
@@ -14,6 +15,7 @@ const STATUS_LABEL: Record<string, string> = {
 /** M5 T5.5 提现审核：列表 + 5 动作（approve/reject/fill_tx/retry/refund）。 */
 export default function AdminWithdrawalsPage() {
   const router = useRouter();
+  const confirm = useConfirm();
   const [items, setItems] = useState<Wd[]>([]);
   const [status, setStatus] = useState("");
   const [msg, setMsg] = useState("");
@@ -36,6 +38,18 @@ export default function AdminWithdrawalsPage() {
   }, [load, router]);
 
   async function act(w: Wd, action: string, body?: object) {
+    const plan: Record<string, { title: string; message: string; danger?: boolean; confirmText?: string }> = {
+      approve: { title: "批准提现", message: `#${w.id} · 用户 #${w.user_id} · ${w.amount_usdt.toFixed(2)} USDT（实发 ${(w.amount_usdt - w.fee_usdt).toFixed(2)}）\n批准后进入发放流程，确认？`, confirmText: "批准" },
+      reject: { title: "拒绝提现", message: `#${w.id} · ${w.amount_usdt.toFixed(2)} USDT\n拒绝后资金退回可用余额，确认拒绝？`, danger: true, confirmText: "拒绝" },
+      "fill-tx": { title: "确认发放（TxHash）", message: `#${w.id} · ${w.amount_usdt.toFixed(2)} USDT\n确认已手动转账并填写 TxHash？`, danger: true, confirmText: "确认发放" },
+      retry: { title: "重试发放", message: `#${w.id} · ${w.amount_usdt.toFixed(2)} USDT\n重试发放流程，确认？`, danger: true, confirmText: "重试" },
+      refund: { title: "退还申请", message: `#${w.id} · ${w.amount_usdt.toFixed(2)} USDT\n退还后资金回退，确认？`, danger: true, confirmText: "退还" },
+    };
+    const p = plan[action];
+    if (p) {
+      const ok = await confirm({ ...p, message: p.message });
+      if (!ok) return;
+    }
     try {
       await apiFetch(`/admin/v1/withdrawals/${w.id}/${action}`, { method: "POST", body: JSON.stringify(body || {}) }, tokenStore.adminAccess);
       setMsg(`#${w.id} ${action} 成功`);

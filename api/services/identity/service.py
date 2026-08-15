@@ -6,8 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.config import get_settings
-from api.core.errors import ConflictError, ExchangeInviteError, NotFoundError
+from api.core.errors import ConflictError, NotFoundError
 from api.models.exchange import ExchangeInviteCode, PlatformPool
 from api.models.user import Identity, User
 from api.services.audit.service import AuditService
@@ -84,7 +83,6 @@ class IdentityService:
         await self.db.refresh(identity)
 
         # 创建 Invite 关系记录（供奖励 T4.5 使用）
-        from datetime import datetime, timezone
 
         from api.models.billing import Invite
 

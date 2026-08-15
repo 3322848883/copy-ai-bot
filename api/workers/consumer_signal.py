@@ -44,20 +44,54 @@ def process_signal_task(signal_id: int) -> str:
 
 
 async def consume_signal_events() -> None:
-    """阻塞消费 Redis Pub/Sub `signal.new`（dev 直跑；生产由 Celery 触发）。"""
+    """阻塞消费 Redis Pub/Sub `signal.new`（dev 直跑；生产独立进程运行）。"""
     settings = get_settings()
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     pubsub = redis.pubsub()
     await pubsub.subscribe(TOPIC_SIGNAL_NEW)
     logger.info("subscribed to %s", TOPIC_SIGNAL_NEW)
-    async for message in pubsub.listen():
-        if message["type"] != "message":
-            continue
-        try:
-            data = json.loads(message["data"])
-            if data.get("dropped"):
-                logger.info("signal dropped event: %s", data.get("reason"))
+    try:
+        async for message in pubsub.listen():
+            if message["type"] != "message":
                 continue
-            process_signal_task.delay(int(data["id"]))
-        except Exception as exc:  # noqa: BLE001
-            logger.error("consume error: %s", exc)
+            try:
+                data = json.loads(message["data"])
+                if data.get("dropped"):
+                    logger.info("signal dropped event: %s", data.get("reason"))
+                    continue
+                process_signal_task.delay(int(data["id"]))
+            except Exception as exc:  # noqa: BLE001
+                logger.error("consume error: %s", exc)
+    finally:
+        try:
+            await pubsub.unsubscribe(TOPIC_SIGNAL_NEW)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            await redis.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _main() -> None:
+    """独立进程入口：消费信号事件，SIGINT/SIGTERM 优雅退出。"""
+    task = asyncio.create_task(consume_signal_events())
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:  # Windows 无 signal handler 支持
+            pass
+    await stop.wait()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+if __name__ == "__main__":
+    import signal
+
+    asyncio.run(_main())

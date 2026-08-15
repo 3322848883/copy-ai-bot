@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from api.core.errors import NotFoundError
 from api.deps import DbDep, get_current_admin
 from api.models.bot import CopyBot, CopyOrder
 from api.models.signal import SourceSignal, Strategy

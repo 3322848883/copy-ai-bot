@@ -5,7 +5,6 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from api.core.config import get_settings
 from api.workers.celery_app import celery_app
 
 logger = logging.getLogger("signal-saas.workers.reward")
@@ -14,9 +13,6 @@ logger = logging.getLogger("signal-saas.workers.reward")
 @celery_app.task(name="reward.scan_verifying")
 def scan_verifying_rewards() -> int:
     """扫描 verifying 到期：无退款 → available；有退款 → canceled。"""
-    settings = get_settings()
-    if settings.app_env != "dev":
-        raise NotImplementedError("生产环境由独立 worker 执行")
     return _run_scan()
 
 
@@ -51,5 +47,12 @@ async def scan_verifying_rewards_async() -> int:
         for r in rows:
             r.status = "available"
             released += 1
+            # ★ M6 T5.19：account.balance 余额变动推送（奖励解锁）
+            try:
+                from api.ws.hub import hub
+
+                await hub.push(r.owner_id, "account.balance", {"event": "reward_available", "amount_usdt": r.amount_usdt})
+            except Exception:  # noqa: BLE001
+                pass
         await db.commit()
         return released

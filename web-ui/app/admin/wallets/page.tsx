@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 type Summary = { total_usdt: number; available_usdt: number; withdrawing_usdt: number; paid_usdt: number; frozen_usdt: number };
 type LedgerItem = { id: number; owner_id: number; owner_email: string; source_user_id: number; amount_usdt: number; status: string; status_label: string; created_at: string | null };
@@ -10,6 +11,7 @@ type LedgerItem = { id: number; owner_id: number; owner_email: string; source_us
 /** M5 钱包账本：★G12 全平台 5 字段 + 手动补发/扣除（高危写操作）。 */
 export default function AdminWalletsPage() {
   const router = useRouter();
+  const confirm = useConfirm();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [ledger, setLedger] = useState<LedgerItem[]>([]);
   const [msg, setMsg] = useState("");
@@ -44,6 +46,13 @@ export default function AdminWalletsPage() {
       setMsg("请填写用户ID、金额与理由");
       return;
     }
+    const ok = await confirm({
+      title: adjust?.mode === "debit" ? "手动扣除奖励" : "手动补发奖励",
+      message: `用户 #${uid} ${adjust?.mode === "debit" ? "扣除" : "补发"} ${amt} USDT\n理由：${reason.trim()}\n该操作将写入账本与审计日志，确认执行？`,
+      danger: true,
+      confirmText: adjust?.mode === "debit" ? "确认扣除" : "确认补发",
+    });
+    if (!ok) return;
     try {
       const signed = adjust?.mode === "debit" ? -amt : amt;
       await apiFetch("/admin/v1/wallets/adjust", { method: "POST", body: JSON.stringify({ user_id: uid, amount_usdt: signed, reason: reason.trim() }) }, tokenStore.adminAccess);

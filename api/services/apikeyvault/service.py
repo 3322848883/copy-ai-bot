@@ -1,7 +1,6 @@
 # apikeyvault 模块（M1 T1.5/T1.6：绑定实时校验 + AES-256-GCM 加密落库）
 from __future__ import annotations
 
-import base64
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

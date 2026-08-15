@@ -1,0 +1,90 @@
+{
+  "uid": "signal-saas",
+  "title": "signal-saas 运营看板",
+  "tags": ["signal-saas"],
+  "timezone": "browser",
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "HTTP 请求速率",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[5m])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "HTTP 耗时 p95",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "WS 在线连接",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 7 },
+      "targets": [{ "expr": "ws_connections_active", "legendFormat": "在线" }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "注册用户",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 7 },
+      "targets": [{ "expr": "app_users_total", "legendFormat": "用户" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "跟单成功/失败",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "increase(app_copy_orders_filled_total[5m])", "legendFormat": "成功" },
+        { "expr": "increase(app_copy_orders_failed_total[5m])", "legendFormat": "失败" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "支付确认 & 风控决策",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "increase(app_payments_confirmed_total[5m])", "legendFormat": "支付确认" },
+        { "expr": "sum(rate(risk_decisions_total[5m])) by (decision)", "legendFormat": "风控-{{decision}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "支付轮询 & 待处理提现",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 19 },
+      "targets": [
+        { "expr": "sum(rate(payment_poll_attempts_total[5m])) by (network)", "legendFormat": "轮询-{{network}}" },
+        { "expr": "withdrawal_pending_total", "legendFormat": "待处理提现" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "信号接收速率",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 19 },
+      "targets": [
+        { "expr": "sum(rate(signal_received_total[5m])) by (source)", "legendFormat": "信号-{{source}}" }
+      ]
+    }
+  ],
+  "schemaVersion": 39
+}

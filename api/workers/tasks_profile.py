@@ -40,18 +40,15 @@ async def run_sync_daily(limit: int = 50) -> int:
 
 @celery_app.task(name="profile.sync_daily")
 def sync_daily_profiles(exchange: str | None = None) -> int:
-    """同步 TraderProfile 快照（00:00-05:00 Celery Beat 调度）。"""
-    settings = get_settings()
-    if settings.app_env == "dev":
-        import asyncio
+    """同步 TraderProfile 快照（00:00-05:00 Celery Beat 调度；dev/prod 统一真实执行）。"""
+    import asyncio
 
-        try:
-            return asyncio.run(run_sync_daily())
-        except Exception as exc:  # noqa: BLE001
-            _mark_failure()
-            logger.exception("profile sync failed: %s", exc)
-            raise
-    raise NotImplementedError("生产环境由独立 worker 执行（真实交易所数据源）")
+    try:
+        return asyncio.run(run_sync_daily())
+    except Exception as exc:  # noqa: BLE001
+        _mark_failure()
+        logger.exception("profile sync failed: %s", exc)
+        raise
 
 
 def _mark_success() -> None:

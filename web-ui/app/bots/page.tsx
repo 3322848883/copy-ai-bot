@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
+import { useWsChannel } from "@/components/WsProvider";
 
 type Bot = {
   id: number;
@@ -58,6 +59,24 @@ export default function MyBotsPage() {
     }
     load();
   }, [load, router]);
+
+  // ── WS 实时：bot.position 仓位变化（更新保证金占用）──
+  useWsChannel("bot.position", (raw) => {
+    const payload = raw as { bot_id?: number; virtual_locked_usdt?: number; action?: string };
+    if (!payload?.bot_id) return;
+    setBots((bs) =>
+      bs.map((b) =>
+        b.id === payload.bot_id && payload.virtual_locked_usdt != null
+          ? { ...b, virtual_locked_usdt: payload.virtual_locked_usdt! }
+          : b
+      )
+    );
+  });
+
+  // ── WS 实时：account.balance 余额变动（奖励到账/解锁 → 刷新列表）──
+  useWsChannel("account.balance", () => {
+    load();
+  });
 
   async function onStatus(bot: Bot, status: string) {
     try {

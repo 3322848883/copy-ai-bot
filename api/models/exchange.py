@@ -1,10 +1,9 @@
 """Exchange / ContractSpec / PlatformPool / ExchangeInviteCode 模型（§4.2 + G06/G08/G27）。"""
 from __future__ import annotations
 
-from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Boolean, Integer, String, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base, TimestampMixin
 

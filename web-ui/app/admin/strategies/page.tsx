@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 type Strategy = { id: number; display_name: string; style: string; risk_rating: string; status: string; followers: number; roi_30d: number; win_rate_all: number };
 type Trader = { id: number; trader_id: string; name: string; roi_7d: number; roi_30d: number; roi_all: number; win_rate_all: number; max_drawdown: number; trading_days: number; followers: number };
@@ -10,6 +11,7 @@ type Trader = { id: number; trader_id: string; name: string; roi_7d: number; roi
 /** M5 T5.4 策略管理：待选池 + 强制上架(G04 留痕) + 状态切换。 */
 export default function AdminStrategiesPage() {
   const router = useRouter();
+  const confirm = useConfirm();
   const [listed, setListed] = useState<Strategy[]>([]);
   const [pending, setPending] = useState<Trader[]>([]);
   const [msg, setMsg] = useState("");
@@ -37,9 +39,17 @@ export default function AdminStrategiesPage() {
   }, [load, router]);
 
   async function setStatus(s: Strategy, status: string) {
+    const label = status === "paused" ? "暂停" : status === "delisted" ? "下架" : "恢复";
+    const ok = await confirm({
+      title: `${label}策略`,
+      message: `「${s.display_name}」${label}后将影响其下跟单机器人，确认${label}？`,
+      danger: status !== "listed",
+      confirmText: label,
+    });
+    if (!ok) return;
     try {
       await apiFetch(`/admin/v1/signals/${s.id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }, tokenStore.adminAccess);
-      setMsg(`「${s.display_name}」已${status === "paused" ? "暂停" : status === "delisted" ? "下架" : "恢复"}`);
+      setMsg(`「${s.display_name}」已${label}`);
       load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "操作失败");
@@ -48,6 +58,13 @@ export default function AdminStrategiesPage() {
 
   async function doForceList() {
     if (!forceTarget) return;
+    const ok = await confirm({
+      title: "强制上架策略（G04 留痕）",
+      message: `带单员「${forceTarget.name}」未达门槛（胜率≥55%/回撤≤30%/天数≥30）\n强制上架将记录理由到审计日志，确认执行？`,
+      danger: true,
+      confirmText: "强制上架",
+    });
+    if (!ok) return;
     try {
       const r = await apiFetch<{ id: number }>("/admin/v1/signals", {
         method: "POST",

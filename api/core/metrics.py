@@ -1,23 +1,48 @@
-"""Prometheus 指标工厂。"""
+"""Prometheus 指标工厂（M6 T6.2：6 核心指标落地，替换占位实现）。"""
 from __future__ import annotations
 
-from typing import Callable
+from prometheus_client import Counter, Gauge, Histogram
 
-# 占位：M0 T0.8 接入 prometheus_client
-Metric = Callable
+# ── HTTP ──
+http_requests_total = Counter(
+    "http_requests_total", "HTTP 请求总数", ["method", "path", "status"]
+)
+http_request_duration_seconds = Histogram(
+    "http_request_duration_seconds", "HTTP 请求耗时（秒）", ["method", "path"],
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, float("inf")),
+)
 
-_metrics: dict[str, object] = {}
+# ── WebSocket ──
+ws_connections_active = Gauge("ws_connections_active", "当前 WS 在线连接数")
 
+# ── 业务（计划 §7.3 六指标）──
+# 1. signal_received_total{exchange,source}
+signal_received_total = Counter(
+    "signal_received_total", "收到信号总数", ["exchange", "source"]
+)
+# 2. risk_decisions_total{decision}
+risk_decisions_total = Counter(
+    "risk_decisions_total", "风控决策总数", ["decision"]
+)
+# 3. orders_placed_total{exchange,result}（沿用 app_copy_orders_* 命名兼容历史面板）
+app_copy_orders_filled_total = Counter("app_copy_orders_filled_total", "跟单成功订单数")
+app_copy_orders_failed_total = Counter("app_copy_orders_failed_total", "跟单失败订单数")
+# 4. payment_poll_attempts_total{network}
+payment_poll_attempts_total = Counter(
+    "payment_poll_attempts_total", "支付轮询次数", ["network"]
+)
+# 5. withdrawal_pending_total
+withdrawal_pending_total = Gauge("withdrawal_pending_total", "待处理提现数")
+# 6. http_request_duration_seconds（Histogram，见上）
 
-def metrics_counter(name: str, labels: dict[str, str] | None = None) -> object:
-    """获取/创建 Counter（占位实现，M6 接 prometheus_client）。"""
-    if name not in _metrics:
-        _metrics[name] = {"type": "counter", "labels": labels or {}}
-    return _metrics[name]
+# ── 补充派生指标 ──
+app_users_total = Gauge("app_users_total", "注册用户数")
+app_payments_confirmed_total = Counter("app_payments_confirmed_total", "已确认支付订单数")
+app_audit_events_total = Gauge("app_audit_events_total", "审计事件数")
 
 
 def trace_span(name: str):
-    """上下文管理器占位。"""
+    """上下文管理器占位（接 OpenTelemetry 扩展点）。"""
 
     class _Span:
         def __enter__(self):

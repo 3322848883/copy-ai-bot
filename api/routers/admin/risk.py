@@ -38,10 +38,6 @@ async def panel(db: DbDep = None, _admin=Depends(get_current_admin)) -> dict:
     r = _redis()
     emergency = r.get(KEY_EMERGENCY_STOP) == "1"
     daily_limit = float(r.get(KEY_DAILY_LOSS_LIMIT) or -1000.0)
-    # 刷单疑似账号（1h 内 3+ 试用确认）
-    from api.services.referral.service import ReferralService
-
-    svc = ReferralService(db)
     return {
         "emergency_stop": emergency,
         "daily_loss_limit_usdt": daily_limit,

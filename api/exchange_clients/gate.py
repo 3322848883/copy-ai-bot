@@ -38,8 +38,16 @@ class GateAdapter(ExchangeAdapter):
         return [BalanceItem(asset="USDT", free=float(data.get("available", 0)), locked=float(data.get("unrealised_pnl", 0)))]
 
     async def check_permissions(self, api_key: str, api_secret: str) -> dict[str, bool]:
-        # dev mock: 默认只读+交易，无提现
-        return {"read": True, "trade": True, "withdraw": False}
+        if self.mock:
+            # dev mock: 默认只读+交易，无提现
+            return {"read": True, "trade": True, "withdraw": False}
+        # 生产：拉取期货账户，判定读写权限（期货 API Key 默认无提现权限）
+        data = await self._signed_get("/futures/usdt/accounts", api_key, api_secret) or {}
+        return {
+            "read": bool(data.get("user_id")),
+            "trade": bool(data.get("user_id")),
+            "withdraw": False,  # 期货 API Key 无提现权限；如需真实验证走钱包接口
+        }
 
     # ── 交易 ──
     async def set_leverage(self, symbol: str, leverage: int, api_key: str, api_secret: str) -> None:

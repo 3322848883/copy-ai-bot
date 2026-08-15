@@ -4,7 +4,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends
 
-from api.core.errors import AppError, ExchangeInviteError
+from api.core.errors import ExchangeInviteError
 from api.deps import DbDep, get_current_user
 from api.services.audit.service import AuditService
 from api.services.identity.service import IdentityService

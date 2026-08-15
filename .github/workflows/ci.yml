@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["api/**", "web-ui/**", ".github/**", "Dockerfile", "docker-compose*.yml", "requirements.txt"]
+  pull_request:
+    branches: [main]
+    paths: ["api/**", "web-ui/**", ".github/**"]
+
+jobs:
+  backend:
+    name: Backend (ruff + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -e "api[dev]"
+      - name: Ruff lint
+        working-directory: api
+        run: ruff check .
+      - name: Pytest (unit)
+        working-directory: api
+        run: python -m pytest tests/ -v
+
+  frontend:
+    name: Frontend (tsc + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
+      - name: Install dependencies
+        working-directory: web-ui
+        run: npm ci
+      - name: TypeScript check
+        working-directory: web-ui
+        run: npx tsc --noEmit
+      - name: Next.js build
+        working-directory: web-ui
+        run: npm run build

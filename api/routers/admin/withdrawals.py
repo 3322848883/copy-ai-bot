@@ -1,12 +1,10 @@
 # admin/withdrawals 路由（M4 T4.7：审核 5 动作；写操作强制 audit-log）
 from __future__ import annotations
 
-from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from api.core.errors import AuthError
 from api.deps import DbDep, get_current_admin
 from api.services.audit.service import AuditService
 from api.services.withdrawal.service import WithdrawalService

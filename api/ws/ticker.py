@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from api.db.session import get_session_factory
 from api.models.bot import CopyBot, PositionSnapshot

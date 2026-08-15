@@ -102,18 +102,58 @@ class AuthService:
             "risk_disclosure_accepted": user.risk_disclosure_accepted,  # ★ T1.7 前端据此弹强制风险揭示
         }
 
-    # ── 登出（M1 简化：客户端丢弃 refresh；生产维护 jti 黑名单）──
-    async def logout(self, jti: str | None = None) -> None:
-        # TODO(M6): refresh token 黑名单 / jti 回收
-        return None
+    # ── 登出 / 凭证吊销（M6 上线就绪：Redis 吊销时间戳，旧 refresh 全部失效）──
+    @staticmethod
+    def _revoke_key(user_id: int) -> str:
+        return f"refresh_revoked:{user_id}"
+
+    async def logout(self, user_id: int) -> None:
+        """吊销该用户全部 refresh token（写 Redis 吊销时间，ttl 7 天）。"""
+        import time
+
+        from redis import Redis
+
+        try:
+            r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+            r.set(self._revoke_key(user_id), str(int(time.time())), ex=7 * 24 * 3600)
+        except Exception:  # noqa: BLE001 Redis 不可用不阻断登出
+            pass
+
+    async def is_refresh_revoked(self, user_id: int, iat: float) -> bool:
+        """refresh 签发时间早于吊销时间 → 已吊销。"""
+        from redis import Redis
+
+        try:
+            r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+            revoked_at = r.get(self._revoke_key(user_id))
+        except Exception:  # noqa: BLE001 Redis 不可用则放行
+            return False
+        if not revoked_at:
+            return False
+        return (iat or 0) < float(revoked_at)
 
     # ── 改密 ──
     async def change_password(self, user_id: int, old: str, new: str) -> None:
         user = await self.db.get(User, user_id)
         if not user or not verify_password(old, user.password_hash):
             raise AuthError("原密码错误")
+        if len(new) < get_settings().password_min_length:
+            raise ConflictError(f"新密码至少 {get_settings().password_min_length} 位")
         user.password_hash = hash_password(new)
         await self.db.commit()
+        # 审计留痕
+        try:
+            from api.services.audit.service import AuditService
+
+            await AuditService(self.db).log(
+                actor_id=user_id, action="auth.change_password",
+                target_type="user", target_id=str(user_id),
+                before=None, after={"password_changed": True},
+            )
+        except Exception:  # noqa: BLE001 审计失败不阻断改密
+            pass
+        # 吊销该用户全部旧 refresh
+        await self.logout(user_id)
 
     # ── ★ T1.7 强制风险揭示 ──
     async def accept_risk_disclosure(self, user_id: int) -> User:

@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 
-import pytest
 
 from api.services.signalfeed.service import IncrementalFeedService
 

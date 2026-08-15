@@ -1,7 +1,12 @@
 "use client";
 
 import AdminShell from "@/components/AdminShell";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return <AdminShell>{children}</AdminShell>;
+  return (
+    <ConfirmProvider>
+      <AdminShell>{children}</AdminShell>
+    </ConfirmProvider>
+  );
 }

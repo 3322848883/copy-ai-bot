@@ -49,12 +49,9 @@ async def run_scrape_all(limit: int = 8) -> dict[str, int]:
 @celery_app.task(name="signal.scrape_all")
 def scrape_all_exchanges() -> str:
     """触发 5 家交易所公开带单广场采集（模式 A，M2 T2.1）。"""
-    settings = get_settings()
-    if settings.app_env == "dev":
-        import asyncio
+    import asyncio
 
-        return f"scraped gate: {asyncio.run(run_scrape_all())}"
-    raise NotImplementedError("生产环境采集由独立 worker 进程运行（Playwright）")
+    return f"scraped gate: {asyncio.run(run_scrape_all())}"
 
 
 # ── ★ 实时信号轮询（只执行新开仓/新平仓，存量持仓仅作基线）──
@@ -223,7 +220,6 @@ async def _reconcile_once() -> str:
     total = 0
     # ★ 单 scraper：对账完关闭浏览器会话
     from api.services.scraper.adapters.gate import GateScraper
-    from api.services.signalfeed.service import IncrementalFeedService
 
     scraper = GateScraper()
     feed = IncrementalFeedService(scraper=scraper)

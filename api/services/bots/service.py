@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.errors import ConflictError, NotFoundError, ValidationError
 from api.models.bot import CopyBot, CopyOrder, PositionSnapshot
-from api.models.signal import Strategy, Trader
-from api.models.user import ApiKey, Identity
+from api.models.signal import Strategy
+from api.models.user import ApiKey
 from api.services.tradetracker.service import TradeTracker
 
 logger = logging.getLogger("signal-saas.bots")

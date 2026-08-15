@@ -1,0 +1,11 @@
+# signal-saas Prometheus 抓取配置（M6 T6.2）
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: signal-saas-api
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          service: api

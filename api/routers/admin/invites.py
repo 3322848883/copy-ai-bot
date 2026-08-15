@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 
 from api.deps import DbDep, get_current_admin
 from api.models.billing import Invite, PaymentOrder, Reward
-from api.models.user import Identity, User
+from api.models.user import User
 
 router = APIRouter(prefix="/invites", tags=["admin-invites"])
 

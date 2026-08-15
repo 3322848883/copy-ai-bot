@@ -81,3 +81,16 @@ class Invite(TimestampMixin, Base):
     code: Mapped[str] = mapped_column(String(32))
     bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     locked: Mapped[bool] = mapped_column(Integer, default=False)
+
+
+class PlatformAddress(TimestampMixin, Base):
+    """平台 USDT 收款地址（后台管理，支付校验时读取 active 项）。"""
+
+    __tablename__ = "platform_addresses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    network: Mapped[str] = mapped_column(String(8), index=True)  # trc20 / bep20 / erc20
+    address: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active / inactive
+    remark: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)

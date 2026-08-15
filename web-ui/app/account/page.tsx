@@ -23,6 +23,10 @@ export default function AccountPage() {
   const [friendCode, setFriendCode] = useState("");
   const [friendMsg, setFriendMsg] = useState("");
   const [unbinding, setUnbinding] = useState<string | null>(null);
+  // ★ 修改密码
+  const [pwdForm, setPwdForm] = useState({ old_password: "", new_password: "", confirm: "" });
+  const [pwdMsg, setPwdMsg] = useState("");
+  const [pwdErr, setPwdErr] = useState("");
 
   const loadKeys = useCallback(async () => {
     try {
@@ -108,8 +112,27 @@ export default function AccountPage() {
   }
 
   function onLogout() {
-    tokenStore.clear();
-    router.push("/login");
+    void tokenStore.logout(); // 清后端 cookie + 本地 token + 跳登录
+  }
+
+  async function onChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwdErr(""); setPwdMsg(""); setLoading(true);
+    if (pwdForm.new_password.length < 8) { setPwdErr("新密码至少 8 位"); setLoading(false); return; }
+    if (pwdForm.new_password !== pwdForm.confirm) { setPwdErr("两次输入的新密码不一致"); setLoading(false); return; }
+    try {
+      const res = await apiFetch<{ message: string }>("/v1/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ old_password: pwdForm.old_password, new_password: pwdForm.new_password }),
+      }, tokenStore.access);
+      setPwdMsg(res.message);
+      setPwdForm({ old_password: "", new_password: "", confirm: "" });
+      setTimeout(() => router.push("/login"), 1500); // 改密后引导重新登录
+    } catch (ex) {
+      setPwdErr(ex instanceof Error ? ex.message : "修改失败");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -218,6 +241,31 @@ export default function AccountPage() {
             </div>
             <button className="btn btn-primary" type="submit" disabled={loading || !apiKey || !apiSecret}>
               校验并绑定
+            </button>
+          </form>
+        </div>
+
+        {/* ★ 修改密码（POST /v1/auth/change-password，成功后吊销旧 refresh） */}
+        <div className="card" style={{ marginTop: 16 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>修改密码</div>
+          <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 16 }}>修改后所有设备需重新登录</div>
+          {pwdMsg && <div style={{ color: "var(--success)", fontSize: 13, marginBottom: 10 }}>{pwdMsg}</div>}
+          {pwdErr && <div className="error-box" style={{ marginBottom: 10 }}>{pwdErr}</div>}
+          <form onSubmit={onChangePassword} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <label className="label">原密码</label>
+              <input className="input" type="password" value={pwdForm.old_password} onChange={(e) => setPwdForm({ ...pwdForm, old_password: e.target.value })} placeholder="输入原密码" />
+            </div>
+            <div>
+              <label className="label">新密码</label>
+              <input className="input" type="password" value={pwdForm.new_password} onChange={(e) => setPwdForm({ ...pwdForm, new_password: e.target.value })} placeholder="至少 8 位" />
+            </div>
+            <div>
+              <label className="label">确认新密码</label>
+              <input className="input" type="password" value={pwdForm.confirm} onChange={(e) => setPwdForm({ ...pwdForm, confirm: e.target.value })} placeholder="再次输入新密码" />
+            </div>
+            <button className="btn btn-primary" type="submit" disabled={loading || !pwdForm.old_password || !pwdForm.new_password}>
+              确认修改
             </button>
           </form>
         </div>

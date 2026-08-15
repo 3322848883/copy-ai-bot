@@ -82,6 +82,11 @@ export default function Nav() {
               登录
             </Link>
           )}
+          <span style={{ fontSize: 10, color: "var(--tertiary)", marginLeft: 8, whiteSpace: "nowrap" }}>
+            <Link href="/privacy" style={{ color: "var(--tertiary)", textDecoration: "none" }}>隐私</Link>
+            <span style={{ margin: "0 4px" }}>·</span>
+            <Link href="/terms" style={{ color: "var(--tertiary)", textDecoration: "none" }}>条款</Link>
+          </span>
         </div>
       </div>
     </nav>

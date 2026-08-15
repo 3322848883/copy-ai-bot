@@ -1,12 +1,14 @@
-# admin/payments 路由（M5 T5.6：支付订单列表 + manual 手动确认/标记失败）
+# admin/payments 路由（M5 T5.6：支付订单列表 + manual 手动确认/标记失败 + 平台收款地址管理）
 from __future__ import annotations
+
+import re
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from api.core.errors import NotFoundError, PaymentError
+from api.core.errors import NotFoundError, PaymentError, ValidationError
 from api.deps import DbDep, get_current_admin, require_admin
-from api.models.billing import PaymentOrder
+from api.models.billing import PaymentOrder, PlatformAddress
 from api.services.audit.service import AuditService
 
 router = APIRouter(prefix="/payments", tags=["admin-payments"])
@@ -14,6 +16,140 @@ router = APIRouter(prefix="/payments", tags=["admin-payments"])
 
 class ManualIn(BaseModel):
     status: str  # confirmed / failed
+
+
+class AddressIn(BaseModel):
+    network: str
+    address: str
+    remark: str | None = None
+
+
+class AddressPatchIn(BaseModel):
+    status: str | None = None  # active / inactive
+    remark: str | None = None
+
+
+# ── 地址格式校验 ──
+_TRC20_RE = re.compile(r"^T[1-9A-HJ-NP-Za-km-z]{33}$")
+_EVM_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+
+
+def _validate_address(network: str, address: str) -> None:
+    if network not in ("trc20", "bep20", "erc20"):
+        raise ValidationError("network 必须为 trc20 / bep20 / erc20")
+    if network == "trc20":
+        if not _TRC20_RE.match(address):
+            raise ValidationError("TRC-20 地址必须为 T 开头 34 位 Base58")
+    else:
+        if not _EVM_RE.match(address):
+            raise ValidationError("BEP-20/ERC-20 地址必须为 0x + 40 位 hex")
+
+
+@router.get("/addresses")
+async def list_addresses(
+    network: str = Query(""),
+    db: DbDep = None,
+    _admin=Depends(get_current_admin),
+) -> dict:
+    from sqlalchemy import select
+
+    stmt = select(PlatformAddress)
+    if network:
+        stmt = stmt.where(PlatformAddress.network == network)
+    rows = (await db.execute(stmt.order_by(PlatformAddress.id.desc()))).scalars().all()
+    return {
+        "items": [
+            {
+                "id": a.id,
+                "network": a.network,
+                "address": a.address,
+                "status": a.status,
+                "remark": a.remark,
+                "updated_by": a.updated_by,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            }
+            for a in rows
+        ]
+    }
+
+
+@router.post("/addresses", status_code=201)
+async def create_address(body: AddressIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
+    """新增平台收款地址（写操作审计）。"""
+    from sqlalchemy import select
+
+    _validate_address(body.network, body.address)
+    existing_active = (
+        await db.execute(
+            select(PlatformAddress.id).where(
+                PlatformAddress.network == body.network, PlatformAddress.status == "active"
+            )
+        )
+    ).scalars().all()
+    addr = PlatformAddress(
+        network=body.network,
+        address=body.address,
+        status="active",
+        remark=body.remark,
+        updated_by=admin["id"],
+    )
+    db.add(addr)
+    await db.commit()
+    await db.refresh(addr)
+    await AuditService(db).log(
+        actor_id=admin["id"], action="payment.address.create",
+        target_type="platform_address", target_id=str(addr.id),
+        before=None,
+        after={"network": addr.network, "address": addr.address},
+    )
+    return {
+        "id": addr.id,
+        "network": addr.network,
+        "address": addr.address,
+        "status": addr.status,
+        "remark": addr.remark,
+        "coexists_active": len(existing_active) > 0,
+    }
+
+
+@router.patch("/addresses/{address_id}")
+async def patch_address(address_id: int, body: AddressPatchIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
+    """启停用 / 改备注（写操作审计）。"""
+    addr = await db.get(PlatformAddress, address_id)
+    if addr is None:
+        raise NotFoundError("收款地址不存在")
+    if body.status is not None and body.status not in ("active", "inactive"):
+        raise ValidationError("status 必须为 active / inactive")
+    before = {"status": addr.status, "remark": addr.remark}
+    if body.status is not None:
+        addr.status = body.status
+    if body.remark is not None:
+        addr.remark = body.remark
+    addr.updated_by = admin["id"]
+    await db.commit()
+    await AuditService(db).log(
+        actor_id=admin["id"], action="payment.address.update",
+        target_type="platform_address", target_id=str(addr.id),
+        before=before, after={"status": addr.status, "remark": addr.remark},
+    )
+    return {"id": addr.id, "status": addr.status, "remark": addr.remark}
+
+
+@router.delete("/addresses/{address_id}")
+async def delete_address(address_id: int, db: DbDep = None, admin=Depends(require_admin)) -> dict:
+    """删除收款地址（写操作审计）。"""
+    addr = await db.get(PlatformAddress, address_id)
+    if addr is None:
+        raise NotFoundError("收款地址不存在")
+    before = {"network": addr.network, "address": addr.address}
+    await db.delete(addr)
+    await db.commit()
+    await AuditService(db).log(
+        actor_id=admin["id"], action="payment.address.delete",
+        target_type="platform_address", target_id=str(address_id),
+        before=before, after=None,
+    )
+    return {"ok": True, "id": address_id}
 
 
 @router.get("")

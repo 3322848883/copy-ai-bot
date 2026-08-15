@@ -50,7 +50,6 @@ async def submit_tx(order_id: int, body: SubmitTxIn, db: DbDep = None, user_id: 
 
 @router.get("/{order_id}")
 async def get_order(order_id: int, db: DbDep = None, user_id: int = Depends(get_current_user)) -> dict:
-    svc = PaymentService(db)
     order = await db.get(PaymentOrder, order_id)
     if order is None or order.user_id != user_id:
         raise PaymentError("订单不存在")

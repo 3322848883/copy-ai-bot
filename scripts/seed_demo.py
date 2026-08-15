@@ -12,7 +12,7 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///c:/Users/w6485/Desktop/AI 量�
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from api.models import (
     Trader, TraderProfile, Strategy, CopyBot, CopyOrder, PositionSnapshot,
-    Subscription, Invite, Reward, PaymentOrder, ApiKey,
+    Subscription, Invite, Reward, PaymentOrder, ApiKey, PlatformAddress,
 )
 from api.core.security import ApiKeyVault
 
@@ -136,6 +136,15 @@ async def main():
                 verifying_started_at=now - timedelta(days=i),
                 verifying_ends_at=(now + timedelta(hours=24)) if rstatus == "verifying" else None,
             ))
+
+        # ── 7. 平台收款地址（后台管理；支付校验读取 active 项）──
+        mock_addrs = [
+            ("trc20", "TQmqKjv7wv9kYp5qU2N5Jh8Z3sL7hX5wJw", "dev TRC-20 收款地址"),
+            ("bep20", "0x1111111111111111111111111111111111111111", "dev BEP-20 收款地址"),
+            ("erc20", "0x2222222222222222222222222222222222222222", "dev ERC-20 收款地址"),
+        ]
+        for net, addr, remark in mock_addrs:
+            db.add(PlatformAddress(network=net, address=addr, status="active", remark=remark, updated_by=10004))
 
         await db.commit()
 

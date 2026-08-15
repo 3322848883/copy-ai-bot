@@ -61,5 +61,10 @@ celery_app.conf.update(
             "task": "reward.scan_verifying",
             "schedule": 10 * 60,
         },
+        # ★ 订阅临期提醒（每小时扫描 72h/24h 窗口）
+        "reminder-subscription-expiring": {
+            "task": "reminder.subscription_expiring",
+            "schedule": 3600.0,
+        },
     },
 )

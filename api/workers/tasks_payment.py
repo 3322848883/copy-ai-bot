@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from api.core.config import get_settings
 from api.workers.celery_app import celery_app
 
 logger = logging.getLogger("signal-saas.workers.payment")
@@ -13,9 +12,6 @@ logger = logging.getLogger("signal-saas.workers.payment")
 @celery_app.task(name="payment.poll_sweep")
 def poll_payment_sweep() -> str:
     """扫全部 verifying/polling 订单逐个轮询（Celery Beat 每 2 分钟）。"""
-    settings = get_settings()
-    if settings.app_env != "dev":
-        raise NotImplementedError("生产环境由独立 worker 执行（真实 RPC）")
     try:
         asyncio.get_running_loop()
         raise RuntimeError("存在运行中的 loop，请 await poll_payment_sweep_async()")
@@ -51,10 +47,6 @@ async def poll_payment_sweep_async() -> str:
 @celery_app.task(name="payment.poll")
 def poll_payment(order_id: int) -> str:
     """轮询链上确认数；超限转 manual/timeout。"""
-    settings = get_settings()
-    if settings.app_env != "dev":
-        raise NotImplementedError("生产环境由独立 worker 执行（真实 RPC）")
-
     from api.db.session import get_session_factory
     from api.services.payment.service import PaymentService
 

@@ -40,16 +40,26 @@ services:
     build: .
     command: sh -c "alembic upgrade head && uvicorn api.main:app --host 0.0.0.0 --port 8000"
     environment:
-      APP_ENV: prod
+      APP_ENV: ${APP_ENV:-prod}
       DEBUG: "false"
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-prod}
-      VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      # ★ 生产密钥 fail-fast：缺失即启动失败（配合 config 校验）
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:?VAULT_KEY_HEX must be set}
       DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_saas
       REDIS_URL: redis://redis:6379/0
-      # ★ 邮件：prod 模式注册验证码经 mailhog 捕获（Web UI 8025 / SMTP 1025）
-      SMTP_HOST: mailhog
-      SMTP_PORT: "1025"
-      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      # ★ 邮件
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-no-reply@signal-saas.com}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      # ★ V1 上线白名单：仅 gate（其余 4 家官方适配器后续迭代接入）
+      ENABLED_EXCHANGES: ${ENABLED_EXCHANGES:-gate}
+      # ★ 链上支付 RPC（生产可换自建/付费节点）
+      TRON_RPC_URL: ${TRON_RPC_URL:-https://api.trongrid.io}
+      BSC_RPC_URL: ${BSC_RPC_URL:-https://bsc-dataseed.binance.org}
+      ETH_RPC_URL: ${ETH_RPC_URL:-https://eth.llamarpc.com}
       # ★ 真实采集 + 有头(xvfb 虚拟屏)：Gate Akamai 拦截 headless，必须 headful
       SCRAPER_REAL: "1"
       SCRAPER_HEADLESS: "false"
@@ -57,7 +67,7 @@ services:
       SIGNAL_SESSION_ENABLED: "true"
       SIGNAL_SESSION_HEADLESS: "false"
       SIGNAL_SESSION_DATA_DIR: /app/data/signal_session
-      SIGNAL_FOLLOWER_LEADER_IDS: '["32801","24264"]'
+      SIGNAL_FOLLOWER_LEADER_IDS: "${SIGNAL_FOLLOWER_LEADER_IDS:-[\"32801\",\"24264\"]}"
     depends_on:
       db:
         condition: service_healthy
@@ -75,15 +85,27 @@ services:
     image: ai-api:latest
     command: celery -A api.workers.celery_app:celery_app worker --loglevel=info
     environment:
-      APP_ENV: prod
+      APP_ENV: ${APP_ENV:-prod}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:?VAULT_KEY_HEX must be set}
+      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_saas
+      REDIS_URL: redis://redis:6379/0
+      # ★ 邮件（reminder 任务发邮件）
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-no-reply@signal-saas.com}
+      # ★ 链上支付 RPC（payment.poll 轮询）
+      TRON_RPC_URL: ${TRON_RPC_URL:-https://api.trongrid.io}
+      BSC_RPC_URL: ${BSC_RPC_URL:-https://bsc-dataseed.binance.org}
+      ETH_RPC_URL: ${ETH_RPC_URL:-https://eth.llamarpc.com}
       SCRAPER_REAL: "1"
       SCRAPER_HEADLESS: "false"
       SIGNAL_SESSION_ENABLED: "true"
       SIGNAL_SESSION_HEADLESS: "false"
       SIGNAL_SESSION_DATA_DIR: /app/data/signal_session
-      SIGNAL_FOLLOWER_LEADER_IDS: '["32801","24264"]'
-      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_saas
-      REDIS_URL: redis://redis:6379/0
+      SIGNAL_FOLLOWER_LEADER_IDS: "${SIGNAL_FOLLOWER_LEADER_IDS:-[\"32801\",\"24264\"]}"
     depends_on:
       db:
         condition: service_healthy
@@ -98,13 +120,18 @@ services:
     image: ai-api:latest
     command: celery -A api.workers.celery_app:celery_app beat --loglevel=info
     environment:
-      APP_ENV: prod
+      APP_ENV: ${APP_ENV:-prod}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:?VAULT_KEY_HEX must be set}
+      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_saas
+      REDIS_URL: redis://redis:6379/0
+      TRON_RPC_URL: ${TRON_RPC_URL:-https://api.trongrid.io}
+      BSC_RPC_URL: ${BSC_RPC_URL:-https://bsc-dataseed.binance.org}
+      ETH_RPC_URL: ${ETH_RPC_URL:-https://eth.llamarpc.com}
       SCRAPER_REAL: "1"
       SIGNAL_SESSION_ENABLED: "true"
       SIGNAL_SESSION_DATA_DIR: /app/data/signal_session
-      SIGNAL_FOLLOWER_LEADER_IDS: '["32801","24264"]'
-      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_saas
-      REDIS_URL: redis://redis:6379/0
+      SIGNAL_FOLLOWER_LEADER_IDS: "${SIGNAL_FOLLOWER_LEADER_IDS:-[\"32801\",\"24264\"]}"
     depends_on:
       db:
         condition: service_healthy
@@ -112,6 +139,26 @@ services:
         condition: service_healthy
     volumes:
       - ./data/signal_session:/app/data/signal_session
+    restart: unless-stopped
+
+  # ★ 信号事件消费者（独立进程：订阅 Redis signal.new → 派发跟单任务）
+  consumer:
+    build: .
+    image: ai-api:latest
+    command: python -m api.workers.consumer_signal
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:?VAULT_KEY_HEX must be set}
+      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_saas
+      REDIS_URL: redis://redis:6379/0
+      SCRAPER_REAL: "1"
+      SIGNAL_FOLLOWER_LEADER_IDS: "${SIGNAL_FOLLOWER_LEADER_IDS:-[\"32801\",\"24264\"]}"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   web:

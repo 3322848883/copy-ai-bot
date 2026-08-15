@@ -1,7 +1,7 @@
 # admin/auth 路由（M5 T5.1：后台登录，aud=admin 独立 JWT + RBAC）
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from api.core.config import get_settings

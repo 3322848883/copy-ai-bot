@@ -20,3 +20,8 @@ alembic==1.19.1
 psycopg2-binary==2.9.12
 # 真实信号源采集（M2 生产：Gate 带单广场浏览器采集）
 playwright==1.57.0
+# 链上支付（M4 T4.8：三链 USDT 确认数校验）
+tronpy>=0.4
+web3>=6.15
+# 监控（M6 T6.2：/metrics Prometheus 文本格式）
+prometheus-client>=0.20

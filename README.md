@@ -128,12 +128,14 @@ npm run dev
 ## 测试与验证
 
 ```bash
-# 后端单元测试
+# 后端（依赖 dev 工具链：pip install -e "api[dev]"）
 cd api && python -m pytest tests/ -v
 
 # 前端类型检查
 cd web-ui && npx tsc --noEmit
 ```
+
+CI（GitHub Actions `.github/workflows/ci.yml`）：push/PR 到 main 自动跑 ruff（E9/F 硬错误）+ pytest + tsc + build。
 
 端到端验收记录见 `docs/2026-08-12-signal-saas-design-gap-analysis.md`（演示 HTML 与真实实现差异核对）、`docs/2026-08-13-celery-full-link-verification.md`（Celery 全链路）。
 

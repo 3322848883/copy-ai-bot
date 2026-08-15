@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from api.core.errors import NotFoundError, ValidationError
+from api.core.errors import NotFoundError
 from api.deps import DbDep, get_current_admin, require_admin
 from api.models.billing import PaymentOrder, Reward
 from api.models.user import User

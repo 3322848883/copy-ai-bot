@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.models.billing import Subscription
 from api.models.bot import CopyBot, CopyOrder
 from api.models.signal import Strategy
 from api.models.user import ApiKey

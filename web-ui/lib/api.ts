@@ -14,10 +14,19 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json", ...(options.headers as Record<string, string> || {}) };
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const doFetch = async (): Promise<Response> => {
+    const headers: Record<string, string> = { "Content-Type": "application/json", ...(options.headers as Record<string, string> || {}) };
+    // 生产（同域 nginx 反代）：httpOnly cookie 自动携带；dev：Authorization header 兜底
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return fetch(`${API_BASE}${path}`, { ...options, headers, cache: "no-store", credentials: "include" });
+  };
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers, cache: "no-store" });
+  let res = await doFetch();
+  // 401 自动续期：非登录/刷新接口失败 → 尝试 refresh（cookie/body）→ 重试一次
+  if (res.status === 401 && !path.startsWith("/v1/auth/") && !path.startsWith("/admin/")) {
+    const ok = await tryRefresh();
+    if (ok) res = await doFetch();
+  }
 
   if (!res.ok) {
     let code = "unknown";
@@ -34,6 +43,29 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}, token
     throw new ApiError(res.status, code, message);
   }
   return res.json() as Promise<T>;
+}
+
+/** 尝试刷新令牌（生产 httpOnly cookie 自动携带；dev 用 localStorage refresh 兜底）。 */
+async function tryRefresh(): Promise<boolean> {
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const body: Record<string, string> = {};
+    const rt = tokenStore.refresh;
+    if (rt) body.refresh_token = rt;
+    const res = await fetch(`${API_BASE}/v1/auth/refresh`, {
+      method: "POST", headers, body: JSON.stringify(body), credentials: "include", cache: "no-store",
+    });
+    if (!res.ok) {
+      tokenStore.clear();
+      if (typeof window !== "undefined") window.location.href = "/login";
+      return false;
+    }
+    const data = await res.json();
+    if (data.access_token) tokenStore.set(data);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Token 存取（localStorage，生产换 httpOnly cookie） */
@@ -80,5 +112,15 @@ export const tokenStore = {
     localStorage.removeItem("ss_access");
     localStorage.removeItem("ss_refresh");
     localStorage.removeItem("ss_risk");
+  },
+  /** 登出：清 httpOnly cookie（后端）+ 本地 token + 跳登录页。 */
+  async logout() {
+    try {
+      await fetch(`${API_BASE}/v1/auth/logout`, { method: "POST", credentials: "include", cache: "no-store" });
+    } catch {
+      /* ignore */
+    }
+    this.clear();
+    if (typeof window !== "undefined") window.location.href = "/login";
   },
 };

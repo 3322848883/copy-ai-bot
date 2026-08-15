@@ -2,12 +2,10 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.errors import NotFoundError, ValidationError
 from api.models.billing import Reward
 
 logger = logging.getLogger("signal-saas.ledger")

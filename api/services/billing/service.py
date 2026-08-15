@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.errors import ConflictError, NotFoundError, ValidationError
+from api.core.errors import ConflictError, NotFoundError
 from api.models.billing import PaymentOrder, Subscription
 
 logger = logging.getLogger("signal-saas.billing")
