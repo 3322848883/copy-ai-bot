@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>signal·admin 提现审核</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   signal-saas 后台 提现审核 — 成品实现
+   待审核列表 · 通过填 TxHash / 驳回填原因 / 退还申请
+   高危用户联动 48h 核实 · 审计留痕
+   ═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --ftx-cyan-300: #40ffc5; --ftx-cyan-400: #00d4aa; --ftx-cyan-500: #00b894; --ftx-cyan-600: #009a7a;
+  --ftx-success-300: #52d886; --ftx-success-400: #28c464; --ftx-success-500: #16a34a;
+  --ftx-warning-400: #facc15; --ftx-warning-500: #eab308;
+  --ftx-error-400: #f87171; --ftx-error-500: #ef4444; --ftx-error-600: #dc2626;
+  --ftx-info-400: #60a5fa; --ftx-info-500: #3b82f6;
+  --ftx-text-primary: #f1f5f9; --ftx-text-secondary: #94a3b8; --ftx-text-tertiary: #64748b; --ftx-text-disabled: #475569;
+  --ftx-surface-base: #0a1628; --ftx-surface-raised: #111d35; --ftx-surface-overlay: #162038;
+  --ftx-surface-glass: rgba(22,32,56,0.85); --ftx-surface-hover: rgba(30,41,59,0.5);
+  --ftx-surface-border: rgba(51,65,85,0.6); --ftx-surface-border-strong: rgba(100,116,139,0.4);
+  --ftx-surface-sunken: #070e1a;
+  --bg: var(--ftx-surface-base); --fg: var(--ftx-text-primary); --muted: var(--ftx-text-secondary);
+  --rule: var(--ftx-surface-border); --accent: var(--ftx-cyan-400); --accent-hover: var(--ftx-cyan-500);
+  --surface: var(--ftx-surface-raised); --surface-dim: var(--ftx-surface-sunken);
+  --admin-red: #ef4444;
+  --font-display: 'Space Grotesk', sans-serif; --font-body: 'Space Grotesk', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+  --font-size-body: 15px; --font-size-caption: 12px; --font-size-mono: 14px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --size-button-height: 36px;
+  --radius-xs: 2px; --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-pill: 9999px;
+  --shadow-2: 0 4px 8px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-3: 0 8px 24px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.25);
+  --shadow-4: 0 16px 48px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.3);
+  --signal-grid: rgba(0,212,170,0.05);
+  --nav-height: 56px;
+  --sidebar-w: 240px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-body);
+  line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-image:
+    radial-gradient(ellipse 55% 40% at 12% -8%, rgba(239,68,68,0.05), transparent 60%),
+    radial-gradient(ellipse 45% 35% at 88% 4%, rgba(43,108,230,0.08), transparent 62%),
+    radial-gradient(ellipse 40% 30% at 92% 90%, rgba(0,212,170,0.04), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* 信号宇宙背景 */
+.bg-aurora { position: fixed; inset: -20%; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(circle 34% at 26% 20%, rgba(239,68,68,0.06), transparent 62%),
+    radial-gradient(circle 28% at 76% 34%, rgba(43,108,230,0.08), transparent 62%),
+    radial-gradient(circle 22% at 60% 84%, rgba(0,212,170,0.05), transparent 58%);
+  filter: blur(46px); animation: auroraDrift 28s ease-in-out infinite alternate;
+}
+@keyframes auroraDrift { 0% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(2%,-1.5%,0) scale(1.05); } 100% { transform: translate3d(-1.5%,2%,0) scale(1.03); } }
+.bg-grid { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: linear-gradient(rgba(239,68,68,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(239,68,68,0.035) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+}
+.bg-dots { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: radial-gradient(rgba(239,68,68,0.35) 1px, transparent 1.6px);
+  background-size: 52px 52px; background-position: 26px 26px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  animation: dotsBreathe 5.5s ease-in-out infinite;
+}
+@keyframes dotsBreathe { 0%,100% { opacity: .12; } 50% { opacity: .45; } }
+.bg-particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.bg-particles i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: rgba(239,68,68,0.6); box-shadow: 0 0 8px rgba(239,68,68,0.4); opacity: 0; animation: floatUp var(--dur,16s) linear var(--delay,0s) infinite; }
+@keyframes floatUp { 0% { transform: translateY(105vh) translateX(0); opacity: 0; } 8% { opacity: .5; } 82% { opacity: .25; } 100% { transform: translateY(-4vh) translateX(var(--drift,14px)); opacity: 0; } }
+.bg-sweep { position: fixed; left: 0; right: 0; top: 0; height: 180px; pointer-events: none; z-index: 0;
+  background: linear-gradient(180deg, transparent, rgba(239,68,68,0.03) 45%, rgba(239,68,68,0.06) 50%, rgba(239,68,68,0.03) 55%, transparent);
+  animation: sweepDown 12s linear infinite;
+}
+@keyframes sweepDown { 0% { transform: translateY(-180px); } 100% { transform: translateY(112vh); } }
+.bg-noise { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+}
+
+/* 顶栏 */
+.topbar { position: fixed; top: 0; left: 0; right: 0; height: var(--nav-height); z-index: 200; display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-5); backdrop-filter: blur(16px); background: rgba(10,22,40,0.9); border-bottom: 1px solid var(--rule); }
+.brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 700; font-size: 16px; text-decoration: none; color: var(--fg); }
+.brand-mark { width: 28px; height: 28px; border-radius: var(--radius-sm); display: grid; place-items: center; background: linear-gradient(135deg, var(--admin-red), #b91c1c); }
+.brand-mark svg { width: 16px; height: 16px; }
+.admin-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: var(--radius-xs); background: rgba(239,68,68,0.12); color: var(--admin-red); border: 1px solid rgba(239,68,68,0.35); font-size: 9px; font-weight: 600; }
+.top-search { margin-left: var(--space-5); flex: 1; max-width: 380px; position: relative; }
+.top-search input { width: 100%; height: 32px; background: var(--surface-dim); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0 var(--space-3) 0 30px; color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-caption); }
+.top-search .s-ic { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--ftx-text-tertiary); }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+.audit-indicator { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--ftx-success-400); font-family: var(--font-mono); }
+.audit-indicator::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--ftx-success-400); box-shadow: 0 0 6px var(--ftx-success-400); }
+.admin-chip { display: flex; align-items: center; gap: var(--space-2); padding: 3px 10px 3px 3px; border: 1px solid var(--rule); border-radius: var(--radius-pill); }
+.admin-avatar { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, var(--admin-red), #b91c1c); display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; }
+.admin-name { font-size: var(--font-size-caption); font-family: var(--font-mono); }
+
+/* 布局 */
+.shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; padding-top: var(--nav-height); position: relative; z-index: 1; }
+.sidebar { position: fixed; top: var(--nav-height); bottom: 0; left: 0; width: var(--sidebar-w); z-index: 100; display: flex; flex-direction: column; padding: var(--space-4) var(--space-3); gap: 2px; border-right: 1px solid var(--rule); background: rgba(10,22,40,0.6); backdrop-filter: blur(12px); }
+.side-group { padding: var(--space-2) var(--space-3); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ftx-text-tertiary); margin-top: var(--space-2); }
+.side-item { display: flex; align-items: center; gap: var(--space-3); padding: 9px var(--space-3); border-radius: var(--radius-sm); color: var(--muted); text-decoration: none; font-size: var(--font-size-caption); transition: all .15s; border-left: 2px solid transparent; }
+.side-item:hover { background: var(--ftx-surface-hover); color: var(--fg); }
+.side-item.active { background: rgba(239,68,68,0.1); color: var(--admin-red); border-left-color: var(--admin-red); }
+.side-ic { width: 18px; font-size: 12px; text-align: center; flex-shrink: 0; }
+.side-badge { margin-left: auto; background: var(--admin-red); color: #fff; font-size: 9px; font-family: var(--font-mono); padding: 1px 6px; border-radius: var(--radius-pill); }
+.side-badge.warn { background: var(--ftx-warning-400); color: #332601; }
+.side-bottom { margin-top: auto; padding: var(--space-3); border-top: 1px solid var(--rule); font-size: 9px; color: var(--ftx-text-tertiary); font-family: var(--font-mono); }
+
+.main { grid-column: 2; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+
+/* 页头 */
+.page-hdr { display: flex; align-items: flex-end; justify-content: space-between; }
+.page-eyebrow { font-size: 10px; font-family: var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--admin-red); margin-bottom: var(--space-1); }
+.page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.page-title small { font-size: var(--font-size-caption); color: var(--muted); font-weight: 400; margin-left: var(--space-3); font-family: var(--font-mono); }
+
+/* KPI 条 */
+.kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-4); }
+.kpi { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-4); position: relative; overflow: hidden; }
+.kpi::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--admin-red), transparent 70%); }
+.kpi-l { font-size: 10px; color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; }
+.kpi-v { font-family: var(--font-display); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.kpi-s { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+/* 面板 */
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-5); }
+.panel-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-4); }
+.panel-title { font-size: var(--font-size-h4); font-weight: 600; display: flex; align-items: center; gap: var(--space-2); }
+.panel-title .sec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--admin-red); box-shadow: 0 0 8px var(--admin-red); }
+.panel-sub { font-size: 10px; color: var(--ftx-text-tertiary); font-family: var(--font-mono); }
+
+/* 表格 */
+.ftx-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-caption); }
+.ftx-table thead th { height: 34px; padding: 0 var(--space-3); text-align: left; font-weight: 600; font-size: var(--font-size-caption); color: var(--muted); background: var(--surface-dim); border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.ftx-table tbody td { height: 46px; padding: 0 var(--space-3); border-bottom: 1px solid var(--ftx-surface-border); white-space: nowrap; }
+.ftx-table tbody tr { transition: background .12s; cursor: pointer; }
+.ftx-table tbody tr:hover { background: var(--ftx-surface-hover); }
+.ftx-table td.num { text-align: right; font-family: var(--font-mono); font-size: var(--font-size-mono); font-variant-numeric: tabular-nums; }
+.sub-ref { font-size: 10px; color: var(--ftx-text-tertiary); }
+
+/* 标签 */
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: var(--radius-pill); font-size: var(--font-size-caption); font-weight: 500; white-space: nowrap; }
+.badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.badge-ok { background: rgba(22,163,74,0.15); color: var(--ftx-success-400); }
+.badge-warn { background: rgba(234,179,8,0.15); color: var(--ftx-warning-400); }
+.badge-err { background: rgba(239,68,68,0.15); color: var(--ftx-error-400); }
+.badge-info { background: rgba(59,130,246,0.15); color: var(--ftx-info-400); }
+.badge-muted { background: rgba(100,116,139,0.15); color: var(--ftx-text-secondary); }
+.risk-tag { font-size: 10px; padding: 1px 8px; border-radius: var(--radius-xs); font-family: var(--font-mono); }
+.risk-high { background: rgba(239,68,68,0.12); color: var(--ftx-error-400); }
+.risk-normal { background: rgba(22,163,74,0.12); color: var(--ftx-success-400); }
+
+/* 抽屉 */
+.drawer-overlay { position: fixed; inset: 0; background: rgba(7,14,26,0.6); z-index: 400; display: none; }
+.drawer-overlay.open { display: block; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 480px; max-width: 94vw; z-index: 500; background: var(--ftx-surface-overlay); border-left: 1px solid var(--rule); box-shadow: var(--shadow-4); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); overflow-y: auto; transform: translateX(100%); transition: transform .25s ease; }
+.drawer.open { transform: translateX(0); }
+.dr-hdr { display: flex; justify-content: space-between; align-items: center; }
+.dr-title { font-size: var(--font-size-h4); font-weight: 600; }
+.dr-close { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; }
+.dr-section { display: flex; flex-direction: column; gap: var(--space-2); }
+.dr-label { font-size: 10px; color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; }
+.dr-row { display: flex; justify-content: space-between; padding: var(--space-2) 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: var(--font-size-caption); }
+.dr-row .k { color: var(--muted); }
+.dr-row .v { font-family: var(--font-mono); }
+.dr-actions { display: flex; gap: var(--space-3); margin-top: auto; flex-wrap: wrap; }
+.input { height: var(--size-button-height); background: var(--surface-dim); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0 var(--space-3); color: var(--fg); font-family: var(--font-mono); font-size: var(--font-size-caption); width: 100%; }
+.input:focus { outline: none; border-color: var(--admin-red); box-shadow: 0 0 0 3px rgba(239,68,68,0.12); }
+textarea.input { height: auto; padding: var(--space-3); min-height: 70px; resize: vertical; font-family: var(--font-body); }
+.btn { display: inline-flex; align-items: center; justify-content: center; border: none; cursor: pointer; font-family: var(--font-body); font-size: var(--font-size-body); white-space: nowrap; min-width: var(--size-button-height); transition: all .18s; flex-shrink: 0; }
+.btn-primary { background: var(--accent); color: #06281f; border-radius: var(--radius-sm); height: var(--size-button-height); font-weight: 600; }
+.btn-secondary { background: transparent; border: 1px solid var(--rule); color: var(--fg); border-radius: var(--radius-sm); height: var(--size-button-height); }
+.btn-secondary:hover { background: var(--ftx-surface-hover); }
+.btn-danger { background: var(--ftx-error-600); color: #fff; border-radius: var(--radius-sm); height: var(--size-button-height); font-weight: 600; }
+.btn-warn { background: var(--ftx-warning-400); color: #332601; border-radius: var(--radius-sm); height: var(--size-button-height); font-weight: 600; }
+.btn-sm { height: 28px; font-size: var(--font-size-caption); padding: 0 var(--space-3); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Toast */
+.toast-stack { position: fixed; top: calc(var(--nav-height) + var(--space-4)); right: var(--space-5); z-index: 1000; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast { min-width: 280px; max-width: 360px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--ftx-surface-overlay); border: 1px solid var(--rule); box-shadow: var(--shadow-4); display: flex; align-items: center; gap: var(--space-3); animation: toastIn .25s ease; backdrop-filter: blur(16px); font-size: var(--font-size-caption); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+.toast.success { border-color: rgba(22,163,74,0.4); } .toast.success .t-ic { color: var(--ftx-success-400); }
+.toast.warn { border-color: rgba(234,179,8,0.4); } .toast.warn .t-ic { color: var(--ftx-warning-400); }
+.toast.error { border-color: rgba(239,68,68,0.4); } .toast.error .t-ic { color: var(--ftx-error-400); }
+.t-ic { font-size: 14px; flex-shrink: 0; }
+.t-close { margin-left: auto; background: none; border: none; color: var(--ftx-text-tertiary); cursor: pointer; font-size: 12px; }
+
+@media (max-width: 1080px) { .sidebar { width: 200px; } .shell { grid-template-columns: 200px 1fr; } }
+</style>
+</head>
+<body>
+<!-- 信号宇宙背景层 -->
+<div class="bg-aurora"></div><div class="bg-grid"></div><div class="bg-dots"></div><div class="bg-sweep"></div><div class="bg-noise"></div>
+<div class="bg-particles">
+  <i style="left:6%;--dur:17s;--delay:0s;--drift:14px"></i><i style="left:14%;--dur:23s;--delay:4s;--drift:-12px"></i><i style="left:23%;--dur:19s;--delay:8s;--drift:10px"></i><i style="left:32%;--dur:25s;--delay:1s;--drift:-16px"></i><i style="left:41%;--dur:16s;--delay:6s;--drift:12px"></i><i style="left:52%;--dur:21s;--delay:11s;--drift:-10px"></i><i style="left:61%;--dur:18s;--delay:2s;--drift:16px"></i><i style="left:70%;--dur:24s;--delay:9s;--drift:-14px"></i><i style="left:79%;--dur:20s;--delay:5s;--drift:10px"></i><i style="left:88%;--dur:22s;--delay:12s;--drift:-12px"></i><i style="left:94%;--dur:17s;--delay:7s;--drift:8px"></i><i style="left:10%;--dur:26s;--delay:14s;--drift:-8px"></i>
+</div>
+<div class="toast-stack" id="toastStack"></div>
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <a class="brand" href="2026-08-12-signal-saas-admin-dashboard.html">
+    <div class="brand-mark"><svg viewBox="0 0 16 16" fill="none"><path d="M1 9h3l2-6 3 10 2-5h4" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    signal·admin <span class="admin-badge">ADMIN</span>
+  </a>
+  <div class="top-search"><span class="s-ic">⌕</span><input placeholder="全局搜索：用户 / 订单 / TxHash…"></div>
+  <div class="top-right">
+    <span class="audit-indicator">审计日志开启</span>
+    <div class="admin-chip"><div class="admin-avatar">A</div><span class="admin-name">admin01</span></div>
+  </div>
+</header>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="side-group">运营</div>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-dashboard.html"><span class="side-ic">◈</span>数据概览</a>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-users.html"><span class="side-ic">▣</span>用户管理</a>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-signals.html"><span class="side-ic">◈</span>信号源审核 <span class="side-badge warn">5</span></a>
+    <a class="side-item" href="#"><span class="side-ic">▤</span>跟单订单</a>
+    <a class="side-item" href="#"><span class="side-ic">◎</span>支付记录 <span class="side-badge">2</span></a>
+    <div class="side-group">财务</div>
+    <a class="side-item" href="#"><span class="side-ic">⇄</span>邀请奖励</a>
+    <a class="side-item" href="#"><span class="side-ic">≋</span>钱包账本</a>
+    <a class="side-item active" href="#"><span class="side-ic">↗</span>提现审核 <span class="side-badge">3</span></a>
+    <div class="side-group">风控</div>
+    <a class="side-item" href="#"><span class="side-ic">◉</span>风控中心 <span class="side-badge warn">1</span></a>
+    <a class="side-item" href="#"><span class="side-ic">☰</span>审计日志</a>
+    <div class="side-bottom">signal·admin v1.0<br>JWT aud=admin</div>
+  </aside>
+
+  <main class="main">
+    <!-- 页头 -->
+    <div class="page-hdr">
+      <div>
+        <div class="page-eyebrow">WITHDRAWAL REVIEW · 提现审核</div>
+        <h1 class="page-title">提现审核<small>3 待审核 · 人工审核 + 链上打款</small></h1>
+      </div>
+    </div>
+
+    <!-- KPI -->
+    <div class="kpi-strip">
+      <div class="kpi"><div class="kpi-l">待审核</div><div class="kpi-v">3</div><div class="kpi-s">笔 · 共 180.5 USDT</div></div>
+      <div class="kpi"><div class="kpi-l">今日已通过</div><div class="kpi-v">5</div><div class="kpi-s">笔 · 已填 TxHash</div></div>
+      <div class="kpi"><div class="kpi-l">今日已驳回</div><div class="kpi-v">1</div><div class="kpi-s">笔 · 资金已退回</div></div>
+      <div class="kpi"><div class="kpi-l">高危标记</div><div class="kpi-v" style="color:var(--ftx-error-400)">1</div><div class="kpi-s">笔 · 联动 48h 核实（G11）</div></div>
+    </div>
+
+    <!-- 待审核列表 -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <div class="panel-title"><span class="sec-dot"></span>待审核列表</div>
+        <span class="panel-sub">/admin/v1/withdrawals · approve/reject/fill-tx/retry/refund</span>
+      </div>
+      <table class="ftx-table">
+        <thead>
+          <tr><th>单号</th><th>用户</th><th class="num">金额</th><th>网络</th><th>风控</th><th>提交时间</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <tr onclick="openDetail('W20260812001','user***08@','100.00','TRC-20','高危')">
+            <td style="font-family:var(--font-mono)">#W20260812001</td><td style="font-family:var(--font-mono)">user***08@</td>
+            <td class="num">100.00</td><td>TRC-20</td>
+            <td><span class="risk-tag risk-high">高危</span></td>
+            <td class="sub-ref">08-12 14:20</td>
+            <td><span class="btn btn-primary btn-sm" onclick="event.stopPropagation();openDetail('W20260812001','user***08@','100.00','TRC-20','高危')">审核</span></td>
+          </tr>
+          <tr onclick="openDetail('W20260812002','user***15@','50.50','BEP-20','正常')">
+            <td style="font-family:var(--font-mono)">#W20260812002</td><td style="font-family:var(--font-mono)">user***15@</td>
+            <td class="num">50.50</td><td>BEP-20</td>
+            <td><span class="risk-tag risk-normal">正常</span></td>
+            <td class="sub-ref">08-12 13:45</td>
+            <td><span class="btn btn-primary btn-sm" onclick="event.stopPropagation();openDetail('W20260812002','user***15@','50.50','BEP-20','正常')">审核</span></td>
+          </tr>
+          <tr onclick="openDetail('W20260812003','user***22@','30.00','TRC-20','正常')">
+            <td style="font-family:var(--font-mono)">#W20260812003</td><td style="font-family:var(--font-mono)">user***22@</td>
+            <td class="num">30.00</td><td>TRC-20</td>
+            <td><span class="risk-tag risk-normal">正常</span></td>
+            <td class="sub-ref">08-12 12:10</td>
+            <td><span class="btn btn-primary btn-sm" onclick="event.stopPropagation();openDetail('W20260812003','user***22@','30.00','TRC-20','正常')">审核</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 最近处理 -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <div class="panel-title"><span class="sec-dot"></span>最近处理记录</div>
+      </div>
+      <table class="ftx-table">
+        <thead>
+          <tr><th>单号</th><th class="num">金额</th><th>状态</th><th>处理人</th><th>备注</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-family:var(--font-mono)">#W20260811001</td><td class="num">45.50</td>
+            <td><span class="badge badge-ok">已打款</span></td><td class="sub-ref">reviewer02</td>
+            <td class="sub-ref">TxHash：<span style="color:var(--accent)">9f3a…82b1</span></td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono)">#W20260811002</td><td class="num">50.00</td>
+            <td><span class="badge badge-warn">已驳回</span></td><td class="sub-ref">reviewer02</td>
+            <td class="sub-ref" style="color:var(--ftx-error-400)">地址与实名不符 · 资金已退回</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono)">#W20260810001</td><td class="num">30.00</td>
+            <td><span class="badge badge-muted">已退还</span></td><td class="sub-ref">admin01</td>
+            <td class="sub-ref">用户申请取消 · 退还至可提现余额</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- 审核抽屉 -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="closeDetail()"></div>
+<div class="drawer" id="wdDrawer">
+  <div class="dr-hdr">
+    <div class="dr-title" id="wdNo">#W20260812001</div>
+    <button class="dr-close" onclick="closeDetail()">✕</button>
+  </div>
+  <div><span class="badge badge-warn">待审核</span> <span id="wdRisk" class="risk-tag risk-high">高危</span></div>
+
+  <div class="dr-section">
+    <div class="dr-label">申请信息</div>
+    <div class="dr-row"><span class="k">用户</span><span class="v" id="wdUser">user***08@</span></div>
+    <div class="dr-row"><span class="k">提现金额</span><span class="v" id="wdAmount">100.00 USDT</span></div>
+    <div class="dr-row"><span class="k">手续费</span><span class="v">1.00 USDT</span></div>
+    <div class="dr-row"><span class="k">实际到账</span><span class="v" style="color:var(--ftx-success-400)">99.00 USDT</span></div>
+    <div class="dr-row"><span class="k">网络</span><span class="v" id="wdNet">TRC-20</span></div>
+    <div class="dr-row"><span class="k">收款地址</span><span class="v">TX1a…bc34</span></div>
+    <div class="dr-row"><span class="k">提交时间</span><span class="v">2026-08-12 14:20</span></div>
+  </div>
+
+  <div class="dr-section">
+    <div class="dr-label">自动校验</div>
+    <div class="dr-row"><span class="k">可提现余额充足</span><span class="v" style="color:var(--ftx-success-400)">✓ 通过</span></div>
+    <div class="dr-row"><span class="k">地址格式</span><span class="v" style="color:var(--ftx-success-400)">✓ 通过</span></div>
+    <div class="dr-row"><span class="k">实名一致</span><span class="v" style="color:var(--ftx-success-400)">✓ 通过</span></div>
+    <div class="dr-row"><span class="k">风控检查</span><span class="v" style="color:var(--ftx-error-400)" id="wdRiskVal">⚠ 高危 · 48h 核实中（G11）</span></div>
+  </div>
+
+  <!-- 操作区 -->
+  <div class="dr-section">
+    <div class="dr-label">审核操作</div>
+    <div class="field" style="display:flex;flex-direction:column;gap:var(--space-2)">
+      <div id="txField" style="display:flex;flex-direction:column;gap:var(--space-2)">
+        <label style="font-size:var(--font-size-caption);color:var(--muted)">通过后填写交易哈希 TxHash</label>
+        <input class="input" id="txHash" placeholder="9f 或 0x 开头的链上交易哈希" oninput="checkTx()">
+      </div>
+      <div id="rejectField" style="display:none;flex-direction:column;gap:var(--space-2)">
+        <label style="font-size:var(--font-size-caption);color:var(--muted)">驳回原因（用户可见）</label>
+        <textarea class="input" id="rejectReason" placeholder="例：收款地址与实名不符，请重新提交"></textarea>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--ftx-text-tertiary)">提示：高危用户建议暂缓打款，待 48h 核实通过后再操作</div>
+  </div>
+
+  <div class="dr-actions">
+    <button class="btn btn-secondary" style="flex:1" onclick="toggleMode('reject')" id="modeRejectBtn">驳回</button>
+    <button class="btn btn-warn" style="flex:1" onclick="doRefund()">退还申请</button>
+    <button class="btn btn-primary" style="flex:1" id="approveBtn" onclick="doApprove()">通过并打款</button>
+  </div>
+</div>
+
+<script>
+let current = { no: '', risk: '正常' };
+
+function openDetail(no, user, amount, net, risk) {
+  current = { no, risk };
+  document.getElementById('wdNo').textContent = '#' + no;
+  document.getElementById('wdUser').textContent = user;
+  document.getElementById('wdAmount').textContent = amount + ' USDT';
+  document.getElementById('wdNet').textContent = net;
+  document.getElementById('wdRisk').textContent = risk;
+  document.getElementById('wdRisk').className = risk === '高危' ? 'risk-tag risk-high' : 'risk-tag risk-normal';
+  document.getElementById('wdRiskVal').textContent = risk === '高危' ? '⚠ 高危 · 48h 核实中（G11）' : '✓ 正常';
+  document.getElementById('wdRiskVal').style.color = risk === '高危' ? 'var(--ftx-error-400)' : 'var(--ftx-success-400)';
+  // 重置操作区
+  document.getElementById('txField').style.display = 'flex';
+  document.getElementById('rejectField').style.display = 'none';
+  document.getElementById('txHash').value = '';
+  document.getElementById('rejectReason').value = '';
+  document.getElementById('approveBtn').textContent = '通过并打款';
+  document.getElementById('modeRejectBtn').textContent = '驳回';
+  document.getElementById('drawerOverlay').classList.add('open');
+  document.getElementById('wdDrawer').classList.add('open');
+}
+function closeDetail() {
+  document.getElementById('drawerOverlay').classList.remove('open');
+  document.getElementById('wdDrawer').classList.remove('open');
+}
+
+/* 驳回/通过模式切换 */
+function toggleMode(mode) {
+  if (mode === 'reject') {
+    const txF = document.getElementById('txField');
+    const rjF = document.getElementById('rejectField');
+    if (rjF.style.display === 'flex') {
+      rjF.style.display = 'none';
+      txF.style.display = 'flex';
+      document.getElementById('approveBtn').textContent = '通过并打款';
+      document.getElementById('modeRejectBtn').textContent = '驳回';
+    } else {
+      txF.style.display = 'none';
+      rjF.style.display = 'flex';
+      document.getElementById('approveBtn').textContent = '确认驳回';
+      document.getElementById('modeRejectBtn').textContent = '改为通过';
+    }
+  }
+}
+
+/* 通过 */
+function checkTx() {
+  const v = document.getElementById('txHash').value.trim();
+  const ok = /^(0x[0-9a-fA-F]{40,}|[0-9a-fA-F]{64})$/.test(v);
+  if (!v) { document.getElementById('approveBtn').disabled = false; return; }
+  if (current.risk === '高危' && !document.getElementById('txHash').value) return;
+  document.getElementById('approveBtn').disabled = !ok;
+}
+function doApprove() {
+  const btn = document.getElementById('approveBtn');
+  if (btn.textContent === '确认驳回') {
+    const reason = document.getElementById('rejectReason').value.trim();
+    if (!reason) { showToast('warn', '驳回必须填写原因'); return; }
+    closeDetail();
+    showToast('warn', `已驳回 #${current.no} · 原因已通知用户 · 资金退回可提现余额 · 审计留痕`);
+    return;
+  }
+  const tx = document.getElementById('txHash').value.trim();
+  if (current.risk === '高危') {
+    showToast('error', '高危用户 48h 核实未通过，暂缓打款（G11）');
+    return;
+  }
+  if (!tx) { showToast('warn', '请填写 TxHash 后打款'); return; }
+  closeDetail();
+  showToast('success', `已通过 #${current.no} · TxHash 已记录 · 链上打款中 · 审计留痕`);
+}
+
+/* 退还 */
+function doRefund() {
+  closeDetail();
+  showToast('warn', `已退还申请 #${current.no} · 资金回退至可提现余额 · 审计留痕`);
+}
+
+/* Toast */
+function showToast(type, msg) {
+  const stack = document.getElementById('toastStack');
+  const icons = { success: '✓', warn: '!', error: '✕' };
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span class="t-ic">${icons[type]}</span><span>${msg}</span><button class="t-close" onclick="this.parentElement.remove()">✕</button>`;
+  stack.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3200);
+}
+</script>
+</body>
+</html>

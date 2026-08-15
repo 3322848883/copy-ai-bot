@@ -1,0 +1,55 @@
+{
+  "created_at": "2026-08-13",
+  "note": "API 自动化阶段间共享状态",
+  "trader_id": 7,
+  "trader_external_id": "e2e_trader_1786616899",
+  "userA_email": "e2e_a_1786616900@t.com",
+  "userA_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1MyIsImF1ZCI6IndlYiIsImlhdCI6MTc4NjYxNjkwMSwiZXhwIjoxNzg2NzAzMzAxLCJ0eXBlIjoiYWNjZXNzIn0.oS699J4LE7nQYtblCRSKZB7nJFHIj9TIHY79mHTsdKM",
+  "userB_email": "e2e_b_1786616900@t.com",
+  "userB_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NCIsImF1ZCI6IndlYiIsImlhdCI6MTc4NjYxNjk2NywiZXhwIjoxNzg2NzAzMzY3LCJ0eXBlIjoiYWNjZXNzIn0.ImVnqGi7FbLgKoT9qOKa4-k0ZJzXm-aD-EXPw7zLEsw",
+  "userC_email": "e2e_c_1786616900@t.com",
+  "userC_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NSIsImF1ZCI6IndlYiIsImlhdCI6MTc4NjYxNzAzMiwiZXhwIjoxNzg2NzAzNDMyLCJ0eXBlIjoiYWNjZXNzIn0.wzxhKzLi2po4iSuNUkQmlTpvuoCoxIlhZOxQ_67igAE",
+  "userA_exchange": "gate",
+  "userA_invite_code": "IWUXXH",
+  "g27_code": "E2E17099",
+  "apikey_gate_id": 8,
+  "apikey_binance_id": 9,
+  "userC_id": 55,
+  "strategy_id": 4,
+  "orderA_id": 19,
+  "orderB_id": 20,
+  "bot_id": 4,
+  "userA_id": 53,
+  "userB_id": 54,
+  "withdrawal_id": 6,
+  "ux_strategy_id": 5,
+  "ux_strategy_name": "稳健趋势带单员",
+  "ux_trader_id": 8,
+  "ux_admin_email": "e2e_docker_admin@t.com",
+  "ux_admin_pass": "E2eAdmin!2026",
+  "ux_ts": 1786617733,
+  "real_strategies": [
+    {
+      "strategy_id": 6,
+      "trader_id": 13,
+      "name": "爱你每一天007",
+      "trader_external": "31875"
+    },
+    {
+      "strategy_id": 7,
+      "trader_id": 12,
+      "name": "星图量化社",
+      "trader_external": "29511"
+    },
+    {
+      "strategy_id": 8,
+      "trader_id": 11,
+      "name": "成成狠凶",
+      "trader_external": "30629"
+    }
+  ],
+  "real_user_email": "e2e_prod_1786620108238@t.com",
+  "real_user_pass": "RealProd2026!",
+  "real_user_id": 67,
+  "real_api_key_id": 10
+}

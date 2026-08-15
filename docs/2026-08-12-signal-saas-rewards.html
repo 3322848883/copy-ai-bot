@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>signal·saas 奖励余额</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   signal-saas 奖励余额页 — 成品实现
+   与其余页面同一设计语言
+   核心：5 字段账本（G12/G25）· 奖励流水 · 24h/48h 核实状态
+   ═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --ftx-cyan-300: #40ffc5; --ftx-cyan-400: #00d4aa; --ftx-cyan-500: #00b894; --ftx-cyan-600: #009a7a;
+  --ftx-success-300: #52d886; --ftx-success-400: #28c464; --ftx-success-500: #16a34a;
+  --ftx-warning-400: #facc15; --ftx-warning-500: #eab308;
+  --ftx-error-400: #f87171; --ftx-error-500: #ef4444; --ftx-error-600: #dc2626;
+  --ftx-info-400: #60a5fa; --ftx-info-500: #3b82f6;
+  --ftx-text-primary: #f1f5f9; --ftx-text-secondary: #94a3b8; --ftx-text-tertiary: #64748b; --ftx-text-disabled: #475569;
+  --ftx-surface-base: #0a1628; --ftx-surface-raised: #111d35; --ftx-surface-overlay: #162038;
+  --ftx-surface-glass: rgba(22,32,56,0.85); --ftx-surface-hover: rgba(30,41,59,0.5);
+  --ftx-surface-border: rgba(51,65,85,0.6); --ftx-surface-border-strong: rgba(100,116,139,0.4);
+  --ftx-surface-sunken: #070e1a;
+  --bg: var(--ftx-surface-base); --fg: var(--ftx-text-primary); --muted: var(--ftx-text-secondary);
+  --rule: var(--ftx-surface-border); --accent: var(--ftx-cyan-400); --accent-hover: var(--ftx-cyan-500);
+  --surface: var(--ftx-surface-raised); --surface-dim: var(--ftx-surface-sunken);
+  --font-display: 'Space Grotesk', sans-serif; --font-body: 'Space Grotesk', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+  --font-size-body: 15px; --font-size-caption: 12px; --font-size-mono: 14px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --size-button-height: 36px; --size-button-height-xl: 48px;
+  --radius-xs: 2px; --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-pill: 9999px;
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.15);
+  --shadow-2: 0 4px 8px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-3: 0 8px 24px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.25);
+  --shadow-4: 0 16px 48px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.3);
+  --signal-grid: rgba(0,212,170,0.05);
+  --nav-height: 56px;
+  --brand-glow: 0 0 24px rgba(0,212,170,0.25);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-body);
+  line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-image:
+    radial-gradient(ellipse 55% 40% at 12% -8%, rgba(0,212,170,0.09), transparent 60%),
+    radial-gradient(ellipse 45% 35% at 88% 4%, rgba(43,108,230,0.09), transparent 62%),
+    radial-gradient(ellipse 40% 30% at 92% 90%, rgba(0,212,170,0.05), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* ═══ 信号宇宙背景系统（多层）═══ */
+.bg-aurora { position: fixed; inset: -20%; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(circle 34% at 26% 20%, rgba(0,212,170,0.10), transparent 62%),
+    radial-gradient(circle 28% at 76% 34%, rgba(43,108,230,0.10), transparent 62%),
+    radial-gradient(circle 22% at 60% 84%, rgba(0,212,170,0.07), transparent 58%),
+    radial-gradient(circle 18% at 18% 80%, rgba(43,108,230,0.06), transparent 58%);
+  filter: blur(46px);
+  animation: auroraDrift 28s ease-in-out infinite alternate;
+}
+@keyframes auroraDrift {
+  0% { transform: translate3d(0,0,0) scale(1); }
+  50% { transform: translate3d(2%, -1.5%, 0) scale(1.05); }
+  100% { transform: translate3d(-1.5%, 2%, 0) scale(1.03); }
+}
+.bg-grid { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(0,212,170,0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,170,0.055) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+}
+.bg-dots { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: radial-gradient(rgba(0,212,170,0.55) 1px, transparent 1.6px);
+  background-size: 52px 52px;
+  background-position: 26px 26px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  animation: dotsBreathe 5.5s ease-in-out infinite;
+}
+@keyframes dotsBreathe { 0%,100% { opacity: .2; } 50% { opacity: .75; } }
+.bg-particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.bg-particles i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px rgba(0,212,170,0.7); opacity: 0; animation: floatUp var(--dur,16s) linear var(--delay,0s) infinite; }
+@keyframes floatUp {
+  0% { transform: translateY(105vh) translateX(0); opacity: 0; }
+  8% { opacity: .85; }
+  82% { opacity: .45; }
+  100% { transform: translateY(-4vh) translateX(var(--drift,14px)); opacity: 0; }
+}
+.bg-sweep { position: fixed; left: 0; right: 0; top: 0; height: 180px; pointer-events: none; z-index: 0;
+  background: linear-gradient(180deg, transparent, rgba(0,212,170,0.045) 45%, rgba(0,212,170,0.085) 50%, rgba(0,212,170,0.045) 55%, transparent);
+  animation: sweepDown 12s linear infinite;
+}
+@keyframes sweepDown { 0% { transform: translateY(-180px); } 100% { transform: translateY(112vh); } }
+.bg-noise { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+}
+
+/* 顶栏 */
+.topnav { position: sticky; top: 0; z-index: 200; height: var(--nav-height); display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-6); backdrop-filter: blur(16px); background: rgba(10,22,40,0.88); border-bottom: 1px solid var(--rule); }
+.brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; text-decoration: none; color: var(--fg); }
+.brand-mark { width: 28px; height: 28px; border-radius: var(--radius-sm); display: grid; place-items: center; background: linear-gradient(135deg, var(--ftx-cyan-400), var(--ftx-cyan-600)); box-shadow: var(--brand-glow); }
+.brand-mark svg { width: 16px; height: 16px; }
+.brand-sub { color: var(--muted); font-size: 11px; font-weight: 400; }
+.nav-links { display: flex; gap: 2px; margin-left: var(--space-4); }
+.nav-link { color: var(--muted); text-decoration: none; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); font-size: var(--font-size-body); transition: all .15s; border-left: 2px solid transparent; }
+.nav-link:hover { color: var(--fg); background: var(--ftx-surface-hover); }
+.nav-link.active { color: var(--accent); background: rgba(0,212,170,0.1); border-left-color: var(--accent); }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+.bell-wrap { position: relative; }
+.bell { width: 36px; height: 36px; border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; transition: all .15s; }
+.bell:hover { color: var(--fg); border-color: var(--ftx-surface-border-strong); background: var(--ftx-surface-hover); }
+.bell-badge { position: absolute; top: -4px; right: -4px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: var(--radius-pill); background: var(--ftx-error-500); color: #fff; font-size: 10px; font-weight: 600; display: grid; place-items: center; font-family: var(--font-mono); }
+.user-chip { display: flex; align-items: center; gap: var(--space-2); padding: 4px 10px 4px 4px; border: 1px solid var(--rule); border-radius: var(--radius-pill); cursor: pointer; transition: all .15s; }
+.user-avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--ftx-cyan-500), var(--ftx-cyan-600)); display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #06281f; }
+.user-mail { font-size: var(--font-size-caption); color: var(--fg); font-family: var(--font-mono); }
+
+/* 布局 */
+.layout { max-width: 1240px; margin: 0 auto; padding: var(--space-6) var(--space-5) var(--space-7); position: relative; z-index: 1; display: flex; flex-direction: column; gap: var(--space-5); }
+
+/* 页头 */
+.page-hdr { display: flex; align-items: flex-end; justify-content: space-between; }
+.page-eyebrow { font-size: 11px; font-family: var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: var(--space-1); }
+.page-title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+.page-title small { font-size: var(--font-size-caption); color: var(--muted); font-weight: 400; margin-left: var(--space-3); font-family: var(--font-mono); }
+.page-actions { display: flex; gap: var(--space-3); align-items: center; }
+
+/* 按钮 */
+.btn { display: inline-flex; align-items: center; justify-content: center; border: none; cursor: pointer; font-family: var(--font-body); font-size: var(--font-size-body); white-space: nowrap; min-width: var(--size-button-height); transition: all .18s; flex-shrink: 0; text-decoration: none; }
+.btn-primary { background: var(--accent); color: #06281f; border-radius: var(--radius-sm); height: var(--size-button-height); font-weight: 600; box-shadow: var(--brand-glow); }
+.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.btn-secondary { background: transparent; border: 1px solid var(--rule); color: var(--fg); border-radius: var(--radius-sm); height: var(--size-button-height); }
+.btn-secondary:hover { background: var(--ftx-surface-hover); border-color: var(--ftx-surface-border-strong); }
+.btn-lg { height: var(--size-button-height-xl); padding: 0 var(--space-5); font-weight: 600; }
+.btn-xl { height: var(--size-button-height-xl); padding: 0 var(--space-6); font-weight: 600; font-size: 16px; }
+.btn-block { width: 100%; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
+
+/* 账本卡 */
+.ledger-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); }
+.ledger-box { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-5); position: relative; overflow: hidden; transition: all .2s; }
+.ledger-box:hover { border-color: var(--ftx-surface-border-strong); transform: translateY(-2px); box-shadow: var(--shadow-3); }
+.ledger-box::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--accent), transparent 70%); }
+.ledger-box.highlight { border-color: rgba(0,212,170,0.45); background: linear-gradient(135deg, rgba(0,212,170,0.06), var(--surface)); }
+.ledger-box.highlight::before { background: linear-gradient(90deg, var(--accent), var(--accent)); }
+.ledger-l { font-size: 10px; color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; }
+.ledger-v { font-family: var(--font-display); font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.ledger-s { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+/* 面板 */
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-5); }
+.panel-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-4); }
+.panel-title { font-size: var(--font-size-h4); font-weight: 600; display: flex; align-items: center; gap: var(--space-2); }
+.panel-title .sec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.panel-sub { font-size: 10px; color: var(--ftx-text-tertiary); font-family: var(--font-mono); }
+
+/* 表格 */
+.ftx-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-caption); }
+.ftx-table thead th { height: 34px; padding: 0 var(--space-3); text-align: left; font-weight: 600; font-size: var(--font-size-caption); color: var(--muted); background: var(--surface-dim); border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.ftx-table thead th.num { text-align: right; }
+.ftx-table tbody td { height: 40px; padding: 0 var(--space-3); border-bottom: 1px solid var(--ftx-surface-border); white-space: nowrap; }
+.ftx-table tbody td.num { text-align: right; font-family: var(--font-mono); font-size: var(--font-size-mono); font-variant-numeric: tabular-nums; }
+.ftx-table tbody tr { transition: background .12s; }
+.ftx-table tbody tr:hover { background: var(--ftx-surface-hover); }
+.sub-ref { font-size: 10px; color: var(--ftx-text-tertiary); }
+
+/* 标签 */
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: var(--radius-pill); font-size: var(--font-size-caption); font-weight: 500; white-space: nowrap; }
+.badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.badge-ok { background: rgba(22,163,74,0.15); color: var(--ftx-success-400); }
+.badge-warn { background: rgba(234,179,8,0.15); color: var(--ftx-warning-400); }
+.badge-err { background: rgba(239,68,68,0.15); color: var(--ftx-error-400); }
+.badge-info { background: rgba(59,130,246,0.15); color: var(--ftx-info-400); }
+.badge-muted { background: rgba(100,116,139,0.15); color: var(--ftx-text-secondary); }
+
+/* 状态筛选 */
+.status-tabs { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.tab-btn { padding: 5px 14px; border-radius: var(--radius-pill); border: 1px solid var(--rule); background: transparent; color: var(--muted); font-size: var(--font-size-caption); cursor: pointer; transition: all .15s; font-family: var(--font-body); }
+.tab-btn:hover { color: var(--fg); }
+.tab-btn.active { background: rgba(0,212,170,0.12); border-color: var(--ftx-cyan-600); color: var(--accent); font-weight: 500; }
+
+/* 分页 */
+.pagination { display: flex; align-items: center; justify-content: center; gap: var(--space-2); margin-top: var(--space-4); }
+.page-btn { width: 32px; height: 32px; border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--font-size-caption); transition: all .15s; }
+.page-btn:hover { color: var(--fg); border-color: var(--ftx-surface-border-strong); }
+.page-btn.active { background: rgba(0,212,170,0.12); border-color: var(--ftx-cyan-600); color: var(--accent); font-weight: 600; }
+
+/* Toast */
+.toast-stack { position: fixed; top: calc(var(--nav-height) + var(--space-4)); right: var(--space-5); z-index: 1000; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast { min-width: 280px; max-width: 360px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--ftx-surface-overlay); border: 1px solid var(--rule); box-shadow: var(--shadow-4); display: flex; align-items: center; gap: var(--space-3); animation: toastIn .25s ease; backdrop-filter: blur(16px); font-size: var(--font-size-caption); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+.toast.success { border-color: rgba(22,163,74,0.4); } .toast.success .t-ic { color: var(--ftx-success-400); }
+.toast.warn { border-color: rgba(234,179,8,0.4); } .toast.warn .t-ic { color: var(--ftx-warning-400); }
+.toast.info { border-color: rgba(59,130,246,0.4); } .toast.info .t-ic { color: var(--ftx-info-400); }
+.t-ic { font-size: 14px; flex-shrink: 0; }
+.t-close { margin-left: auto; background: none; border: none; color: var(--ftx-text-tertiary); cursor: pointer; font-size: 12px; }
+
+/* 空态 */
+.empty-row { text-align: center; padding: var(--space-6); color: var(--muted); font-size: var(--font-size-caption); }
+
+@media (max-width: 980px) { .nav-links { display: none; } }
+</style>
+</head>
+<body>
+<!-- 信号宇宙背景层 -->
+<div class="bg-aurora"></div>
+<div class="bg-grid"></div>
+<div class="bg-dots"></div>
+<div class="bg-sweep"></div>
+<div class="bg-noise"></div>
+<div class="bg-particles">
+  <i style="left:6%;--dur:17s;--delay:0s;--drift:14px"></i>
+  <i style="left:14%;--dur:23s;--delay:4s;--drift:-12px"></i>
+  <i style="left:23%;--dur:19s;--delay:8s;--drift:10px"></i>
+  <i style="left:32%;--dur:25s;--delay:1s;--drift:-16px"></i>
+  <i style="left:41%;--dur:16s;--delay:6s;--drift:12px"></i>
+  <i style="left:52%;--dur:21s;--delay:11s;--drift:-10px"></i>
+  <i style="left:61%;--dur:18s;--delay:2s;--drift:16px"></i>
+  <i style="left:70%;--dur:24s;--delay:9s;--drift:-14px"></i>
+  <i style="left:79%;--dur:20s;--delay:5s;--drift:10px"></i>
+  <i style="left:88%;--dur:22s;--delay:12s;--drift:-12px"></i>
+  <i style="left:94%;--dur:17s;--delay:7s;--drift:8px"></i>
+  <i style="left:10%;--dur:26s;--delay:14s;--drift:-8px"></i>
+</div>
+
+<!-- 顶栏 -->
+<nav class="topnav">
+  <a class="brand" href="2026-08-12-signal-saas-home-dashboard.html">
+    <div class="brand-mark"><svg viewBox="0 0 16 16" fill="none"><path d="M1 9h3l2-6 3 10 2-5h4" stroke="#06281f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    signal<span class="brand-sub">·saas</span>
+  </a>
+  <div class="nav-links">
+    <a class="nav-link" href="2026-08-12-signal-saas-home-dashboard.html">首页</a>
+    <a class="nav-link" href="2026-08-12-signal-saas-strategies.html">策略广场</a>
+    <a class="nav-link" href="2026-08-12-signal-saas-my-bots.html">我的跟单</a>
+    <a class="nav-link" href="2026-08-12-signal-saas-invite.html">邀请奖励</a>
+    <a class="nav-link active" href="#">奖励余额</a>
+  </div>
+  <div class="nav-right">
+    <div class="bell-wrap">
+      <button class="bell" title="通知">🔔</button>
+      <span class="bell-badge">3</span>
+    </div>
+    <div class="user-chip" onclick="location.href='2026-08-12-signal-saas-account.html'" style="cursor:pointer"><div class="user-avatar">U</div><span class="user-mail">user***@mail.com</span></div>
+  </div>
+</nav>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<div class="layout">
+
+  <!-- 页头 -->
+  <div class="page-hdr">
+    <div>
+      <div class="page-eyebrow">REWARD BALANCE · 奖励余额</div>
+      <h1 class="page-title">奖励余额<small>邀请奖励 · 5 字段账本</small></h1>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-primary btn-lg" onclick="location.href='2026-08-12-signal-saas-withdraw.html'">提现</button>
+    </div>
+  </div>
+
+  <!-- 5 字段账本（G12/G25） -->
+  <div class="ledger-grid">
+    <div class="ledger-box highlight">
+      <div class="ledger-l">可提现余额</div>
+      <div class="ledger-v" style="color:var(--accent)">41.71</div>
+      <div class="ledger-s">USDT · 可立即申请提现</div>
+    </div>
+    <div class="ledger-box">
+      <div class="ledger-l">累计奖励</div>
+      <div class="ledger-v">89.20</div>
+      <div class="ledger-s">USDT · 所有记录 SUM（含取消/回滚）</div>
+    </div>
+    <div class="ledger-box">
+      <div class="ledger-l">提现中</div>
+      <div class="ledger-v" style="color:var(--ftx-info-400)">45.50</div>
+      <div class="ledger-s">USDT · 2 笔审核中</div>
+    </div>
+    <div class="ledger-box">
+      <div class="ledger-l">已提现</div>
+      <div class="ledger-v" style="color:var(--ftx-text-secondary)">0.00</div>
+      <div class="ledger-s">USDT · 含链上 TxHash</div>
+    </div>
+    <div class="ledger-box">
+      <div class="ledger-l">冻结</div>
+      <div class="ledger-v" style="color:var(--ftx-error-400)">1.99</div>
+      <div class="ledger-s">USDT · 48h 风控核实中（G11）</div>
+    </div>
+  </div>
+
+  <!-- 流水明细 -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <div class="panel-title"><span class="sec-dot"></span>奖励流水</div>
+      <div class="status-tabs">
+        <button class="tab-btn active" data-status="all">全部</button>
+        <button class="tab-btn" data-status="verifying">核实中</button>
+        <button class="tab-btn" data-status="available">可提现</button>
+        <button class="tab-btn" data-status="withdrawing">提现中</button>
+        <button class="tab-btn" data-status="frozen">冻结</button>
+      </div>
+    </div>
+    <table class="ftx-table">
+      <thead>
+        <tr><th>时间</th><th>来源</th><th>下级</th><th class="num">金额</th><th>状态</th><th>备注</th></tr>
+      </thead>
+      <tbody id="ledgerBody">
+        <tr data-status="verifying">
+          <td class="num">08-12 14:32</td><td>订阅奖励</td><td>trader***@</td>
+          <td class="num" style="color:var(--ftx-success-400)">+1.99 U</td>
+          <td><span class="badge badge-warn">核实中</span></td>
+          <td class="sub-ref">19.9U × 10% · 24h 核实 · <span id="cd">18h 20m</span></td>
+        </tr>
+        <tr data-status="frozen">
+          <td class="num">08-11 20:18</td><td>订阅奖励</td><td>whale***@</td>
+          <td class="num" style="color:var(--ftx-success-400)">+1.99 U</td>
+          <td><span class="badge badge-err">冻结</span></td>
+          <td class="sub-ref">批量邀请风控 · 48h 核实（G11）</td>
+        </tr>
+        <tr data-status="verifying">
+          <td class="num">08-11 15:06</td><td>订阅奖励</td><td>nova***@</td>
+          <td class="num" style="color:var(--ftx-success-400)">+0.50 U</td>
+          <td><span class="badge badge-warn">核实中</span></td>
+          <td class="sub-ref">5U 试用 × 10% · 24h 核实</td>
+        </tr>
+        <tr data-status="available">
+          <td class="num">08-10 09:02</td><td>订阅奖励</td><td>moon***@</td>
+          <td class="num" style="color:var(--ftx-success-400)">+1.99 U</td>
+          <td><span class="badge badge-ok">可提现</span></td>
+          <td class="sub-ref">19.9U × 10% · 已通过核实</td>
+        </tr>
+        <tr data-status="available">
+          <td class="num">08-09 14:40</td><td>订阅奖励</td><td>peak***@</td>
+          <td class="num" style="color:var(--ftx-success-400)">+1.99 U</td>
+          <td><span class="badge badge-ok">可提现</span></td>
+          <td class="sub-ref">19.9U × 10% · 已通过核实</td>
+        </tr>
+        <tr data-status="withdrawing">
+          <td class="num">08-08 18:30</td><td>订阅奖励</td><td>sun***@</td>
+          <td class="num" style="color:var(--ftx-success-400)">+1.99 U</td>
+          <td><span class="badge badge-info">提现中</span></td>
+          <td class="sub-ref">已发起提现 · 关联单号 #W20260811002</td>
+        </tr>
+        <tr data-status="available">
+          <td class="num">08-07 11:25</td><td>订阅奖励</td><td>link***@</td>
+          <td class="num" style="color:var(--ftx-success-400)">+1.99 U</td>
+          <td><span class="badge badge-ok">可提现</span></td>
+          <td class="sub-ref">19.9U × 10% · 已通过核实</td>
+        </tr>
+        <tr data-status="available">
+          <td class="num">08-06 16:10</td><td>订阅奖励</td><td>wave***@</td>
+          <td class="num" style="color:var(--ftx-success-400)">+1.99 U</td>
+          <td><span class="badge badge-ok">可提现</span></td>
+          <td class="sub-ref">19.9U × 10% · 已通过核实</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="pagination">
+      <button class="page-btn" disabled>‹</button>
+      <button class="page-btn active">1</button>
+      <button class="page-btn">2</button>
+      <button class="page-btn">3</button>
+      <button class="page-btn">›</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ── 状态筛选 ── */
+document.querySelectorAll('.tab-btn[data-status]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn[data-status]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const status = btn.dataset.status;
+    document.querySelectorAll('#ledgerBody tr').forEach(row => {
+      row.style.display = (status === 'all' || row.dataset.status === status) ? '' : 'none';
+    });
+    const visible = [...document.querySelectorAll('#ledgerBody tr')].filter(r => r.style.display !== 'none');
+    if (visible.length === 0) showToast('info', '当前状态暂无记录');
+  });
+});
+
+/* ── 24h 核实倒计时（WS reward.tick 模拟）── */
+let secs = 18 * 3600 + 20 * 60;
+setInterval(() => {
+  secs--;
+  if (secs < 0) return;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  document.getElementById('cd').textContent = `${h}h ${String(m).padStart(2,'0')}m`;
+}, 1000);
+
+/* ── Toast ── */
+function showToast(type, msg) {
+  const stack = document.getElementById('toastStack');
+  const icons = { success: '✓', warn: '!', info: 'i' };
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span class="t-ic">${icons[type]}</span><span>${msg}</span><button class="t-close" onclick="this.parentElement.remove()">✕</button>`;
+  stack.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3200);
+}
+</script>
+</body>
+</html>

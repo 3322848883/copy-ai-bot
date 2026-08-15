@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 环境与密钥
+.env
+*.key
+*.pem
+
+# Node（前端）
+node_modules/
+.next/
+dist/
+
+# 数据与日志
+*.db
+*.sqlite
+logs/
+runtime/
+data/
+
+# 大型二进制 / 运行时产物（不入库）
+chrome-stable.deb
+celerybeat-schedule.*
+*.png.jpg
+*.zip

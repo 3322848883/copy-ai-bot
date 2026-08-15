@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>signal·admin 页面导航索引</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   signal-saas 后台页面导航索引 — 10 模块全部成品
+   后台独立设计语言：深海军蓝 + 红色 ADMIN 标识 + 信号宇宙背景
+   ═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --ftx-cyan-300: #40ffc5; --ftx-cyan-400: #00d4aa; --ftx-cyan-500: #00b894; --ftx-cyan-600: #009a7a;
+  --ftx-success-300: #52d886; --ftx-success-400: #28c464; --ftx-success-500: #16a34a;
+  --ftx-warning-400: #facc15; --ftx-warning-500: #eab308;
+  --ftx-error-400: #f87171; --ftx-error-500: #ef4444; --ftx-error-600: #dc2626;
+  --ftx-info-400: #60a5fa; --ftx-info-500: #3b82f6;
+  --ftx-text-primary: #f1f5f9; --ftx-text-secondary: #94a3b8; --ftx-text-tertiary: #64748b; --ftx-text-disabled: #475569;
+  --ftx-surface-base: #0a1628; --ftx-surface-raised: #111d35; --ftx-surface-overlay: #162038;
+  --ftx-surface-glass: rgba(22,32,56,0.85); --ftx-surface-hover: rgba(30,41,59,0.5);
+  --ftx-surface-border: rgba(51,65,85,0.6); --ftx-surface-border-strong: rgba(100,116,139,0.4);
+  --ftx-surface-sunken: #070e1a;
+  --bg: var(--ftx-surface-base); --fg: var(--ftx-text-primary); --muted: var(--ftx-text-secondary);
+  --rule: var(--ftx-surface-border); --accent: var(--ftx-cyan-400); --accent-hover: var(--ftx-cyan-500);
+  --surface: var(--ftx-surface-raised); --surface-dim: var(--ftx-surface-sunken);
+  --admin-red: #ef4444;
+  --font-display: 'Space Grotesk', sans-serif; --font-body: 'Space Grotesk', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+  --font-size-body: 15px; --font-size-caption: 12px; --font-size-mono: 14px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --size-button-height: 36px;
+  --radius-xs: 2px; --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-pill: 9999px;
+  --shadow-2: 0 4px 8px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-3: 0 8px 24px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.25);
+  --shadow-4: 0 16px 48px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.3);
+  --signal-grid: rgba(0,212,170,0.05);
+  --nav-height: 56px;
+  --brand-glow: 0 0 24px rgba(0,212,170,0.25);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-body);
+  line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-image:
+    radial-gradient(ellipse 55% 40% at 12% -8%, rgba(239,68,68,0.06), transparent 60%),
+    radial-gradient(ellipse 45% 35% at 88% 4%, rgba(43,108,230,0.08), transparent 62%),
+    radial-gradient(ellipse 40% 30% at 92% 90%, rgba(0,212,170,0.04), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* 信号宇宙背景（后台红调） */
+.bg-aurora { position: fixed; inset: -20%; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(circle 34% at 26% 20%, rgba(239,68,68,0.07), transparent 62%),
+    radial-gradient(circle 28% at 76% 34%, rgba(43,108,230,0.08), transparent 62%),
+    radial-gradient(circle 22% at 60% 84%, rgba(0,212,170,0.05), transparent 58%);
+  filter: blur(46px); animation: auroraDrift 28s ease-in-out infinite alternate;
+}
+@keyframes auroraDrift { 0% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(2%,-1.5%,0) scale(1.05); } 100% { transform: translate3d(-1.5%,2%,0) scale(1.03); } }
+.bg-grid { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: linear-gradient(rgba(239,68,68,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(239,68,68,0.04) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+}
+.bg-dots { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: radial-gradient(rgba(239,68,68,0.4) 1px, transparent 1.6px);
+  background-size: 52px 52px; background-position: 26px 26px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  animation: dotsBreathe 5.5s ease-in-out infinite;
+}
+@keyframes dotsBreathe { 0%,100% { opacity: .15; } 50% { opacity: .5; } }
+.bg-particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.bg-particles i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: rgba(239,68,68,0.6); box-shadow: 0 0 8px rgba(239,68,68,0.4); opacity: 0; animation: floatUp var(--dur,16s) linear var(--delay,0s) infinite; }
+@keyframes floatUp { 0% { transform: translateY(105vh) translateX(0); opacity: 0; } 8% { opacity: .5; } 82% { opacity: .25; } 100% { transform: translateY(-4vh) translateX(var(--drift,14px)); opacity: 0; } }
+.bg-sweep { position: fixed; left: 0; right: 0; top: 0; height: 180px; pointer-events: none; z-index: 0;
+  background: linear-gradient(180deg, transparent, rgba(239,68,68,0.035) 45%, rgba(239,68,68,0.07) 50%, rgba(239,68,68,0.035) 55%, transparent);
+  animation: sweepDown 12s linear infinite;
+}
+@keyframes sweepDown { 0% { transform: translateY(-180px); } 100% { transform: translateY(112vh); } }
+.bg-noise { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+}
+
+/* 顶栏 */
+.topnav { position: sticky; top: 0; z-index: 200; height: var(--nav-height); display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-6); backdrop-filter: blur(16px); background: rgba(10,22,40,0.88); border-bottom: 1px solid var(--rule); }
+.brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; text-decoration: none; color: var(--fg); }
+.brand-mark { width: 28px; height: 28px; border-radius: var(--radius-sm); display: grid; place-items: center; background: linear-gradient(135deg, var(--admin-red), #b91c1c); box-shadow: 0 0 18px rgba(239,68,68,0.3); }
+.brand-mark svg { width: 16px; height: 16px; }
+.admin-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: var(--radius-xs); background: rgba(239,68,68,0.12); color: var(--admin-red); border: 1px solid rgba(239,68,68,0.35); font-size: 9px; font-weight: 600; letter-spacing: 0.08em; }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+.nav-badge { padding: 4px 12px; border-radius: var(--radius-pill); border: 1px solid rgba(239,68,68,0.4); color: var(--admin-red); font-size: 11px; font-family: var(--font-mono); background: rgba(239,68,68,0.08); }
+
+/* 布局 */
+.layout { max-width: 1240px; margin: 0 auto; padding: var(--space-7) var(--space-5) var(--space-8); position: relative; z-index: 1; display: flex; flex-direction: column; gap: var(--space-7); }
+
+/* 页头 */
+.page-hdr { text-align: center; padding: var(--space-5) 0 var(--space-2); }
+.page-eyebrow { font-size: 11px; font-family: var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--admin-red); margin-bottom: var(--space-3); }
+.page-title { font-size: 38px; font-weight: 700; letter-spacing: -0.02em; }
+.page-desc { color: var(--muted); max-width: 620px; margin: var(--space-3) auto 0; font-size: var(--font-size-body); }
+.stats-strip { display: flex; justify-content: center; gap: var(--space-7); flex-wrap: wrap; margin-top: var(--space-5); }
+.stat { text-align: center; }
+.stat-v { font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--admin-red); font-variant-numeric: tabular-nums; }
+.stat-l { font-size: 11px; color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+
+/* 区块标题 */
+.section-hdr { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+.section-hdr .ic { width: 32px; height: 32px; border-radius: var(--radius-sm); background: rgba(239,68,68,0.12); color: var(--admin-red); display: grid; place-items: center; font-size: 14px; }
+.section-hdr h2 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+.section-hdr .cnt { margin-left: auto; font-size: 11px; color: var(--ftx-text-tertiary); font-family: var(--font-mono); }
+
+/* 页面卡片 */
+.pages-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-4); }
+.page-card {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg);
+  padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3);
+  text-decoration: none; color: var(--fg); transition: all .2s; position: relative; overflow: hidden;
+}
+.page-card:hover { transform: translateY(-3px); border-color: rgba(239,68,68,0.5); box-shadow: var(--shadow-3), 0 0 24px rgba(239,68,68,0.15); }
+.page-card::after { content: ''; position: absolute; bottom: -24px; right: -24px; width: 110px; height: 110px; background: radial-gradient(circle, rgba(239,68,68,0.08), transparent 70%); pointer-events: none; }
+.pc-top { display: flex; justify-content: space-between; align-items: center; }
+.pc-ic { width: 38px; height: 38px; border-radius: var(--radius-sm); display: grid; place-items: center; font-size: 15px; background: rgba(239,68,68,0.1); color: var(--admin-red); }
+.pc-status { font-size: 10px; font-family: var(--font-mono); display: flex; align-items: center; gap: 6px; color: var(--ftx-success-400); }
+.pc-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--ftx-success-400); box-shadow: 0 0 6px var(--ftx-success-400); }
+.pc-name { font-size: var(--font-size-h4); font-weight: 600; letter-spacing: -0.01em; }
+.pc-route { font-family: var(--font-mono); font-size: 10px; color: var(--ftx-text-tertiary); }
+.pc-desc { font-size: var(--font-size-caption); color: var(--muted); line-height: 1.6; flex: 1; }
+.pc-foot { display: flex; justify-content: space-between; align-items: center; padding-top: var(--space-3); border-top: 1px solid var(--ftx-surface-border); }
+.pc-tags { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: var(--radius-pill); font-size: 10px; font-weight: 500; border: 1px solid var(--rule); color: var(--muted); }
+.tag-red { border-color: rgba(239,68,68,0.4); color: var(--admin-red); background: rgba(239,68,68,0.06); }
+.tag-warn { border-color: rgba(234,179,8,0.4); color: var(--ftx-warning-400); background: rgba(234,179,8,0.06); }
+.pc-go { color: var(--muted); font-size: 14px; transition: all .15s; }
+.page-card:hover .pc-go { color: var(--accent); transform: translateX(3px); }
+
+/* 流程引导 */
+.flow-bar { display: flex; align-items: center; justify-content: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-4); border: 1px solid var(--rule); border-radius: var(--radius-lg); background: var(--surface); }
+.flow-step { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-caption); color: var(--muted); text-decoration: none; transition: color .15s; }
+.flow-step:hover { color: var(--admin-red); }
+.flow-num { width: 24px; height: 24px; border-radius: 50%; background: rgba(239,68,68,0.12); color: var(--admin-red); display: grid; place-items: center; font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
+.flow-arrow { color: var(--ftx-text-tertiary); font-size: 12px; }
+
+/* 接口汇总 */
+.api-panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-5); }
+.api-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-caption); }
+.api-table thead th { text-align: left; padding: var(--space-2) var(--space-3); background: var(--surface-dim); border-bottom: 1px solid var(--rule); font-weight: 600; color: var(--muted); }
+.api-table tbody td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--ftx-surface-border); }
+.api-table .m { font-family: var(--font-mono); font-size: 10px; font-weight: 700; }
+.api-table .m.get { color: var(--ftx-info-400); }
+.api-table .m.post { color: var(--ftx-success-400); }
+.api-table .m.patch { color: var(--ftx-warning-400); }
+.api-table .m.delete { color: var(--ftx-error-400); }
+.api-table .path { font-family: var(--font-mono); font-size: 10px; color: var(--accent); }
+.api-table .desc { color: var(--muted); font-size: 11px; }
+
+/* 页脚 */
+.footer { border-top: 1px solid var(--rule); padding: var(--space-6) var(--space-7); color: var(--ftx-text-tertiary); font-size: var(--font-size-caption); display: flex; justify-content: space-between; position: relative; z-index: 1; }
+
+@media (max-width: 980px) { .flow-bar { gap: var(--space-2); } .stats-strip { gap: var(--space-5); } }
+</style>
+</head>
+<body>
+<!-- 信号宇宙背景层 -->
+<div class="bg-aurora"></div><div class="bg-grid"></div><div class="bg-dots"></div><div class="bg-sweep"></div><div class="bg-noise"></div>
+<div class="bg-particles">
+  <i style="left:6%;--dur:17s;--delay:0s;--drift:14px"></i><i style="left:14%;--dur:23s;--delay:4s;--drift:-12px"></i><i style="left:23%;--dur:19s;--delay:8s;--drift:10px"></i><i style="left:32%;--dur:25s;--delay:1s;--drift:-16px"></i><i style="left:41%;--dur:16s;--delay:6s;--drift:12px"></i><i style="left:52%;--dur:21s;--delay:11s;--drift:-10px"></i><i style="left:61%;--dur:18s;--delay:2s;--drift:16px"></i><i style="left:70%;--dur:24s;--delay:9s;--drift:-14px"></i><i style="left:79%;--dur:20s;--delay:5s;--drift:10px"></i><i style="left:88%;--dur:22s;--delay:12s;--drift:-12px"></i><i style="left:94%;--dur:17s;--delay:7s;--drift:8px"></i><i style="left:10%;--dur:26s;--delay:14s;--drift:-8px"></i>
+</div>
+
+<!-- 顶栏 -->
+<nav class="topnav">
+  <div class="brand">
+    <div class="brand-mark"><svg viewBox="0 0 16 16" fill="none"><path d="M1 9h3l2-6 3 10 2-5h4" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    signal·admin <span class="admin-badge">ADMIN</span>
+  </div>
+  <div class="nav-right">
+    <span class="nav-badge">后台模块索引 · 11 页全部成品</span>
+  </div>
+</nav>
+
+<div class="layout">
+
+  <!-- 页头 -->
+  <div class="page-hdr">
+    <div class="page-eyebrow">ADMIN MODULE INDEX · 后台模块导航</div>
+    <h1 class="page-title">signal·admin 后台导航</h1>
+    <p class="page-desc">运营管理后台 · 10 大模块 + 登录入口全部成品 · 红色 ADMIN 标识与前台完全隔离 · RBAC 三角色 · 写操作强制审计</p>
+    <div class="stats-strip">
+      <div class="stat"><div class="stat-v">13</div><div class="stat-l">成品页面</div></div>
+      <div class="stat"><div class="stat-v">100%</div><div class="stat-l">模块覆盖</div></div>
+      <div class="stat"><div class="stat-v">30+</div><div class="stat-l">后台接口</div></div>
+      <div class="stat"><div class="stat-v">3</div><div class="stat-l">RBAC 角色</div></div>
+    </div>
+  </div>
+
+  <!-- 登录入口 -->
+  <div class="flow-bar">
+    <a class="flow-step" href="2026-08-12-signal-saas-admin-login.html"><span class="flow-num">⇢</span>后台登录（完全隔离）</a>
+    <span class="flow-arrow">→</span>
+    <a class="flow-step" href="2026-08-12-signal-saas-admin-dashboard.html"><span class="flow-num">1</span>数据概览</a>
+    <span class="flow-arrow">→</span>
+    <a class="flow-step" href="2026-08-12-signal-saas-admin-users.html"><span class="flow-num">2</span>用户管理</a>
+    <span class="flow-arrow">→</span>
+    <a class="flow-step" href="2026-08-12-signal-saas-admin-withdrawals.html"><span class="flow-num">↗</span>提现审核</a>
+    <span class="flow-arrow">→</span>
+    <a class="flow-step" href="2026-08-12-signal-saas-admin-audit.html"><span class="flow-num">☰</span>审计日志</a>
+  </div>
+
+  <!-- 全部模块 -->
+  <section>
+    <div class="section-hdr">
+      <span class="ic">✓</span>
+      <h2>全部模块（13 页 · 均已成品）</h2>
+      <span class="cnt">ALL DONE · 可点击体验</span>
+    </div>
+    <div class="pages-grid">
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-login.html">
+        <div class="pc-top">
+          <span class="pc-ic">⇢</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">后台登录</div>
+          <div class="pc-route">/login</div>
+        </div>
+        <div class="pc-desc">独立入口 · 红色 ADMIN 标识 · TOTP 双因素（V1.1）· 错误锁定 15min · 30min 自动登出</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag tag-red">隔离</span><span class="tag">2FA</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-dashboard.html">
+        <div class="pc-top">
+          <span class="pc-ic">◈</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">数据概览</div>
+          <div class="pc-route">/dashboard</div>
+        </div>
+        <div class="pc-desc">240px 侧栏 + 全局搜索 · 6 KPI 卡 · 告警条 · 最近注册 · 审计日志流 · 今日待办</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag tag-red">主框架</span><span class="tag">KPI</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-users.html">
+        <div class="pc-top">
+          <span class="pc-ic">▣</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">用户管理</div>
+          <div class="pc-route">/users</div>
+        </div>
+        <div class="pc-desc">用户列表 · 状态筛选 · 详情抽屉（财务/跟单/风控）· 冻结/解冻 · 主号下级标记</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag tag-red">冻结</span><span class="tag">抽屉</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-signals.html">
+        <div class="pc-top">
+          <span class="pc-ic">◈</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">信号源审核</div>
+          <div class="pc-route">/signals/{exchange}/…</div>
+        </div>
+        <div class="pc-desc">待选池 → 已添加池 · G04 门槛校验 · 强制上架（原因+审计）· ★G26 运维看板（WS 状态）</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag tag-red">G04</span><span class="tag-warn">G26</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-orders.html">
+        <div class="pc-top">
+          <span class="pc-ic">▤</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">跟单订单</div>
+          <div class="pc-route">/orders · /orders/failures</div>
+        </div>
+        <div class="pc-desc">CopyOrder 全量监控 · 失败归类报表（failure_category 九种）· 动作/状态筛选 · 平均延迟</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag">订单监控</span><span class="tag">失败归因</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-payments.html">
+        <div class="pc-top">
+          <span class="pc-ic">◎</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">支付记录</div>
+          <div class="pc-route">/payments · /{id}/manual-confirm</div>
+        </div>
+        <div class="pc-desc">三链支付 · 状态机（§5.2）· 强制确认（必填原因 + 审计）· 网络彩色标签</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag tag-red">三链</span><span class="tag-warn">强制确认</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-invites.html">
+        <div class="pc-top">
+          <span class="pc-ic">⇄</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">邀请奖励</div>
+          <div class="pc-route">/invites · /invites/risk</div>
+        </div>
+        <div class="pc-desc">邀请关系网 · 10% 奖励 · 24h/48h 核实（G11）· 批量滥用告警条</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag">邀请关系</span><span class="tag-warn">G11</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-wallets.html">
+        <div class="pc-top">
+          <span class="pc-ic">≋</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">钱包账本</div>
+          <div class="pc-route">/wallets · /{id}/{credit,debit}</div>
+        </div>
+        <div class="pc-desc">5 字段流水（G12）· 手动补发/扣除（高危审计）· 冻结/回滚记录</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag">流水账</span><span class="tag tag-red">补发</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-review.html">
+        <div class="pc-top">
+          <span class="pc-ic">✓</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">主号下级审核</div>
+          <div class="pc-route">/review · G06</div>
+        </div>
+        <div class="pc-desc">平台池码命中申请 · approve/reject + audit-log · 免订阅标记（sub_account）</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag tag-red">G06</span><span class="tag">免订阅</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-exchange-invites.html">
+        <div class="pc-top">
+          <span class="pc-ic">⇢</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">交易所邀请码</div>
+          <div class="pc-route">/exchange-invites · ★G27</div>
+        </div>
+        <div class="pc-desc">平台合作方邀请码（每所多码）· 新增/启停用/绑定上限 · 注册核实 · 绑定记录</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag tag-red">G27</span><span class="tag-warn">每所多码</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-withdrawals.html">
+        <div class="pc-top">
+          <span class="pc-ic">↗</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">提现审核</div>
+          <div class="pc-route">/withdrawals/{id}/{approve,reject,…}</div>
+        </div>
+        <div class="pc-desc">待审核列表 · 通过填 TxHash / 驳回 / 退还 · 高危用户 48h 暂缓打款拦截（G11）</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag tag-red">高危</span><span class="tag-warn">TxHash</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-risk.html">
+        <div class="pc-top">
+          <span class="pc-ic">◉</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">风控中心</div>
+          <div class="pc-route">/risk/rules · /risk/strategies/{id}</div>
+        </div>
+        <div class="pc-desc">全局参数（延迟红线/名义上限/提现门槛/跨所拦截）· 策略级参数 · 高危用户 · 滥用检测</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag tag-red">参数</span><span class="tag-warn">滥用检测</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+      <a class="page-card" href="2026-08-12-signal-saas-admin-audit.html">
+        <div class="pc-top">
+          <span class="pc-ic">☰</span>
+          <span class="pc-status">成品</span>
+        </div>
+        <div>
+          <div class="pc-name">审计日志</div>
+          <div class="pc-route">/audit</div>
+        </div>
+        <div class="pc-desc">写操作全量留痕 · 操作者/类型/时间筛选 · 变更前后高亮 · 导出 CSV · 不可删除</div>
+        <div class="pc-foot">
+          <div class="pc-tags"><span class="tag tag-red">不可删除</span><span class="tag">导出</span></div>
+          <span class="pc-go">→</span>
+        </div>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- 接口汇总 -->
+  <section>
+    <div class="section-hdr">
+      <span class="ic">⌘</span>
+      <h2>后台接口映射</h2>
+      <span class="cnt">§7.3 · /admin/v1/*</span>
+    </div>
+    <div class="api-panel">
+      <table class="api-table">
+        <thead><tr><th style="width:70px">Method</th><th>Path</th><th>模块</th></tr></thead>
+        <tbody>
+          <tr><td><span class="m post">POST</span></td><td class="path">/admin/v1/auth/login</td><td class="desc">后台登录（隔离）</td></tr>
+          <tr><td><span class="m get">GET</span></td><td class="path">/admin/v1/users</td><td class="desc">用户管理</td></tr>
+          <tr><td><span class="m post">POST</span></td><td class="path">/admin/v1/users/{id}/{freeze,unfreeze,mark-sub-account}</td><td class="desc">风控/标记</td></tr>
+          <tr><td><span class="m get">GET</span></td><td class="path">/admin/v1/signals/{exchange}/…</td><td class="desc">信号源审核（按所隔离）</td></tr>
+          <tr><td><span class="m get">GET</span></td><td class="path">/admin/v1/orders · /orders/failures</td><td class="desc">跟单订单 + 失败归类</td></tr>
+          <tr><td><span class="m get">GET</span></td><td class="path">/admin/v1/payments · /{id}/manual-confirm</td><td class="desc">支付记录 + 强制确认</td></tr>
+          <tr><td><span class="m get">GET</span></td><td class="path">/admin/v1/invites · /invites/risk</td><td class="desc">邀请奖励 + 风控看板</td></tr>
+          <tr><td><span class="m post">POST</span></td><td class="path">/admin/v1/wallets/{reward_id}/{credit,debit}</td><td class="desc">手动补发/扣除</td></tr>
+          <tr><td><span class="m post">POST</span></td><td class="path">/admin/v1/withdrawals/{id}/{approve,reject,fill-tx,retry,refund}</td><td class="desc">提现审核操作</td></tr>
+          <tr><td><span class="m patch">PATCH</span></td><td class="path">/admin/v1/risk/rules · /risk/strategies/{id}</td><td class="desc">全局/策略级风控参数</td></tr>
+          <tr><td><span class="m get">GET</span></td><td class="path">/admin/v1/audit</td><td class="desc">审计日志</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<footer class="footer">
+  <span>signal·admin · 后台模块索引 · 11 页全部成品</span>
+  <span>RBAC：admin / reviewer / support · 写操作强制 audit-log</span>
+</footer>
+
+</body>
+</html>

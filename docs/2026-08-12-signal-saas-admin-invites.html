@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>signal·admin 邀请奖励</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   signal-saas 后台 邀请奖励 — 成品实现
+   邀请关系网 · 10% 奖励触发 · 24h/48h 核实（G11）· 风控看板
+   ═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --ftx-cyan-300: #40ffc5; --ftx-cyan-400: #00d4aa; --ftx-cyan-500: #00b894; --ftx-cyan-600: #009a7a;
+  --ftx-success-300: #52d886; --ftx-success-400: #28c464; --ftx-success-500: #16a34a;
+  --ftx-warning-400: #facc15; --ftx-warning-500: #eab308;
+  --ftx-error-400: #f87171; --ftx-error-500: #ef4444; --ftx-error-600: #dc2626;
+  --ftx-info-400: #60a5fa; --ftx-info-500: #3b82f6;
+  --ftx-text-primary: #f1f5f9; --ftx-text-secondary: #94a3b8; --ftx-text-tertiary: #64748b; --ftx-text-disabled: #475569;
+  --ftx-surface-base: #0a1628; --ftx-surface-raised: #111d35; --ftx-surface-overlay: #162038;
+  --ftx-surface-glass: rgba(22,32,56,0.85); --ftx-surface-hover: rgba(30,41,59,0.5);
+  --ftx-surface-border: rgba(51,65,85,0.6); --ftx-surface-border-strong: rgba(100,116,139,0.4);
+  --ftx-surface-sunken: #070e1a;
+  --bg: var(--ftx-surface-base); --fg: var(--ftx-text-primary); --muted: var(--ftx-text-secondary);
+  --rule: var(--ftx-surface-border); --accent: var(--ftx-cyan-400); --accent-hover: var(--ftx-cyan-500);
+  --surface: var(--ftx-surface-raised); --surface-dim: var(--ftx-surface-sunken);
+  --admin-red: #ef4444;
+  --font-display: 'Space Grotesk', sans-serif; --font-body: 'Space Grotesk', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+  --font-size-body: 15px; --font-size-caption: 12px; --font-size-mono: 14px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --size-button-height: 36px;
+  --radius-xs: 2px; --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-pill: 9999px;
+  --shadow-2: 0 4px 8px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-3: 0 8px 24px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.25);
+  --shadow-4: 0 16px 48px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.3);
+  --signal-grid: rgba(0,212,170,0.05);
+  --nav-height: 56px;
+  --sidebar-w: 240px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-body);
+  line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-image:
+    radial-gradient(ellipse 55% 40% at 12% -8%, rgba(239,68,68,0.05), transparent 60%),
+    radial-gradient(ellipse 45% 35% at 88% 4%, rgba(43,108,230,0.08), transparent 62%),
+    radial-gradient(ellipse 40% 30% at 92% 90%, rgba(0,212,170,0.04), transparent 60%);
+  background-attachment: fixed;
+}
+.bg-aurora { position: fixed; inset: -20%; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(circle 34% at 26% 20%, rgba(239,68,68,0.06), transparent 62%),
+    radial-gradient(circle 28% at 76% 34%, rgba(43,108,230,0.08), transparent 62%),
+    radial-gradient(circle 22% at 60% 84%, rgba(0,212,170,0.05), transparent 58%);
+  filter: blur(46px); animation: auroraDrift 28s ease-in-out infinite alternate;
+}
+@keyframes auroraDrift { 0% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(2%,-1.5%,0) scale(1.05); } 100% { transform: translate3d(-1.5%,2%,0) scale(1.03); } }
+.bg-grid { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: linear-gradient(rgba(239,68,68,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(239,68,68,0.035) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+}
+.bg-dots { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: radial-gradient(rgba(239,68,68,0.35) 1px, transparent 1.6px);
+  background-size: 52px 52px; background-position: 26px 26px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  animation: dotsBreathe 5.5s ease-in-out infinite;
+}
+@keyframes dotsBreathe { 0%,100% { opacity: .12; } 50% { opacity: .45; } }
+.bg-particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.bg-particles i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: rgba(239,68,68,0.6); box-shadow: 0 0 8px rgba(239,68,68,0.4); opacity: 0; animation: floatUp var(--dur,16s) linear var(--delay,0s) infinite; }
+@keyframes floatUp { 0% { transform: translateY(105vh) translateX(0); opacity: 0; } 8% { opacity: .5; } 82% { opacity: .25; } 100% { transform: translateY(-4vh) translateX(var(--drift,14px)); opacity: 0; } }
+.bg-sweep { position: fixed; left: 0; right: 0; top: 0; height: 180px; pointer-events: none; z-index: 0;
+  background: linear-gradient(180deg, transparent, rgba(239,68,68,0.03) 45%, rgba(239,68,68,0.06) 50%, rgba(239,68,68,0.03) 55%, transparent);
+  animation: sweepDown 12s linear infinite;
+}
+@keyframes sweepDown { 0% { transform: translateY(-180px); } 100% { transform: translateY(112vh); } }
+.bg-noise { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+}
+
+/* 顶栏 */
+.topbar { position: fixed; top: 0; left: 0; right: 0; height: var(--nav-height); z-index: 200; display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-5); backdrop-filter: blur(16px); background: rgba(10,22,40,0.9); border-bottom: 1px solid var(--rule); }
+.brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 700; font-size: 16px; text-decoration: none; color: var(--fg); }
+.brand-mark { width: 28px; height: 28px; border-radius: var(--radius-sm); display: grid; place-items: center; background: linear-gradient(135deg, var(--admin-red), #b91c1c); }
+.brand-mark svg { width: 16px; height: 16px; }
+.admin-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: var(--radius-xs); background: rgba(239,68,68,0.12); color: var(--admin-red); border: 1px solid rgba(239,68,68,0.35); font-size: 9px; font-weight: 600; }
+.top-search { margin-left: var(--space-5); flex: 1; max-width: 380px; position: relative; }
+.top-search input { width: 100%; height: 32px; background: var(--surface-dim); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0 var(--space-3) 0 30px; color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-caption); }
+.top-search .s-ic { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--ftx-text-tertiary); }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+.audit-indicator { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--ftx-success-400); font-family: var(--font-mono); }
+.audit-indicator::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--ftx-success-400); box-shadow: 0 0 6px var(--ftx-success-400); }
+.admin-chip { display: flex; align-items: center; gap: var(--space-2); padding: 3px 10px 3px 3px; border: 1px solid var(--rule); border-radius: var(--radius-pill); }
+.admin-avatar { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, var(--admin-red), #b91c1c); display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; }
+.admin-name { font-size: var(--font-size-caption); font-family: var(--font-mono); }
+
+/* 布局 */
+.shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; padding-top: var(--nav-height); position: relative; z-index: 1; }
+.sidebar { position: fixed; top: var(--nav-height); bottom: 0; left: 0; width: var(--sidebar-w); z-index: 100; display: flex; flex-direction: column; padding: var(--space-4) var(--space-3); gap: 2px; border-right: 1px solid var(--rule); background: rgba(10,22,40,0.6); backdrop-filter: blur(12px); }
+.side-group { padding: var(--space-2) var(--space-3); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ftx-text-tertiary); margin-top: var(--space-2); }
+.side-item { display: flex; align-items: center; gap: var(--space-3); padding: 9px var(--space-3); border-radius: var(--radius-sm); color: var(--muted); text-decoration: none; font-size: var(--font-size-caption); transition: all .15s; border-left: 2px solid transparent; }
+.side-item:hover { background: var(--ftx-surface-hover); color: var(--fg); }
+.side-item.active { background: rgba(239,68,68,0.1); color: var(--admin-red); border-left-color: var(--admin-red); }
+.side-ic { width: 18px; font-size: 12px; text-align: center; flex-shrink: 0; }
+.side-badge { margin-left: auto; background: var(--admin-red); color: #fff; font-size: 9px; font-family: var(--font-mono); padding: 1px 6px; border-radius: var(--radius-pill); }
+.side-badge.warn { background: var(--ftx-warning-400); color: #332601; }
+.side-bottom { margin-top: auto; padding: var(--space-3); border-top: 1px solid var(--rule); font-size: 9px; color: var(--ftx-text-tertiary); font-family: var(--font-mono); }
+
+.main { grid-column: 2; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+
+/* 页头 */
+.page-hdr { display: flex; align-items: flex-end; justify-content: space-between; }
+.page-eyebrow { font-size: 10px; font-family: var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--admin-red); margin-bottom: var(--space-1); }
+.page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.page-title small { font-size: var(--font-size-caption); color: var(--muted); font-weight: 400; margin-left: var(--space-3); font-family: var(--font-mono); }
+
+/* KPI */
+.kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-4); }
+.kpi { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-4); position: relative; overflow: hidden; }
+.kpi::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--admin-red), transparent 70%); }
+.kpi-l { font-size: 10px; color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; }
+.kpi-v { font-family: var(--font-display); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.kpi-s { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+/* 面板 */
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-5); }
+.panel-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-4); }
+.panel-title { font-size: var(--font-size-h4); font-weight: 600; display: flex; align-items: center; gap: var(--space-2); }
+.panel-title .sec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--admin-red); box-shadow: 0 0 8px var(--admin-red); }
+.panel-sub { font-size: 10px; color: var(--ftx-text-tertiary); font-family: var(--font-mono); }
+
+/* 表格 */
+.ftx-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-caption); }
+.ftx-table thead th { height: 34px; padding: 0 var(--space-3); text-align: left; font-weight: 600; font-size: var(--font-size-caption); color: var(--muted); background: var(--surface-dim); border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.ftx-table tbody td { height: 44px; padding: 0 var(--space-3); border-bottom: 1px solid var(--ftx-surface-border); white-space: nowrap; }
+.ftx-table tbody tr { transition: background .12s; }
+.ftx-table tbody tr:hover { background: var(--ftx-surface-hover); }
+.ftx-table td.num { text-align: right; font-family: var(--font-mono); font-size: var(--font-size-mono); font-variant-numeric: tabular-nums; }
+.sub-ref { font-size: 10px; color: var(--ftx-text-tertiary); }
+
+/* 标签 */
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: var(--radius-pill); font-size: var(--font-size-caption); font-weight: 500; white-space: nowrap; }
+.badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.badge-ok { background: rgba(22,163,74,0.15); color: var(--ftx-success-400); }
+.badge-warn { background: rgba(234,179,8,0.15); color: var(--ftx-warning-400); }
+.badge-err { background: rgba(239,68,68,0.15); color: var(--ftx-error-400); }
+.badge-info { background: rgba(59,130,246,0.15); color: var(--ftx-info-400); }
+.badge-muted { background: rgba(100,116,139,0.15); color: var(--ftx-text-secondary); }
+
+/* 风控看板 */
+.risk-alert { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-md); border: 1px solid rgba(239,68,68,0.3); background: rgba(239,68,68,0.06); margin-bottom: var(--space-4); }
+.risk-alert .ra-title { font-weight: 600; color: var(--ftx-error-400); font-size: var(--font-size-body); }
+.risk-alert .ra-desc { font-size: var(--font-size-caption); color: var(--muted); }
+
+/* Toast */
+.toast-stack { position: fixed; top: calc(var(--nav-height) + var(--space-4)); right: var(--space-5); z-index: 1000; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast { min-width: 280px; max-width: 360px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--ftx-surface-overlay); border: 1px solid var(--rule); box-shadow: var(--shadow-4); display: flex; align-items: center; gap: var(--space-3); animation: toastIn .25s ease; backdrop-filter: blur(16px); font-size: var(--font-size-caption); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+.toast.success { border-color: rgba(22,163,74,0.4); } .toast.success .t-ic { color: var(--ftx-success-400); }
+.toast.warn { border-color: rgba(234,179,8,0.4); } .toast.warn .t-ic { color: var(--ftx-warning-400); }
+.t-ic { font-size: 14px; flex-shrink: 0; }
+.t-close { margin-left: auto; background: none; border: none; color: var(--ftx-text-tertiary); cursor: pointer; font-size: 12px; }
+
+@media (max-width: 1080px) { .sidebar { width: 200px; } .shell { grid-template-columns: 200px 1fr; } }
+</style>
+</head>
+<body>
+<!-- 信号宇宙背景层 -->
+<div class="bg-aurora"></div><div class="bg-grid"></div><div class="bg-dots"></div><div class="bg-sweep"></div><div class="bg-noise"></div>
+<div class="bg-particles">
+  <i style="left:6%;--dur:17s;--delay:0s;--drift:14px"></i><i style="left:14%;--dur:23s;--delay:4s;--drift:-12px"></i><i style="left:23%;--dur:19s;--delay:8s;--drift:10px"></i><i style="left:32%;--dur:25s;--delay:1s;--drift:-16px"></i><i style="left:41%;--dur:16s;--delay:6s;--drift:12px"></i><i style="left:52%;--dur:21s;--delay:11s;--drift:-10px"></i><i style="left:61%;--dur:18s;--delay:2s;--drift:16px"></i><i style="left:70%;--dur:24s;--delay:9s;--drift:-14px"></i><i style="left:79%;--dur:20s;--delay:5s;--drift:10px"></i><i style="left:88%;--dur:22s;--delay:12s;--drift:-12px"></i><i style="left:94%;--dur:17s;--delay:7s;--drift:8px"></i><i style="left:10%;--dur:26s;--delay:14s;--drift:-8px"></i>
+</div>
+<div class="toast-stack" id="toastStack"></div>
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <a class="brand" href="2026-08-12-signal-saas-admin-dashboard.html">
+    <div class="brand-mark"><svg viewBox="0 0 16 16" fill="none"><path d="M1 9h3l2-6 3 10 2-5h4" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    signal·admin <span class="admin-badge">ADMIN</span>
+  </a>
+  <div class="top-search"><span class="s-ic">⌕</span><input placeholder="全局搜索：用户 / 订单 / TxHash…"></div>
+  <div class="top-right">
+    <span class="audit-indicator">审计日志开启</span>
+    <div class="admin-chip"><div class="admin-avatar">A</div><span class="admin-name">admin01</span></div>
+  </div>
+</header>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="side-group">运营</div>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-dashboard.html"><span class="side-ic">◈</span>数据概览</a>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-users.html"><span class="side-ic">▣</span>用户管理</a>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-signals.html"><span class="side-ic">◈</span>信号源审核 <span class="side-badge warn">5</span></a>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-orders.html"><span class="side-ic">▤</span>跟单订单</a>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-payments.html"><span class="side-ic">◎</span>支付记录 <span class="side-badge">2</span></a>
+    <div class="side-group">财务</div>
+    <a class="side-item active" href="#"><span class="side-ic">⇄</span>邀请奖励</a>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-wallets.html"><span class="side-ic">≋</span>钱包账本</a>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-withdrawals.html"><span class="side-ic">↗</span>提现审核 <span class="side-badge">3</span></a>
+    <div class="side-group">风控</div>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-risk.html"><span class="side-ic">◉</span>风控中心 <span class="side-badge warn">1</span></a>
+    <a class="side-item" href="2026-08-12-signal-saas-admin-audit.html"><span class="side-ic">☰</span>审计日志</a>
+    <div class="side-bottom">signal·admin v1.0<br>JWT aud=admin</div>
+  </aside>
+
+  <main class="main">
+    <!-- 页头 -->
+    <div class="page-hdr">
+      <div>
+        <div class="page-eyebrow">REFERRAL REWARDS · 邀请奖励</div>
+        <h1 class="page-title">邀请奖励<small>10% 奖励 · 24h/48h 核实 · 风控看板</small></h1>
+      </div>
+    </div>
+
+    <!-- KPI -->
+    <div class="kpi-strip">
+      <div class="kpi"><div class="kpi-l">今日触发奖励</div><div class="kpi-v">45</div><div class="kpi-s">笔 · 89.6 USDT</div></div>
+      <div class="kpi"><div class="kpi-l">核实中</div><div class="kpi-v" style="color:var(--ftx-info-400)">12</div><div class="kpi-s">笔 · 24h/48h</div></div>
+      <div class="kpi"><div class="kpi-l">已到账</div><div class="kpi-v" style="color:var(--ftx-success-400)">28</div><div class="kpi-s">笔 · available</div></div>
+      <div class="kpi"><div class="kpi-l">已取消</div><div class="kpi-v">3</div><div class="kpi-s">笔 · 下级退款回滚</div></div>
+      <div class="kpi"><div class="kpi-l">风控冻结</div><div class="kpi-v" style="color:var(--ftx-error-400)">2</div><div class="kpi-s">笔 · 48h 延长（G11）</div></div>
+    </div>
+
+    <!-- 风控告警 -->
+    <div class="risk-alert">
+      <span style="font-size:16px;color:var(--ftx-error-400)">⚠</span>
+      <div>
+        <div class="ra-title">检测到批量邀请滥用（G11 detect_batch_abuse）</div>
+        <div class="ra-desc">用户 <strong style="color:var(--fg)">user***04@</strong> 1 小时内绑定 12 个邀请码，已标记高危并将相关奖励冻结 48h 核实。<a style="color:var(--accent);cursor:pointer" onclick="showToast('info','跳转风控中心')">前往风控中心处理 →</a></div>
+      </div>
+    </div>
+
+    <!-- 邀请关系 -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <div class="panel-title"><span class="sec-dot"></span>邀请关系列表</div>
+        <span class="panel-sub">/admin/v1/invites</span>
+      </div>
+      <table class="ftx-table">
+        <thead>
+          <tr><th>邀请人</th><th>邀请码</th><th>下级</th><th class="num">触发金额</th><th class="num">奖励</th><th>核实状态</th><th>核实至</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-family:var(--font-mono)">user***01@</td><td style="font-family:var(--font-mono)">SIGNAL-8F3K2A</td><td style="font-family:var(--font-mono)">trader***@</td>
+            <td class="num">19.90</td><td class="num" style="color:var(--ftx-success-400)">+1.99</td>
+            <td><span class="badge badge-info">核实中</span></td><td class="sub-ref">08-13 14:32（24h）</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono)">user***04@</td><td style="font-family:var(--font-mono)">SIGNAL-9X2B7C</td><td style="font-family:var(--font-mono)">whale***@</td>
+            <td class="num">19.90</td><td class="num" style="color:var(--ftx-success-400)">+1.99</td>
+            <td><span class="badge badge-err">冻结</span></td><td class="sub-ref">08-14 20:18（48h 风控）</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono)">user***15@</td><td style="font-family:var(--font-mono)">SIGNAL-2D4F6E</td><td style="font-family:var(--font-mono)">moon***@</td>
+            <td class="num">5.00</td><td class="num" style="color:var(--ftx-success-400)">+0.50</td>
+            <td><span class="badge badge-ok">已到账</span></td><td class="sub-ref">08-11 15:06</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono)">user***22@</td><td style="font-family:var(--font-mono)">SIGNAL-7H1J3L</td><td style="font-family:var(--font-mono)">star***@</td>
+            <td class="num">19.90</td><td class="num" style="color:var(--ftx-error-400)">+1.99</td>
+            <td><span class="badge badge-warn">已取消</span></td><td class="sub-ref">24h 内下级退款</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono)">user***08@</td><td style="font-family:var(--font-mono)">SIGNAL-5G8I2O</td><td style="font-family:var(--font-mono)">peak***@</td>
+            <td class="num">19.90</td><td class="num" style="color:var(--ftx-success-400)">+1.99</td>
+            <td><span class="badge badge-ok">已到账</span></td><td class="sub-ref">08-10 09:02</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+function showToast(type, msg) {
+  const stack = document.getElementById('toastStack');
+  const icons = { success: '✓', warn: '!', info: 'i' };
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span class="t-ic">${icons[type]}</span><span>${msg}</span><button class="t-close" onclick="this.parentElement.remove()">✕</button>`;
+  stack.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3200);
+}
+</script>
+</body>
+</html>

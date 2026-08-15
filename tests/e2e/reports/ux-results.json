@@ -1,0 +1,326 @@
+{
+  "generated_at": "2026-08-13T10:59:09.723Z",
+  "summary": {
+    "total": 29,
+    "pass": 29,
+    "issue": 0
+  },
+  "results": {
+    "00_首页(未登录跳转)": {
+      "path": "/",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 2041,
+      "finalUrl": "http://localhost:3000/login",
+      "checks": [
+        "根路径应跳转登录页"
+      ],
+      "snapshot": "00_首页(未登录跳转).png"
+    },
+    "01_登录页": {
+      "path": "/login",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1416,
+      "finalUrl": "http://localhost:3000/login",
+      "checks": [
+        "表单齐全、错误提示区、注册入口"
+      ],
+      "snapshot": "01_登录页.png"
+    },
+    "02_注册页": {
+      "path": "/register",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1383,
+      "finalUrl": "http://localhost:3000/register",
+      "checks": [
+        "两步注册引导、密码确认校验"
+      ],
+      "snapshot": "02_注册页.png"
+    },
+    "03_策略广场(未登录)": {
+      "path": "/strategies",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1522,
+      "finalUrl": "http://localhost:3000/strategies",
+      "checks": [
+        "未登录可浏览策略广场、列表有内容"
+      ],
+      "snapshot": "03_策略广场(未登录).png"
+    },
+    "04_激活跳转登录": {
+      "status": "PASS",
+      "path": "/login?activated=1",
+      "checks": [
+        "激活后应跳登录页并提示激活成功"
+      ]
+    },
+    "05_风险揭示弹窗": {
+      "status": "PASS",
+      "path": "/login",
+      "checks": [
+        "首次登录应弹风险揭示"
+      ]
+    },
+    "06_我的账户": {
+      "path": "/account",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1504,
+      "finalUrl": "http://localhost:3000/account",
+      "checks": [
+        "选所下拉、好友码绑定、API Key 绑定表单、退出登录"
+      ],
+      "snapshot": "06_我的账户.png"
+    },
+    "07_策略广场(已登录)": {
+      "path": "/strategies",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1510,
+      "finalUrl": "http://localhost:3000/strategies",
+      "checks": [
+        "筛选器(风格/风险)、排序、一键跟单按钮"
+      ],
+      "snapshot": "07_策略广场(已登录).png"
+    },
+    "08_订阅套餐": {
+      "path": "/subscriptions",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1489,
+      "finalUrl": "http://localhost:3000/subscriptions",
+      "checks": [
+        "套餐卡片选择、支付网络选择、创建订单按钮"
+      ],
+      "snapshot": "08_订阅套餐.png"
+    },
+    "09_我的跟单": {
+      "path": "/bots",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1480,
+      "finalUrl": "http://localhost:3000/bots",
+      "checks": [
+        "空态提示应友好、跳转策略广场入口"
+      ],
+      "snapshot": "09_我的跟单.png"
+    },
+    "10_奖励余额": {
+      "path": "/rewards",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1451,
+      "finalUrl": "http://localhost:3000/rewards",
+      "checks": [
+        "5 字段余额展示、流水列表、核实倒计时"
+      ],
+      "snapshot": "10_奖励余额.png"
+    },
+    "11_邀请中心": {
+      "path": "/invite",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1498,
+      "finalUrl": "http://localhost:3000/invite",
+      "checks": [
+        "邀请码展示、复制按钮、邀请列表、风控提示"
+      ],
+      "snapshot": "11_邀请中心.png"
+    },
+    "12_提现": {
+      "path": "/withdraw",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1460,
+      "finalUrl": "http://localhost:3000/withdraw",
+      "checks": [
+        "网络选择、地址格式校验提示、金额校验、手续费/到账预估"
+      ],
+      "snapshot": "12_提现.png"
+    },
+    "13_账户页交互(选所/邀请码)": {
+      "status": "PASS",
+      "path": "/account",
+      "checks": [
+        "选所与邀请码绑定交互可执行"
+      ]
+    },
+    "14_策略详情": {
+      "path": "/strategies/5",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1510,
+      "finalUrl": "http://localhost:3000/strategies/5",
+      "checks": [
+        "画像字段(ROI/胜率/回撤)、一键跟单入口"
+      ],
+      "snapshot": "14_策略详情.png"
+    },
+    "15_一键跟单弹窗": {
+      "status": "PASS",
+      "path": "/strategies/5",
+      "checks": [
+        "跟单参数弹窗(比例/杠杆/模拟盘)"
+      ]
+    },
+    "16_订阅-创建订单+TxHash负路径": {
+      "status": "PASS",
+      "path": "/subscriptions",
+      "findings": [],
+      "checks": [
+        "prod 链负路径应展示支付校验失败提示"
+      ]
+    },
+    "17_提现表单校验": {
+      "status": "PASS",
+      "path": "/withdraw",
+      "findings": [],
+      "checks": [
+        "非法地址与低于门槛应即时提示、按钮禁用"
+      ]
+    },
+    "18_后台首页": {
+      "path": "/admin",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1727,
+      "finalUrl": "http://localhost:3000/admin",
+      "checks": [
+        "概览卡片"
+      ],
+      "snapshot": "18_后台首页.png"
+    },
+    "19_后台-用户": {
+      "path": "/admin/users",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1453,
+      "finalUrl": "http://localhost:3000/admin/users",
+      "checks": [
+        "搜索、冻结"
+      ],
+      "snapshot": "19_后台-用户.png"
+    },
+    "20_后台-策略": {
+      "path": "/admin/strategies",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1455,
+      "finalUrl": "http://localhost:3000/admin/strategies",
+      "checks": [
+        "上架/灰度"
+      ],
+      "snapshot": "20_后台-策略.png"
+    },
+    "21_后台-信号": {
+      "path": "/admin/signals",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1508,
+      "finalUrl": "http://localhost:3000/admin/signals",
+      "checks": [
+        "信号列表"
+      ],
+      "snapshot": "21_后台-信号.png"
+    },
+    "22_后台-支付单": {
+      "path": "/admin/payments",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1447,
+      "finalUrl": "http://localhost:3000/admin/payments",
+      "checks": [
+        "人工确认"
+      ],
+      "snapshot": "22_后台-支付单.png"
+    },
+    "23_后台-提现单": {
+      "path": "/admin/withdrawals",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1445,
+      "finalUrl": "http://localhost:3000/admin/withdrawals",
+      "checks": [
+        "审核/打款"
+      ],
+      "snapshot": "23_后台-提现单.png"
+    },
+    "24_后台-交易所邀请码": {
+      "path": "/admin/exchange-invites",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1421,
+      "finalUrl": "http://localhost:3000/admin/exchange-invites",
+      "checks": [
+        "生成 G27 码"
+      ],
+      "snapshot": "24_后台-交易所邀请码.png"
+    },
+    "25_后台-审计": {
+      "path": "/admin/audit",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1442,
+      "finalUrl": "http://localhost:3000/admin/audit",
+      "checks": [
+        "操作留痕"
+      ],
+      "snapshot": "25_后台-审计.png"
+    },
+    "26_后台-风控": {
+      "path": "/admin/risk",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1441,
+      "finalUrl": "http://localhost:3000/admin/risk",
+      "checks": [
+        "风控面板"
+      ],
+      "snapshot": "26_后台-风控.png"
+    },
+    "27_后台-信号会话": {
+      "path": "/admin/signal-session",
+      "status": "PASS",
+      "findings": [],
+      "consoleErrors": [],
+      "loadMs": 1418,
+      "finalUrl": "http://localhost:3000/admin/signal-session",
+      "checks": [
+        "登录态/搜索"
+      ],
+      "snapshot": "27_后台-信号会话.png"
+    },
+    "28_移动端响应式": {
+      "status": "PASS",
+      "path": "/strategies(390px)",
+      "findings": [],
+      "checks": [
+        "390px 视口无横向滚动、内容可读"
+      ]
+    }
+  }
+}

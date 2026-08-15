@@ -1,0 +1,28 @@
+{
+  "generated_at": "2026-08-13T11:22:39.211Z",
+  "summary": {
+    "total": 4,
+    "pass": 4,
+    "issue": 0
+  },
+  "results": {
+    "B_订阅已激活": {
+      "status": "PASS",
+      "findings": []
+    },
+    "C1_一键跟单创建bot": {
+      "status": "PASS",
+      "findings": [],
+      "detail": "signal·saas\n策略广场\n我的跟单\n订阅套餐\n奖励余额\n邀请中心\n我的账户\n我的跟单\n跟单机器人管理 · 独立虚拟账本\n爱你每一天007模拟盘\ngate · 逐仓 10x · 比例 20%\n运行中\n暂停\n详情\n持仓数\n0\n名义价值\n0.00 USDT\n未实现盈亏\n0.00 USDT\n已用保证金\n0.00 USDT"
+    },
+    "C2_我的跟单显示机器人": {
+      "status": "PASS",
+      "findings": [],
+      "detail": "signal·saas\n策略广场\n我的跟单\n订阅套餐\n奖励余额\n邀请中心\n我的账户\n我的跟单\n跟单机器人管理 · 独立虚拟账本\n爱你每一天007模拟盘\ngate · 逐仓 10x · 比例 20%\n运行中\n暂停\n详情\n持仓数\n0\n名义价值\n0.00 USDT\n未实现盈亏\n0.00 USDT\n已用保证金\n0.00 USDT"
+    },
+    "C3_跟单暂停恢复": {
+      "status": "PASS",
+      "findings": []
+    }
+  }
+}

@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>signal·saas 首页数据看板</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   signal-saas 首页数据看板 — 成品实现
+   依据 UI 框架 v0.1 / 交互细化 v0.2 设计语言
+   深海军蓝 #0a1628 · 电光青绿 #00d4aa · 信号波概念
+   ═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --ftx-cyan-300: #40ffc5; --ftx-cyan-400: #00d4aa; --ftx-cyan-500: #00b894; --ftx-cyan-600: #009a7a;
+  --ftx-success-300: #52d886; --ftx-success-400: #28c464; --ftx-success-500: #16a34a;
+  --ftx-warning-400: #facc15; --ftx-warning-500: #eab308;
+  --ftx-error-400: #f87171; --ftx-error-500: #ef4444; --ftx-error-600: #dc2626;
+  --ftx-info-400: #60a5fa; --ftx-info-500: #3b82f6;
+  --ftx-text-primary: #f1f5f9; --ftx-text-secondary: #94a3b8; --ftx-text-tertiary: #64748b; --ftx-text-disabled: #475569;
+  --ftx-surface-base: #0a1628; --ftx-surface-raised: #111d35; --ftx-surface-overlay: #162038;
+  --ftx-surface-glass: rgba(22,32,56,0.85); --ftx-surface-hover: rgba(30,41,59,0.5);
+  --ftx-surface-border: rgba(51,65,85,0.6); --ftx-surface-border-strong: rgba(100,116,139,0.4);
+  --ftx-surface-sunken: #070e1a;
+  --bg: var(--ftx-surface-base); --fg: var(--ftx-text-primary); --muted: var(--ftx-text-secondary);
+  --rule: var(--ftx-surface-border); --accent: var(--ftx-cyan-400); --accent-hover: var(--ftx-cyan-500);
+  --surface: var(--ftx-surface-raised); --surface-dim: var(--ftx-surface-sunken);
+  --font-display: 'Space Grotesk', sans-serif; --font-body: 'Space Grotesk', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+  --font-size-body: 15px; --font-size-caption: 12px; --font-size-mono: 14px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --size-button-height: 36px; --size-button-height-xl: 48px;
+  --radius-xs: 2px; --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-pill: 9999px;
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.15);
+  --shadow-2: 0 4px 8px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-3: 0 8px 24px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.25);
+  --shadow-4: 0 16px 48px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.3);
+  --signal-grid: rgba(0,212,170,0.05);
+  --nav-height: 56px;
+  --brand-glow: 0 0 24px rgba(0,212,170,0.25);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-body);
+  line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-image:
+    radial-gradient(ellipse 55% 40% at 12% -8%, rgba(0,212,170,0.09), transparent 60%),
+    radial-gradient(ellipse 45% 35% at 88% 4%, rgba(43,108,230,0.09), transparent 62%),
+    radial-gradient(ellipse 40% 30% at 92% 90%, rgba(0,212,170,0.05), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* ═══ 信号宇宙背景系统（多层）═══ */
+/* 层 1：极光光晕（缓慢漂移） */
+.bg-aurora { position: fixed; inset: -20%; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(circle 34% at 26% 20%, rgba(0,212,170,0.10), transparent 62%),
+    radial-gradient(circle 28% at 76% 34%, rgba(43,108,230,0.10), transparent 62%),
+    radial-gradient(circle 22% at 60% 84%, rgba(0,212,170,0.07), transparent 58%),
+    radial-gradient(circle 18% at 18% 80%, rgba(43,108,230,0.06), transparent 58%);
+  filter: blur(46px);
+  animation: auroraDrift 28s ease-in-out infinite alternate;
+}
+@keyframes auroraDrift {
+  0% { transform: translate3d(0,0,0) scale(1); }
+  50% { transform: translate3d(2%, -1.5%, 0) scale(1.05); }
+  100% { transform: translate3d(-1.5%, 2%, 0) scale(1.03); }
+}
+/* 层 2：透视聚焦网格（中心亮、边缘淡出） */
+.bg-grid { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(0,212,170,0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,170,0.055) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+}
+/* 层 3：网格交点呼吸光点 */
+.bg-dots { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: radial-gradient(rgba(0,212,170,0.55) 1px, transparent 1.6px);
+  background-size: 52px 52px;
+  background-position: 26px 26px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  animation: dotsBreathe 5.5s ease-in-out infinite;
+}
+@keyframes dotsBreathe { 0%,100% { opacity: .2; } 50% { opacity: .75; } }
+/* 层 4：漂浮数据粒子 */
+.bg-particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.bg-particles i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px rgba(0,212,170,0.7); opacity: 0; animation: floatUp var(--dur,16s) linear var(--delay,0s) infinite; }
+@keyframes floatUp {
+  0% { transform: translateY(105vh) translateX(0); opacity: 0; }
+  8% { opacity: .85; }
+  82% { opacity: .45; }
+  100% { transform: translateY(-4vh) translateX(var(--drift,14px)); opacity: 0; }
+}
+/* 层 5：信号扫描光带 */
+.bg-sweep { position: fixed; left: 0; right: 0; top: 0; height: 180px; pointer-events: none; z-index: 0;
+  background: linear-gradient(180deg, transparent, rgba(0,212,170,0.045) 45%, rgba(0,212,170,0.085) 50%, rgba(0,212,170,0.045) 55%, transparent);
+  animation: sweepDown 12s linear infinite;
+}
+@keyframes sweepDown { 0% { transform: translateY(-180px); } 100% { transform: translateY(112vh); } }
+/* 层 6：噪声纹理 */
+.bg-noise { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+}
+
+/* ── 顶栏 ── */
+.topnav {
+  position: sticky; top: 0; z-index: 200; height: var(--nav-height);
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: 0 var(--space-6); backdrop-filter: blur(16px);
+  background: rgba(10,22,40,0.88); border-bottom: 1px solid var(--rule);
+}
+.brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; }
+.brand-mark { width: 28px; height: 28px; border-radius: var(--radius-sm); display: grid; place-items: center; background: linear-gradient(135deg, var(--ftx-cyan-400), var(--ftx-cyan-600)); box-shadow: var(--brand-glow); }
+.brand-mark svg { width: 16px; height: 16px; }
+.brand-sub { color: var(--muted); font-size: 11px; font-weight: 400; }
+.nav-links { display: flex; gap: 2px; margin-left: var(--space-4); }
+.nav-link { color: var(--muted); text-decoration: none; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); font-size: var(--font-size-body); transition: all .15s; border-left: 2px solid transparent; }
+.nav-link:hover { color: var(--fg); background: var(--ftx-surface-hover); }
+.nav-link.active { color: var(--accent); background: rgba(0,212,170,0.1); border-left-color: var(--accent); }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+
+/* 通知铃铛 */
+.bell-wrap { position: relative; }
+.bell { width: 36px; height: 36px; border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; transition: all .15s; position: relative; }
+.bell:hover { color: var(--fg); border-color: var(--ftx-surface-border-strong); background: var(--ftx-surface-hover); }
+.bell-badge { position: absolute; top: -4px; right: -4px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: var(--radius-pill); background: var(--ftx-error-500); color: #fff; font-size: 10px; font-weight: 600; display: grid; place-items: center; font-family: var(--font-mono); box-shadow: 0 0 8px rgba(239,68,68,0.5); }
+.bell-dropdown {
+  position: absolute; top: 44px; right: 0; width: 360px; max-height: 420px; overflow-y: auto;
+  background: var(--ftx-surface-overlay); border: 1px solid var(--rule); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-4); z-index: 300; display: none; backdrop-filter: blur(20px);
+}
+.bell-dropdown.open { display: block; animation: dropIn .18s ease; }
+@keyframes dropIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.nd-hdr { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--rule); }
+.nd-item { display: flex; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid rgba(255,255,255,0.04); cursor: pointer; transition: background .12s; }
+.nd-item:hover { background: var(--ftx-surface-hover); }
+.nd-item.unread { background: rgba(0,212,170,0.05); }
+.nd-ic { width: 32px; height: 32px; border-radius: var(--radius-sm); display: grid; place-items: center; font-size: 13px; flex-shrink: 0; }
+.nd-t { font-weight: 600; font-size: var(--font-size-body); }
+.nd-d { font-size: var(--font-size-caption); color: var(--muted); }
+.nd-time { font-size: 10px; color: var(--ftx-text-tertiary); }
+.nd-unread-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent); flex-shrink: 0; margin-top: 4px; }
+
+/* 用户区 */
+.user-chip { display: flex; align-items: center; gap: var(--space-2); padding: 4px 10px 4px 4px; border: 1px solid var(--rule); border-radius: var(--radius-pill); cursor: pointer; transition: all .15s; }
+.user-chip:hover { border-color: var(--ftx-surface-border-strong); background: var(--ftx-surface-hover); }
+.user-avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--ftx-cyan-500), var(--ftx-cyan-600)); display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #06281f; }
+.user-mail { font-size: var(--font-size-caption); color: var(--fg); font-family: var(--font-mono); }
+
+/* ── 主布局 ── */
+.layout { max-width: 1240px; margin: 0 auto; padding: var(--space-6) var(--space-5) var(--space-7); position: relative; z-index: 1; display: flex; flex-direction: column; gap: var(--space-5); }
+
+/* 页头 */
+.page-hdr { display: flex; align-items: flex-end; justify-content: space-between; }
+.page-title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+.page-title small { font-size: var(--font-size-caption); color: var(--muted); font-weight: 400; margin-left: var(--space-3); font-family: var(--font-mono); }
+.page-actions { display: flex; gap: var(--space-3); align-items: center; }
+
+/* 按钮 */
+.btn { display: inline-flex; align-items: center; justify-content: center; border: none; cursor: pointer; font-family: var(--font-body); font-size: var(--font-size-body); white-space: nowrap; min-width: var(--size-button-height); transition: all .18s; flex-shrink: 0; text-decoration: none; }
+.btn-primary { background: var(--accent); color: #06281f; border-radius: var(--radius-sm); height: var(--size-button-height); font-weight: 600; box-shadow: var(--brand-glow); }
+.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.btn-secondary { background: transparent; border: 1px solid var(--rule); color: var(--fg); border-radius: var(--radius-sm); height: var(--size-button-height); }
+.btn-secondary:hover { background: var(--ftx-surface-hover); border-color: var(--ftx-surface-border-strong); }
+.btn-sm { height: 28px; font-size: var(--font-size-caption); padding: 0 var(--space-3); }
+.btn-lg { height: var(--size-button-height-xl); padding: 0 var(--space-5); font-weight: 600; font-size: var(--font-size-body); }
+.btn-xl { height: var(--size-button-height-xl); padding: 0 var(--space-6); font-weight: 600; font-size: 16px; }
+
+/* ── Hero 信号波 ── */
+.hero {
+  position: relative; border-radius: var(--radius-lg); overflow: hidden;
+  border: 1px solid var(--rule); background: linear-gradient(135deg, rgba(17,29,53,0.9), rgba(7,14,26,0.95));
+  min-height: 170px; display: flex; align-items: center; padding: var(--space-6);
+}
+.hero-wave { position: absolute; inset: 0; pointer-events: none; opacity: 0.7; }
+.hero-wave svg { width: 100%; height: 100%; }
+.hero-content { position: relative; z-index: 2; max-width: 560px; }
+.hero-eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: var(--space-2); }
+.hero-title { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.3; }
+.hero-desc { color: var(--muted); font-size: var(--font-size-body); margin-top: var(--space-2); }
+.hero-stats { display: flex; gap: var(--space-6); margin-top: var(--space-5); }
+.hero-stat .hs-l { font-size: 10px; color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.08em; }
+.hero-stat .hs-v { font-family: var(--font-display); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+/* 指标卡 */
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4); }
+.metric-card {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg);
+  padding: var(--space-4); box-shadow: var(--shadow-2); position: relative; overflow: hidden; transition: all .2s;
+}
+.metric-card:hover { border-color: var(--ftx-surface-border-strong); transform: translateY(-2px); box-shadow: var(--shadow-3); }
+.metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--accent), transparent 70%); }
+.metric-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); }
+.metric-label { font-size: var(--font-size-caption); color: var(--muted); }
+.metric-icon { width: 28px; height: 28px; border-radius: var(--radius-sm); display: grid; place-items: center; font-size: 12px; background: rgba(0,212,170,0.1); color: var(--accent); }
+.metric-value { font-family: var(--font-display); font-size: 26px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: var(--space-2); transition: all .3s; }
+.metric-value .unit { font-size: 13px; color: var(--muted); font-weight: 400; }
+.metric-sub { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--font-size-caption); }
+.metric-sub .delta { font-family: var(--font-mono); font-weight: 500; }
+.positive { color: var(--ftx-success-400); }
+.negative { color: var(--ftx-error-400); }
+.muted-txt { color: var(--muted); }
+/* 金额打码 */
+.masked { filter: blur(6px); user-select: none; pointer-events: none; }
+.eye-btn { background: none; border: none; color: var(--ftx-text-tertiary); cursor: pointer; padding: 2px; font-size: 13px; transition: color .15s; }
+.eye-btn:hover { color: var(--accent); }
+
+/* 区域标题 */
+.section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3); }
+.section-title h2 { font-size: var(--font-size-h4); font-weight: 600; display: flex; align-items: center; gap: var(--space-2); }
+.section-title h2 .sec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.section-link { color: var(--muted); font-size: var(--font-size-caption); text-decoration: none; transition: color .15s; cursor: pointer; }
+.section-link:hover { color: var(--accent); }
+
+/* 新手引导 */
+.onboard-card {
+  border: 1px solid rgba(0,212,170,0.35); border-radius: var(--radius-lg); padding: var(--space-5);
+  background: linear-gradient(135deg, rgba(0,212,170,0.07), rgba(17,29,53,0.5)); position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: var(--space-5);
+}
+.onboard-card::after { content: ''; position: absolute; top: -40px; right: -40px; width: 160px; height: 160px; border-radius: 50%; background: radial-gradient(circle, rgba(0,212,170,0.12), transparent 70%); }
+.onboard-steps { display: flex; gap: var(--space-4); flex: 1; position: relative; z-index: 1; }
+.onboard-step { flex: 1; display: flex; flex-direction: column; gap: var(--space-2); }
+.ob-num { width: 28px; height: 28px; border-radius: var(--radius-sm); display: grid; place-items: center; font-family: var(--font-mono); font-size: 12px; font-weight: 600; border: 1px solid var(--rule); color: var(--muted); }
+.ob-num.done { background: rgba(0,212,170,0.15); border-color: var(--ftx-cyan-600); color: var(--accent); }
+.ob-num.current { background: var(--accent); border-color: var(--accent); color: #06281f; box-shadow: var(--brand-glow); }
+.ob-title { font-weight: 600; font-size: var(--font-size-body); }
+.ob-desc { font-size: var(--font-size-caption); color: var(--muted); }
+.onboard-cta { position: relative; z-index: 1; }
+
+/* 持仓卡片 */
+.bots-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-4); }
+.bot-card {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg);
+  padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); transition: all .2s;
+}
+.bot-card:hover { border-color: var(--ftx-surface-border-strong); box-shadow: var(--shadow-3); }
+.bot-head { display: flex; justify-content: space-between; align-items: center; }
+.bot-name { font-weight: 600; font-size: var(--font-size-body); }
+.bot-status { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-caption); color: var(--muted); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ftx-success-400); box-shadow: 0 0 8px var(--ftx-success-400); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.bot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2) var(--space-4); }
+.bot-f { font-size: 10px; color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; }
+.bot-v { font-family: var(--font-mono); font-size: var(--font-size-caption); font-weight: 600; font-variant-numeric: tabular-nums; }
+.bot-pnl { font-family: var(--font-mono); font-weight: 600; font-size: var(--font-size-body); }
+.bot-foot { display: flex; justify-content: space-between; align-items: center; padding-top: var(--space-3); border-top: 1px solid var(--ftx-surface-border); }
+.bot-spark { height: 32px; flex: 1; margin-right: var(--space-4); }
+
+/* 行情 ticker */
+.ticker-strip {
+  border: 1px solid var(--rule); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface);
+}
+.ticker-hdr { display: flex; justify-content: space-between; align-items: center; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--rule); }
+.ticker-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.ticker-item { padding: var(--space-3) var(--space-4); border-right: 1px solid var(--rule); }
+.ticker-item:last-child { border-right: none; }
+.tk-pair { font-family: var(--font-mono); font-size: var(--font-size-caption); color: var(--muted); }
+.tk-price { font-family: var(--font-mono); font-size: var(--font-size-body); font-weight: 600; margin-top: var(--space-1); font-variant-numeric: tabular-nums; }
+.tk-chg { font-family: var(--font-mono); font-size: var(--font-size-caption); font-weight: 500; }
+
+/* 双栏 */
+.two-col { display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--space-5); }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-4); }
+
+/* 订单表格 */
+.ftx-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-caption); }
+.ftx-table thead th { height: 32px; padding: 0 var(--space-3); text-align: left; font-weight: 600; font-size: var(--font-size-caption); color: var(--muted); background: var(--surface-dim); border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.ftx-table thead th.num { text-align: right; }
+.ftx-table tbody td { height: 36px; padding: 0 var(--space-3); border-bottom: 1px solid var(--ftx-surface-border); white-space: nowrap; }
+.ftx-table tbody td.num { text-align: right; font-family: var(--font-mono); font-size: var(--font-size-mono); font-variant-numeric: tabular-nums; }
+.ftx-table tbody tr { transition: background .12s; }
+.ftx-table tbody tr:hover { background: var(--ftx-surface-hover); }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: var(--radius-pill); font-size: var(--font-size-caption); font-weight: 500; white-space: nowrap; }
+.badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.badge-ok { background: rgba(22,163,74,0.15); color: var(--ftx-success-400); }
+.badge-warn { background: rgba(234,179,8,0.15); color: var(--ftx-warning-400); }
+.badge-err { background: rgba(239,68,68,0.15); color: var(--ftx-error-400); }
+.badge-info { background: rgba(59,130,246,0.15); color: var(--ftx-info-400); }
+
+/* Toast */
+.toast-stack { position: fixed; top: calc(var(--nav-height) + var(--space-4)); right: var(--space-5); z-index: 1000; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast {
+  min-width: 280px; max-width: 360px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  background: var(--ftx-surface-overlay); border: 1px solid var(--rule); box-shadow: var(--shadow-4);
+  display: flex; align-items: center; gap: var(--space-3); animation: toastIn .25s ease;
+  backdrop-filter: blur(16px); font-size: var(--font-size-caption);
+}
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+.toast.success { border-color: rgba(22,163,74,0.4); }
+.toast.success .t-ic { color: var(--ftx-success-400); }
+.toast.warn { border-color: rgba(234,179,8,0.4); }
+.toast.warn .t-ic { color: var(--ftx-warning-400); }
+.toast.error { border-color: rgba(239,68,68,0.4); }
+.toast.error .t-ic { color: var(--ftx-error-400); }
+.t-ic { font-size: 14px; flex-shrink: 0; }
+.t-close { margin-left: auto; background: none; border: none; color: var(--ftx-text-tertiary); cursor: pointer; font-size: 12px; }
+.t-close:hover { color: var(--fg); }
+
+/* 骨架屏 */
+.skeleton { border-radius: var(--radius-md); background: var(--ftx-surface-hover); position: relative; overflow: hidden; }
+.skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent); animation: shimmer 1.4s infinite; }
+@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+/* 响应式 */
+@media (max-width: 980px) {
+  .nav-links { display: none; }
+  .two-col { grid-template-columns: 1fr; }
+  .hero-stats { gap: var(--space-4); flex-wrap: wrap; }
+  .onboard-card { flex-direction: column; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+<!-- 信号宇宙背景层 -->
+<div class="bg-aurora"></div>
+<div class="bg-grid"></div>
+<div class="bg-dots"></div>
+<div class="bg-sweep"></div>
+<div class="bg-noise"></div>
+<div class="bg-particles">
+  <i style="left:6%;--dur:17s;--delay:0s;--drift:14px"></i>
+  <i style="left:14%;--dur:23s;--delay:4s;--drift:-12px"></i>
+  <i style="left:23%;--dur:19s;--delay:8s;--drift:10px"></i>
+  <i style="left:32%;--dur:25s;--delay:1s;--drift:-16px"></i>
+  <i style="left:41%;--dur:16s;--delay:6s;--drift:12px"></i>
+  <i style="left:52%;--dur:21s;--delay:11s;--drift:-10px"></i>
+  <i style="left:61%;--dur:18s;--delay:2s;--drift:16px"></i>
+  <i style="left:70%;--dur:24s;--delay:9s;--drift:-14px"></i>
+  <i style="left:79%;--dur:20s;--delay:5s;--drift:10px"></i>
+  <i style="left:88%;--dur:22s;--delay:12s;--drift:-12px"></i>
+  <i style="left:94%;--dur:17s;--delay:7s;--drift:8px"></i>
+  <i style="left:10%;--dur:26s;--delay:14s;--drift:-8px"></i>
+</div>
+
+<!-- ═══ 顶栏 ═══ -->
+<nav class="topnav">
+  <div class="brand">
+    <div class="brand-mark"><svg viewBox="0 0 16 16" fill="none"><path d="M1 9h3l2-6 3 10 2-5h4" stroke="#06281f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    signal<span class="brand-sub">·saas</span>
+  </div>
+  <div class="nav-links">
+    <a class="nav-link active" href="#">首页</a>
+    <a class="nav-link" href="#">策略广场</a>
+    <a class="nav-link" href="#">我的跟单</a>
+    <a class="nav-link" href="#">邀请奖励</a>
+  </div>
+  <div class="nav-right">
+    <!-- 通知铃铛 -->
+    <div class="bell-wrap">
+      <button class="bell" id="bellBtn" title="通知">🔔</button>
+      <span class="bell-badge" id="bellBadge">3</span>
+      <div class="bell-dropdown" id="bellDropdown">
+        <div class="nd-hdr">
+          <span style="font-weight:600">通知</span>
+          <span style="color:var(--accent);font-size:var(--font-size-caption);cursor:pointer" onclick="markAllRead()">全部已读</span>
+        </div>
+        <div class="nd-item unread">
+          <span class="nd-ic" style="background:rgba(22,163,74,0.15);color:var(--ftx-success-400)">✓</span>
+          <div style="flex:1">
+            <div class="nd-t">奖励已到账</div>
+            <div class="nd-d">下级订阅奖励 +1.99 USDT 已计入可提现余额</div>
+            <div class="nd-time">10 分钟前</div>
+          </div>
+          <span class="nd-unread-dot"></span>
+        </div>
+        <div class="nd-item unread">
+          <span class="nd-ic" style="background:rgba(59,130,246,0.15);color:var(--ftx-info-400)">◎</span>
+          <div style="flex:1">
+            <div class="nd-t">新信号推送</div>
+            <div class="nd-d">BTC 趋势突破触发 ADD 加仓信号，已自动执行</div>
+            <div class="nd-time">32 分钟前</div>
+          </div>
+          <span class="nd-unread-dot"></span>
+        </div>
+        <div class="nd-item unread">
+          <span class="nd-ic" style="background:rgba(234,179,8,0.15);color:var(--ftx-warning-400)">⚠</span>
+          <div style="flex:1">
+            <div class="nd-t">订阅即将到期</div>
+            <div class="nd-d">正式版订阅剩余 3 天，请及时续费避免跟单中断</div>
+            <div class="nd-time">2 小时前</div>
+          </div>
+          <span class="nd-unread-dot"></span>
+        </div>
+        <div class="nd-item">
+          <span class="nd-ic" style="background:rgba(100,116,139,0.15);color:var(--muted)">✓</span>
+          <div style="flex:1">
+            <div class="nd-t">提现审核通过</div>
+            <div class="nd-d">#W20260811002 · 50 USDT 已通过审核，正在打款</div>
+            <div class="nd-time">昨天</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="user-chip" onclick="location.href='2026-08-12-signal-saas-account.html'">
+      <div class="user-avatar">U</div>
+      <span class="user-mail">user***@mail.com</span>
+    </div>
+  </div>
+</nav>
+
+<!-- Toast 栈 -->
+<div class="toast-stack" id="toastStack"></div>
+
+<!-- ═══ 主内容 ═══ -->
+<div class="layout">
+
+  <!-- 页头 -->
+  <div class="page-hdr">
+    <div>
+      <div style="font-size:11px;font-family:var(--font-mono);letter-spacing:0.12em;text-transform:uppercase;color:var(--accent);margin-bottom:var(--space-1)">DASHBOARD</div>
+      <h1 class="page-title">首页数据看板<small>2026-08-12 · 已同步</small></h1>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-secondary" onclick="showToast('warn','数据刷新中，请稍候')">刷新数据</button>
+      <button class="btn btn-primary" onclick="showToast('success','正在前往策略广场')">去策略广场</button>
+    </div>
+  </div>
+
+  <!-- Hero 信号波 -->
+  <div class="hero">
+    <div class="hero-wave">
+      <svg viewBox="0 0 1200 170" preserveAspectRatio="none">
+        <path d="M0,120 C120,80 200,140 320,100 C440,60 520,130 640,95 C760,60 840,120 960,85 C1080,50 1140,100 1200,80" fill="none" stroke="rgba(0,212,170,0.25)" stroke-width="1" stroke-dasharray="4 6"/>
+        <path d="M0,90 C150,60 250,110 400,80 C550,50 650,100 800,70 C950,40 1050,90 1200,60" fill="none" stroke="rgba(0,212,170,0.45)" stroke-width="1.5" stroke-dasharray="4 6"/>
+        <path d="M0,60 C180,35 300,80 480,55 C660,30 780,75 960,48 C1080,30 1150,55 1200,42" fill="none" stroke="#00d4aa" stroke-width="2" filter="drop-shadow(0 0 8px rgba(0,212,170,0.5))"/>
+      </svg>
+    </div>
+    <div class="hero-content">
+      <div class="hero-eyebrow">SIGNAL AGGREGATION · 5 EXCHANGES</div>
+      <div class="hero-title">跨 5 大交易所信号聚合，一键跟单</div>
+      <div class="hero-desc">平台聚合 Binance · OKX · Bybit · Bitget · Gate 带单信号，实时匹配策略，自动执行跟单</div>
+      <div class="hero-stats">
+        <div class="hero-stat"><div class="hs-l">聚合信号源</div><div class="hs-v">5 所</div></div>
+        <div class="hero-stat"><div class="hs-l">运行机器人</div><div class="hs-v">3 个</div></div>
+        <div class="hero-stat"><div class="hs-l">本周净盈亏</div><div class="hs-v" style="color:var(--ftx-success-400)">+124.50</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 指标卡 -->
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-hdr">
+        <span class="metric-label">可提现余额</span>
+        <span class="metric-icon">◎</span>
+      </div>
+      <div class="metric-value"><span id="balanceVal">1,234.56</span><span class="unit">USDT</span>
+        <button class="eye-btn" id="eyeBalance" onclick="toggleMask('balanceVal',this)" title="隐藏/显示">👁</button>
+      </div>
+      <div class="metric-sub"><span class="delta positive">+12.4%</span><span class="muted-txt">本周奖励入账</span></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-hdr">
+        <span class="metric-label">累计奖励</span>
+        <span class="metric-icon" style="background:rgba(22,163,74,0.1);color:var(--ftx-success-400)">⇄</span>
+      </div>
+      <div class="metric-value">89.20<span class="unit">USDT</span></div>
+      <div class="metric-sub"><span class="delta positive">+8.90</span><span class="muted-txt">本月新增</span></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-hdr">
+        <span class="metric-label">运行中机器人</span>
+        <span class="metric-icon" style="background:rgba(59,130,246,0.1);color:var(--ftx-info-400)">▣</span>
+      </div>
+      <div class="metric-value">3<span class="unit">个</span></div>
+      <div class="metric-sub"><span class="delta positive">2</span><span class="muted-txt">盈利中</span> · <span class="delta negative">1</span><span class="muted-txt">回撤中</span></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-hdr">
+        <span class="metric-label">订阅有效期</span>
+        <span class="metric-icon" style="background:rgba(234,179,8,0.1);color:var(--ftx-warning-400)">◈</span>
+      </div>
+      <div class="metric-value">31<span class="unit">天</span></div>
+      <div class="metric-sub"><span class="muted-txt">正式版 · 至 2026-09-12</span></div>
+    </div>
+  </div>
+
+  <!-- 新手引导（G23：has_api=true + has_bot=true 时隐藏）-->
+  <div class="onboard-card" id="onboardCard">
+    <div class="onboard-steps">
+      <div class="onboard-step">
+        <span class="ob-num done">✓</span>
+        <div>
+          <div class="ob-title">绑定交易所</div>
+          <div class="ob-desc">完成 API 绑定（已绑定 Gate）</div>
+        </div>
+      </div>
+      <div class="onboard-step">
+        <span class="ob-num current">2</span>
+        <div>
+          <div class="ob-title">选择策略</div>
+          <div class="ob-desc">从策略广场挑选适合的策略</div>
+        </div>
+      </div>
+      <div class="onboard-step">
+        <span class="ob-num">3</span>
+        <div>
+          <div class="ob-title">开启跟单</div>
+          <div class="ob-desc">配置方向/杠杆/比例，开始跟单</div>
+        </div>
+      </div>
+    </div>
+    <div class="onboard-cta">
+      <button class="btn btn-primary btn-lg" onclick="showToast('success','前往策略广场挑选策略')">立即选策略</button>
+    </div>
+  </div>
+
+  <!-- 我的跟单 -->
+  <section>
+    <div class="section-title">
+      <h2><span class="sec-dot"></span>我的跟单机器人</h2>
+      <a class="section-link" onclick="showToast('info','前往我的跟单管理')">查看全部 →</a>
+    </div>
+    <div class="bots-grid">
+      <div class="bot-card">
+        <div class="bot-head">
+          <span class="bot-name">BTC 趋势突破</span>
+          <span class="bot-status"><span class="status-dot"></span>运行中</span>
+        </div>
+        <div class="bot-grid">
+          <div><div class="bot-f">方向</div><div class="bot-v" style="color:var(--ftx-success-400)">做多</div></div>
+          <div><div class="bot-f">杠杆</div><div class="bot-v">10×</div></div>
+          <div><div class="bot-f">保证金模式</div><div class="bot-v">逐仓</div></div>
+          <div><div class="bot-f">跟单比例</div><div class="bot-v">20%</div></div>
+          <div><div class="bot-f">名义价值</div><div class="bot-v">2,480 USDT</div></div>
+          <div><div class="bot-f">未实现盈亏</div><div class="bot-pnl positive">+124.50</div></div>
+        </div>
+        <div class="bot-foot">
+          <svg class="bot-spark" viewBox="0 0 100 32" preserveAspectRatio="none"><path d="M0,24 L20,20 L35,14 L50,18 L65,8 L80,12 L100,4" fill="none" stroke="var(--ftx-success-400)" stroke-width="1.5"/></svg>
+          <button class="btn btn-secondary btn-sm">暂停</button>
+        </div>
+      </div>
+      <div class="bot-card">
+        <div class="bot-head">
+          <span class="bot-name">ETH 区间震荡</span>
+          <span class="bot-status"><span class="status-dot" style="background:var(--ftx-warning-400);box-shadow:0 0 8px var(--ftx-warning-400);animation:none"></span>已暂停</span>
+        </div>
+        <div class="bot-grid">
+          <div><div class="bot-f">方向</div><div class="bot-v" style="color:var(--ftx-error-400)">做空</div></div>
+          <div><div class="bot-f">杠杆</div><div class="bot-v">5×</div></div>
+          <div><div class="bot-f">保证金模式</div><div class="bot-v">全仓</div></div>
+          <div><div class="bot-f">跟单比例</div><div class="bot-v">10%</div></div>
+          <div><div class="bot-f">名义价值</div><div class="bot-v">1,120 USDT</div></div>
+          <div><div class="bot-f">未实现盈亏</div><div class="bot-pnl negative">-32.80</div></div>
+        </div>
+        <div class="bot-foot">
+          <svg class="bot-spark" viewBox="0 0 100 32" preserveAspectRatio="none"><path d="M0,8 L20,14 L35,10 L50,20 L65,16 L80,24 L100,20" fill="none" stroke="var(--ftx-error-400)" stroke-width="1.5"/></svg>
+          <button class="btn btn-primary btn-sm">恢复</button>
+        </div>
+      </div>
+      <div class="bot-card" style="border-style:dashed;justify-content:center;align-items:center;min-height:180px;background:transparent">
+        <div style="width:48px;height:48px;border-radius:50%;border:1px dashed var(--ftx-surface-border-strong);display:grid;place-items:center;color:var(--ftx-text-tertiary);font-size:20px">＋</div>
+        <div style="color:var(--muted);font-size:var(--font-size-caption)">开启新跟单</div>
+        <button class="btn btn-primary btn-sm" onclick="showToast('success','前往策略广场')">去策略广场</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 双栏：行情 + 最近订单 -->
+  <div class="two-col">
+    <div class="panel">
+      <div class="section-title" style="margin-bottom:var(--space-3)">
+        <h2 style="font-size:16px"><span class="sec-dot"></span>实时行情</h2>
+        <span class="muted-txt" style="font-size:10px;font-family:var(--font-mono)">WS · pnl.tick / account.balance</span>
+      </div>
+      <div class="ticker-strip">
+        <div class="ticker-grid">
+          <div class="ticker-item">
+            <div class="tk-pair">BTC_USDT</div>
+            <div class="tk-price">64,040.8</div>
+            <div class="tk-chg positive">+2.34%</div>
+          </div>
+          <div class="ticker-item">
+            <div class="tk-pair">ETH_USDT</div>
+            <div class="tk-price">3,287.4</div>
+            <div class="tk-chg negative">-1.12%</div>
+          </div>
+          <div class="ticker-item">
+            <div class="tk-pair">SOL_USDT</div>
+            <div class="tk-price">148.92</div>
+            <div class="tk-chg positive">+5.67%</div>
+          </div>
+          <div class="ticker-item">
+            <div class="tk-pair">DOGE_USDT</div>
+            <div class="tk-price">0.1542</div>
+            <div class="tk-chg negative">-0.84%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title" style="margin-bottom:var(--space-3)">
+        <h2 style="font-size:16px"><span class="sec-dot"></span>最近跟单订单</h2>
+        <span class="section-link" onclick="showToast('info','前往订单记录')">全部 →</span>
+      </div>
+      <table class="ftx-table">
+        <thead><tr><th>策略</th><th>动作</th><th class="num">金额</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>BTC 趋势</td><td style="color:var(--ftx-success-400)">加仓</td><td class="num">+496.00</td><td><span class="badge badge-ok">已成交</span></td>
+          </tr>
+          <tr>
+            <td>ETH 震荡</td><td style="color:var(--ftx-error-400)">减仓</td><td class="num">-112.00</td><td><span class="badge badge-ok">已成交</span></td>
+          </tr>
+          <tr>
+            <td>SOL 动量</td><td style="color:var(--ftx-success-400)">开仓</td><td class="num">+258.00</td><td><span class="badge badge-warn">待确认</span></td>
+          </tr>
+          <tr>
+            <td>BTC 趋势</td><td style="color:var(--ftx-success-400)">开仓</td><td class="num">+2,480.00</td><td><span class="badge badge-ok">已成交</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ── 通知下拉 ── */
+const bellBtn = document.getElementById('bellBtn');
+const bellDropdown = document.getElementById('bellDropdown');
+bellBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  bellDropdown.classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+  if (!bellDropdown.contains(e.target) && !bellBtn.contains(e.target)) {
+    bellDropdown.classList.remove('open');
+  }
+});
+
+function markAllRead() {
+  document.querySelectorAll('.nd-item.unread').forEach(i => i.classList.remove('unread'));
+  document.querySelectorAll('.nd-unread-dot').forEach(d => d.remove());
+  document.getElementById('bellBadge').style.display = 'none';
+  showToast('success', '已全部标记为已读');
+}
+
+/* ── 金额小眼睛（G22）── */
+function toggleMask(id, btn) {
+  const el = document.getElementById(id);
+  const masked = el.classList.toggle('masked');
+  btn.textContent = masked ? '👁' : '👁';
+  btn.title = masked ? '显示金额' : '隐藏金额';
+}
+
+/* ── Toast（E2）── */
+function showToast(type, msg) {
+  const stack = document.getElementById('toastStack');
+  const icons = { success: '✓', warn: '!', error: '✕', info: 'i' };
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span class="t-ic">${icons[type] || 'i'}</span><span>${msg}</span><button class="t-close" onclick="this.parentElement.remove()">✕</button>`;
+  stack.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3200);
+}
+
+/* ── WS 模拟：奖励到账实时刷新（G12 5 字段）── */
+setTimeout(() => {
+  const bal = document.getElementById('balanceVal');
+  bal.textContent = '1,236.55';
+  showToast('success', '奖励已到账 +1.99 USDT（WS reward.tick）');
+}, 6000);
+
+/* ── WS 模拟：盈亏跳动（pnl.tick）── */
+let tickCount = 0;
+setInterval(() => {
+  tickCount++;
+  const pnlEls = document.querySelectorAll('.bot-pnl');
+  pnlEls.forEach((el, i) => {
+    const base = i === 0 ? 124.5 : -32.8;
+    const delta = (Math.random() * 0.8 - 0.4);
+    el.textContent = (base + delta).toFixed(2);
+  });
+  if (tickCount % 2 === 0) {
+    showToast('info', '行情已更新（WS pnl.tick）');
+  }
+}, 8000);
+</script>
+</body>
+</html>

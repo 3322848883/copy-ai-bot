@@ -1,0 +1,19 @@
+{
+  "generated_at": "2026-08-13T11:28:30.600Z",
+  "summary": {
+    "total": 2,
+    "pass": 2,
+    "issue": 0
+  },
+  "results": {
+    "E1_信号驱动订单持仓显示": {
+      "status": "PASS",
+      "findings": [],
+      "detail": "signal·saas\n策略广场\n我的跟单\n订阅套餐\n奖励余额\n邀请中心\n我的账户\n我的跟单\n跟单机器人管理 · 独立虚拟账本\n爱你每一天007模拟盘\ngate · 逐仓 10x · 比例 20%\n运行中\n暂停\n详情\n持仓数\n1\n名义价值\n100000000.00 USDT\n未实现盈亏\n0.00 USDT\n已用保证金\n200.00 USDT"
+    },
+    "E2_账户页正常": {
+      "status": "PASS",
+      "findings": []
+    }
+  }
+}

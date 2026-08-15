@@ -1,0 +1,130 @@
+# M6 T6.4：一键部署（api + web + db + redis + celery worker/beat + mailhog）
+services:
+  # ★ 邮件捕获（SMTP 1025 / Web UI + JSON API 8025），prod 模式注册验证码读取
+  mailhog:
+    image: mailhog/mailhog:latest
+    environment:
+      MH_STORAGE: memory
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: signal
+      POSTGRES_PASSWORD: signal
+      POSTGRES_DB: signal_saas
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U signal -d signal_saas"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    command: sh -c "alembic upgrade head && uvicorn api.main:app --host 0.0.0.0 --port 8000"
+    environment:
+      APP_ENV: prod
+      DEBUG: "false"
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-prod}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_saas
+      REDIS_URL: redis://redis:6379/0
+      # ★ 邮件：prod 模式注册验证码经 mailhog 捕获（Web UI 8025 / SMTP 1025）
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      # ★ 真实采集 + 有头(xvfb 虚拟屏)：Gate Akamai 拦截 headless，必须 headful
+      SCRAPER_REAL: "1"
+      SCRAPER_HEADLESS: "false"
+      # ★ 模式2 信号源：已跟单交易员（后台搜索/跟单后同步维护）
+      SIGNAL_SESSION_ENABLED: "true"
+      SIGNAL_SESSION_HEADLESS: "false"
+      SIGNAL_SESSION_DATA_DIR: /app/data/signal_session
+      SIGNAL_FOLLOWER_LEADER_IDS: '["32801","24264"]'
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # ★ 登录态持久化（user_data_dir 落盘），重启容器不丢登录
+      - ./data/signal_session:/app/data/signal_session
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  worker:
+    build: .
+    image: ai-api:latest
+    command: celery -A api.workers.celery_app:celery_app worker --loglevel=info
+    environment:
+      APP_ENV: prod
+      SCRAPER_REAL: "1"
+      SCRAPER_HEADLESS: "false"
+      SIGNAL_SESSION_ENABLED: "true"
+      SIGNAL_SESSION_HEADLESS: "false"
+      SIGNAL_SESSION_DATA_DIR: /app/data/signal_session
+      SIGNAL_FOLLOWER_LEADER_IDS: '["32801","24264"]'
+      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_saas
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data/signal_session:/app/data/signal_session
+    restart: unless-stopped
+
+  beat:
+    build: .
+    image: ai-api:latest
+    command: celery -A api.workers.celery_app:celery_app beat --loglevel=info
+    environment:
+      APP_ENV: prod
+      SCRAPER_REAL: "1"
+      SIGNAL_SESSION_ENABLED: "true"
+      SIGNAL_SESSION_DATA_DIR: /app/data/signal_session
+      SIGNAL_FOLLOWER_LEADER_IDS: '["32801","24264"]'
+      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_saas
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data/signal_session:/app/data/signal_session
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: web-ui/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: http://localhost:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>signal·saas 策略广场</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   signal-saas 策略广场 — 成品实现
+   与首页看板同一设计语言：深海军蓝 + 电光青绿 + 信号波
+   ═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --ftx-cyan-300: #40ffc5; --ftx-cyan-400: #00d4aa; --ftx-cyan-500: #00b894; --ftx-cyan-600: #009a7a;
+  --ftx-success-300: #52d886; --ftx-success-400: #28c464; --ftx-success-500: #16a34a;
+  --ftx-warning-400: #facc15; --ftx-warning-500: #eab308;
+  --ftx-error-400: #f87171; --ftx-error-500: #ef4444; --ftx-error-600: #dc2626;
+  --ftx-info-400: #60a5fa; --ftx-info-500: #3b82f6;
+  --ftx-text-primary: #f1f5f9; --ftx-text-secondary: #94a3b8; --ftx-text-tertiary: #64748b; --ftx-text-disabled: #475569;
+  --ftx-surface-base: #0a1628; --ftx-surface-raised: #111d35; --ftx-surface-overlay: #162038;
+  --ftx-surface-glass: rgba(22,32,56,0.85); --ftx-surface-hover: rgba(30,41,59,0.5);
+  --ftx-surface-border: rgba(51,65,85,0.6); --ftx-surface-border-strong: rgba(100,116,139,0.4);
+  --ftx-surface-sunken: #070e1a;
+  --bg: var(--ftx-surface-base); --fg: var(--ftx-text-primary); --muted: var(--ftx-text-secondary);
+  --rule: var(--ftx-surface-border); --accent: var(--ftx-cyan-400); --accent-hover: var(--ftx-cyan-500);
+  --surface: var(--ftx-surface-raised); --surface-dim: var(--ftx-surface-sunken);
+  --font-display: 'Space Grotesk', sans-serif; --font-body: 'Space Grotesk', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+  --font-size-body: 15px; --font-size-caption: 12px; --font-size-mono: 14px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --size-button-height: 36px; --size-button-height-xl: 48px;
+  --radius-xs: 2px; --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-pill: 9999px;
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.15);
+  --shadow-2: 0 4px 8px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-3: 0 8px 24px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.25);
+  --shadow-4: 0 16px 48px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.3);
+  --signal-grid: rgba(0,212,170,0.05);
+  --nav-height: 56px;
+  --brand-glow: 0 0 24px rgba(0,212,170,0.25);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-body);
+  line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-image:
+    radial-gradient(ellipse 55% 40% at 12% -8%, rgba(0,212,170,0.09), transparent 60%),
+    radial-gradient(ellipse 45% 35% at 88% 4%, rgba(43,108,230,0.09), transparent 62%),
+    radial-gradient(ellipse 40% 30% at 92% 90%, rgba(0,212,170,0.05), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* ═══ 信号宇宙背景系统（多层）═══ */
+.bg-aurora { position: fixed; inset: -20%; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(circle 34% at 26% 20%, rgba(0,212,170,0.10), transparent 62%),
+    radial-gradient(circle 28% at 76% 34%, rgba(43,108,230,0.10), transparent 62%),
+    radial-gradient(circle 22% at 60% 84%, rgba(0,212,170,0.07), transparent 58%),
+    radial-gradient(circle 18% at 18% 80%, rgba(43,108,230,0.06), transparent 58%);
+  filter: blur(46px);
+  animation: auroraDrift 28s ease-in-out infinite alternate;
+}
+@keyframes auroraDrift {
+  0% { transform: translate3d(0,0,0) scale(1); }
+  50% { transform: translate3d(2%, -1.5%, 0) scale(1.05); }
+  100% { transform: translate3d(-1.5%, 2%, 0) scale(1.03); }
+}
+.bg-grid { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(0,212,170,0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,170,0.055) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+}
+.bg-dots { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: radial-gradient(rgba(0,212,170,0.55) 1px, transparent 1.6px);
+  background-size: 52px 52px;
+  background-position: 26px 26px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  animation: dotsBreathe 5.5s ease-in-out infinite;
+}
+@keyframes dotsBreathe { 0%,100% { opacity: .2; } 50% { opacity: .75; } }
+.bg-particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.bg-particles i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px rgba(0,212,170,0.7); opacity: 0; animation: floatUp var(--dur,16s) linear var(--delay,0s) infinite; }
+@keyframes floatUp {
+  0% { transform: translateY(105vh) translateX(0); opacity: 0; }
+  8% { opacity: .85; }
+  82% { opacity: .45; }
+  100% { transform: translateY(-4vh) translateX(var(--drift,14px)); opacity: 0; }
+}
+.bg-sweep { position: fixed; left: 0; right: 0; top: 0; height: 180px; pointer-events: none; z-index: 0;
+  background: linear-gradient(180deg, transparent, rgba(0,212,170,0.045) 45%, rgba(0,212,170,0.085) 50%, rgba(0,212,170,0.045) 55%, transparent);
+  animation: sweepDown 12s linear infinite;
+}
+@keyframes sweepDown { 0% { transform: translateY(-180px); } 100% { transform: translateY(112vh); } }
+.bg-noise { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+}
+
+/* 顶栏 */
+.topnav { position: sticky; top: 0; z-index: 200; height: var(--nav-height); display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-6); backdrop-filter: blur(16px); background: rgba(10,22,40,0.88); border-bottom: 1px solid var(--rule); }
+.brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; text-decoration: none; color: var(--fg); }
+.brand-mark { width: 28px; height: 28px; border-radius: var(--radius-sm); display: grid; place-items: center; background: linear-gradient(135deg, var(--ftx-cyan-400), var(--ftx-cyan-600)); box-shadow: var(--brand-glow); }
+.brand-mark svg { width: 16px; height: 16px; }
+.brand-sub { color: var(--muted); font-size: 11px; font-weight: 400; }
+.nav-links { display: flex; gap: 2px; margin-left: var(--space-4); }
+.nav-link { color: var(--muted); text-decoration: none; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); font-size: var(--font-size-body); transition: all .15s; border-left: 2px solid transparent; }
+.nav-link:hover { color: var(--fg); background: var(--ftx-surface-hover); }
+.nav-link.active { color: var(--accent); background: rgba(0,212,170,0.1); border-left-color: var(--accent); }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+.bell-wrap { position: relative; }
+.bell { width: 36px; height: 36px; border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; transition: all .15s; }
+.bell:hover { color: var(--fg); border-color: var(--ftx-surface-border-strong); background: var(--ftx-surface-hover); }
+.bell-badge { position: absolute; top: -4px; right: -4px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: var(--radius-pill); background: var(--ftx-error-500); color: #fff; font-size: 10px; font-weight: 600; display: grid; place-items: center; font-family: var(--font-mono); }
+.user-chip { display: flex; align-items: center; gap: var(--space-2); padding: 4px 10px 4px 4px; border: 1px solid var(--rule); border-radius: var(--radius-pill); cursor: pointer; transition: all .15s; }
+.user-avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--ftx-cyan-500), var(--ftx-cyan-600)); display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #06281f; }
+.user-mail { font-size: var(--font-size-caption); color: var(--fg); font-family: var(--font-mono); }
+
+/* 布局 */
+.layout { max-width: 1240px; margin: 0 auto; padding: var(--space-6) var(--space-5) var(--space-7); position: relative; z-index: 1; display: flex; flex-direction: column; gap: var(--space-5); }
+
+/* 页头 */
+.page-hdr { display: flex; align-items: flex-end; justify-content: space-between; }
+.page-title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+.page-title small { font-size: var(--font-size-caption); color: var(--muted); font-weight: 400; margin-left: var(--space-3); font-family: var(--font-mono); }
+.page-eyebrow { font-size: 11px; font-family: var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: var(--space-1); }
+
+/* 按钮 */
+.btn { display: inline-flex; align-items: center; justify-content: center; border: none; cursor: pointer; font-family: var(--font-body); font-size: var(--font-size-body); white-space: nowrap; min-width: var(--size-button-height); transition: all .18s; flex-shrink: 0; text-decoration: none; }
+.btn-primary { background: var(--accent); color: #06281f; border-radius: var(--radius-sm); height: var(--size-button-height); font-weight: 600; box-shadow: var(--brand-glow); }
+.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.btn-secondary { background: transparent; border: 1px solid var(--rule); color: var(--fg); border-radius: var(--radius-sm); height: var(--size-button-height); }
+.btn-secondary:hover { background: var(--ftx-surface-hover); border-color: var(--ftx-surface-border-strong); }
+.btn-sm { height: 28px; font-size: var(--font-size-caption); padding: 0 var(--space-3); }
+
+/* 筛选区 */
+.filter-bar {
+  display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+}
+.filter-group { display: flex; align-items: center; gap: var(--space-2); }
+.filter-label { font-size: var(--font-size-caption); color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
+.chip { padding: 5px 14px; border-radius: var(--radius-pill); border: 1px solid var(--rule); background: transparent; color: var(--muted); font-size: var(--font-size-caption); cursor: pointer; transition: all .15s; font-family: var(--font-body); }
+.chip:hover { color: var(--fg); border-color: var(--ftx-surface-border-strong); }
+.chip.active { background: rgba(0,212,170,0.12); border-color: var(--ftx-cyan-600); color: var(--accent); font-weight: 500; }
+.chip-err.active { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.5); color: var(--ftx-error-400); }
+.chip-warn.active { background: rgba(234,179,8,0.12); border-color: rgba(234,179,8,0.5); color: var(--ftx-warning-400); }
+.filter-divider { width: 1px; height: 28px; background: var(--rule); }
+.filter-count { margin-left: auto; font-size: var(--font-size-caption); color: var(--muted); font-family: var(--font-mono); }
+
+/* 策略网格 */
+.strategy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-4); }
+.strategy-card {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg);
+  padding: var(--space-5); box-shadow: var(--shadow-2); transition: all .2s; cursor: pointer;
+  display: flex; flex-direction: column; gap: var(--space-4); position: relative; overflow: hidden;
+}
+.strategy-card:hover { transform: translateY(-3px); border-color: var(--ftx-cyan-600); box-shadow: var(--shadow-3), var(--brand-glow); }
+.strategy-card::after { content: ''; position: absolute; bottom: -24px; right: -24px; width: 110px; height: 110px; background: radial-gradient(circle, rgba(0,212,170,0.09), transparent 70%); pointer-events: none; }
+.strategy-card.negative::after { background: radial-gradient(circle, rgba(239,68,68,0.07), transparent 70%); }
+.strategy-top { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2); }
+.strategy-name { font-size: var(--font-size-h4); font-weight: 600; letter-spacing: -0.01em; }
+.strategy-tag { font-family: var(--font-mono); font-size: 10px; padding: 2px 10px; border-radius: var(--radius-pill); border: 1px solid var(--rule); color: var(--muted); white-space: nowrap; }
+.strategy-tag.trend { color: var(--ftx-cyan-400); border-color: rgba(0,212,170,0.4); }
+.strategy-tag.range { color: var(--ftx-info-400); border-color: rgba(59,130,246,0.4); }
+.strategy-tag.momentum { color: var(--ftx-warning-400); border-color: rgba(234,179,8,0.4); }
+.strategy-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.sm { }
+.sm .m-label { font-size: 10px; color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; }
+.sm .m-value { font-family: var(--font-mono); font-size: var(--font-size-h4); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sm .m-value.sm-lg { font-size: 20px; }
+.risk-l { font-family: var(--font-mono); font-size: var(--font-size-caption); font-weight: 500; }
+.risk-low { color: var(--ftx-success-400); }
+.risk-mid { color: var(--ftx-warning-400); }
+.risk-high { color: var(--ftx-error-400); }
+.strategy-spark { height: 52px; border-radius: var(--radius-sm); position: relative; overflow: hidden; }
+.strategy-spark svg { width: 100%; height: 100%; }
+.strategy-bottom { display: flex; justify-content: space-between; align-items: center; padding-top: var(--space-3); border-top: 1px solid var(--ftx-surface-border); }
+.strategy-follow { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-caption); color: var(--muted); }
+.strategy-follow .f-ic { color: var(--ftx-text-tertiary); }
+.strategy-state { font-size: 10px; font-family: var(--font-mono); }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: var(--radius-pill); font-size: var(--font-size-caption); font-weight: 500; white-space: nowrap; }
+.badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.badge-ok { background: rgba(22,163,74,0.15); color: var(--ftx-success-400); }
+.badge-warn { background: rgba(234,179,8,0.15); color: var(--ftx-warning-400); }
+.badge-muted { background: rgba(100,116,139,0.15); color: var(--ftx-text-secondary); }
+
+/* 分页 */
+.pagination { display: flex; align-items: center; justify-content: center; gap: var(--space-2); }
+.page-btn { width: 32px; height: 32px; border-radius: var(--radius-sm); border: 1px solid var(--rule); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--font-size-caption); transition: all .15s; }
+.page-btn:hover { color: var(--fg); border-color: var(--ftx-surface-border-strong); }
+.page-btn.active { background: rgba(0,212,170,0.12); border-color: var(--ftx-cyan-600); color: var(--accent); font-weight: 600; }
+.page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* Toast */
+.toast-stack { position: fixed; top: calc(var(--nav-height) + var(--space-4)); right: var(--space-5); z-index: 1000; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast { min-width: 280px; max-width: 360px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--ftx-surface-overlay); border: 1px solid var(--rule); box-shadow: var(--shadow-4); display: flex; align-items: center; gap: var(--space-3); animation: toastIn .25s ease; backdrop-filter: blur(16px); font-size: var(--font-size-caption); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+.toast.success { border-color: rgba(22,163,74,0.4); } .toast.success .t-ic { color: var(--ftx-success-400); }
+.toast.warn { border-color: rgba(234,179,8,0.4); } .toast.warn .t-ic { color: var(--ftx-warning-400); }
+.toast.info { border-color: rgba(59,130,246,0.4); } .toast.info .t-ic { color: var(--ftx-info-400); }
+.t-ic { font-size: 14px; flex-shrink: 0; }
+.t-close { margin-left: auto; background: none; border: none; color: var(--ftx-text-tertiary); cursor: pointer; font-size: 12px; }
+
+/* 响应式 */
+@media (max-width: 980px) { .nav-links { display: none; } .filter-bar { gap: var(--space-3); } .filter-divider { display: none; } }
+</style>
+</head>
+<body>
+<!-- 信号宇宙背景层 -->
+<div class="bg-aurora"></div>
+<div class="bg-grid"></div>
+<div class="bg-dots"></div>
+<div class="bg-sweep"></div>
+<div class="bg-noise"></div>
+<div class="bg-particles">
+  <i style="left:6%;--dur:17s;--delay:0s;--drift:14px"></i>
+  <i style="left:14%;--dur:23s;--delay:4s;--drift:-12px"></i>
+  <i style="left:23%;--dur:19s;--delay:8s;--drift:10px"></i>
+  <i style="left:32%;--dur:25s;--delay:1s;--drift:-16px"></i>
+  <i style="left:41%;--dur:16s;--delay:6s;--drift:12px"></i>
+  <i style="left:52%;--dur:21s;--delay:11s;--drift:-10px"></i>
+  <i style="left:61%;--dur:18s;--delay:2s;--drift:16px"></i>
+  <i style="left:70%;--dur:24s;--delay:9s;--drift:-14px"></i>
+  <i style="left:79%;--dur:20s;--delay:5s;--drift:10px"></i>
+  <i style="left:88%;--dur:22s;--delay:12s;--drift:-12px"></i>
+  <i style="left:94%;--dur:17s;--delay:7s;--drift:8px"></i>
+  <i style="left:10%;--dur:26s;--delay:14s;--drift:-8px"></i>
+</div>
+
+<!-- 顶栏 -->
+<nav class="topnav">
+  <a class="brand" href="2026-08-12-signal-saas-home-dashboard.html">
+    <div class="brand-mark"><svg viewBox="0 0 16 16" fill="none"><path d="M1 9h3l2-6 3 10 2-5h4" stroke="#06281f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    signal<span class="brand-sub">·saas</span>
+  </a>
+  <div class="nav-links">
+    <a class="nav-link" href="2026-08-12-signal-saas-home-dashboard.html">首页</a>
+    <a class="nav-link active" href="#">策略广场</a>
+    <a class="nav-link" href="#">我的跟单</a>
+    <a class="nav-link" href="#">邀请奖励</a>
+  </div>
+  <div class="nav-right">
+    <div class="bell-wrap">
+      <button class="bell" title="通知">🔔</button>
+      <span class="bell-badge">3</span>
+    </div>
+    <div class="user-chip" onclick="location.href='2026-08-12-signal-saas-account.html'" style="cursor:pointer"><div class="user-avatar">U</div><span class="user-mail">user***@mail.com</span></div>
+  </div>
+</nav>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<div class="layout">
+
+  <!-- 页头 -->
+  <div class="page-hdr">
+    <div>
+      <div class="page-eyebrow">STRATEGY PLAZA · 策略广场</div>
+      <h1 class="page-title">策略广场<small>精选聚合策略 · 数据实时同步</small></h1>
+    </div>
+  </div>
+
+  <!-- 筛选栏 -->
+  <div class="filter-bar" id="filterBar">
+    <div class="filter-group">
+      <span class="filter-label">风格</span>
+      <button class="chip active" data-filter="style" data-val="all">全部</button>
+      <button class="chip" data-filter="style" data-val="trend">趋势</button>
+      <button class="chip" data-filter="style" data-val="range">震荡</button>
+      <button class="chip" data-filter="style" data-val="momentum">动量</button>
+    </div>
+    <div class="filter-divider"></div>
+    <div class="filter-group">
+      <span class="filter-label">风险</span>
+      <button class="chip active" data-filter="risk" data-val="all">全部</button>
+      <button class="chip" data-filter="risk" data-val="low">低</button>
+      <button class="chip" data-filter="risk" data-val="mid">中</button>
+      <button class="chip chip-warn" data-filter="risk" data-val="high">高</button>
+    </div>
+    <div class="filter-divider"></div>
+    <div class="filter-group">
+      <span class="filter-label">排序</span>
+      <button class="chip active" data-filter="sort" data-val="follow">跟单人数</button>
+      <button class="chip" data-filter="sort" data-val="roi30">30日收益</button>
+      <button class="chip" data-filter="sort" data-val="winrate">累计胜率</button>
+    </div>
+    <span class="filter-count" id="filterCount">共 12 个策略</span>
+  </div>
+
+  <!-- 策略网格 -->
+  <div class="strategy-grid" id="strategyGrid">
+
+    <!-- 卡片 1：BTC 趋势突破 -->
+    <div class="strategy-card" data-style="trend" data-risk="high" data-follow="1284" data-roi30="38.4" data-winrate="61.2" onclick="location.href='2026-08-12-signal-saas-strategy-detail.html'">
+      <div class="strategy-top">
+        <div class="strategy-name">BTC 趋势突破</div>
+        <span class="strategy-tag trend">趋势</span>
+      </div>
+      <div class="strategy-metrics">
+        <div class="sm"><div class="m-label">30日收益</div><div class="m-value" style="color:var(--ftx-success-400)">+38.4%</div></div>
+        <div class="sm"><div class="m-label">累计胜率</div><div class="m-value">61.2%</div></div>
+        <div class="sm"><div class="m-label">风险评级</div><div class="m-value risk-l risk-high">高</div></div>
+        <div class="sm"><div class="m-label">跟单人数</div><div class="m-value">1,284</div></div>
+      </div>
+      <div class="strategy-spark">
+        <svg viewBox="0 0 260 52" preserveAspectRatio="none"><path d="M0,40 C30,34 50,22 75,28 C100,34 120,14 145,20 C170,26 190,10 215,12 C230,13 245,7 260,4" fill="none" stroke="var(--ftx-success-400)" stroke-width="1.5"/><path d="M0,40 C30,34 50,22 75,28 C100,34 120,14 145,20 C170,26 190,10 215,12 C230,13 245,7 260,4 L260,52 L0,52 Z" fill="rgba(22,163,74,0.08)"/></svg>
+      </div>
+      <div class="strategy-bottom">
+        <span class="strategy-follow"><span class="f-ic">◉</span> 1,284 人跟单 · 7日 +12.1%</span>
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();location.href='2026-08-12-signal-saas-strategy-detail.html'">开启跟单</button>
+      </div>
+    </div>
+
+    <!-- 卡片 2：ETH 区间震荡 -->
+    <div class="strategy-card" data-style="range" data-risk="low" data-follow="856" data-roi30="22.7" data-winrate="54.8" onclick="location.href='2026-08-12-signal-saas-strategy-detail.html'">
+      <div class="strategy-top">
+        <div class="strategy-name">ETH 区间震荡</div>
+        <span class="strategy-tag range">震荡</span>
+      </div>
+      <div class="strategy-metrics">
+        <div class="sm"><div class="m-label">30日收益</div><div class="m-value" style="color:var(--ftx-success-400)">+22.7%</div></div>
+        <div class="sm"><div class="m-label">累计胜率</div><div class="m-value">54.8%</div></div>
+        <div class="sm"><div class="m-label">风险评级</div><div class="m-value risk-l risk-low">低</div></div>
+        <div class="sm"><div class="m-label">跟单人数</div><div class="m-value">856</div></div>
+      </div>
+      <div class="strategy-spark">
+        <svg viewBox="0 0 260 52" preserveAspectRatio="none"><path d="M0,26 C30,22 55,32 80,26 C105,20 130,32 155,26 C180,20 210,30 235,24 C245,22 255,24 260,22" fill="none" stroke="var(--ftx-cyan-400)" stroke-width="1.5"/><path d="M0,26 C30,22 55,32 80,26 C105,20 130,32 155,26 C180,20 210,30 235,24 C245,22 255,24 260,22 L260,52 L0,52 Z" fill="rgba(0,212,170,0.06)"/></svg>
+      </div>
+      <div class="strategy-bottom">
+        <span class="strategy-follow"><span class="f-ic">◉</span> 856 人跟单 · 7日 +5.3%</span>
+        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();location.href='2026-08-12-signal-saas-strategy-detail.html'">查看详情</button>
+      </div>
+    </div>
+
+    <!-- 卡片 3：SOL 动量策略（负收益） -->
+    <div class="strategy-card negative" data-style="momentum" data-risk="high" data-follow="423" data-roi30="-4.2" data-winrate="48.9" onclick="location.href='2026-08-12-signal-saas-strategy-detail.html'">
+      <div class="strategy-top">
+        <div class="strategy-name">SOL 动量策略</div>
+        <span class="strategy-tag momentum">动量</span>
+      </div>
+      <div class="strategy-metrics">
+        <div class="sm"><div class="m-label">30日收益</div><div class="m-value" style="color:var(--ftx-error-400)">-4.2%</div></div>
+        <div class="sm"><div class="m-label">累计胜率</div><div class="m-value">48.9%</div></div>
+        <div class="sm"><div class="m-label">风险评级</div><div class="m-value risk-l risk-high">高</div></div>
+        <div class="sm"><div class="m-label">跟单人数</div><div class="m-value">423</div></div>
+      </div>
+      <div class="strategy-spark">
+        <svg viewBox="0 0 260 52" preserveAspectRatio="none"><path d="M0,16 C30,26 55,20 80,30 C105,40 130,34 155,42 C180,50 210,44 235,48 C245,49 255,47 260,50" fill="none" stroke="var(--ftx-error-400)" stroke-width="1.5"/><path d="M0,16 C30,26 55,20 80,30 C105,40 130,34 155,42 C180,50 210,44 235,48 C245,49 255,47 260,50 L260,52 L0,52 Z" fill="rgba(239,68,68,0.06)"/></svg>
+      </div>
+      <div class="strategy-bottom">
+        <span class="strategy-follow"><span class="f-ic">◉</span> 423 人跟单 · 7日 -1.8%</span>
+        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();location.href='2026-08-12-signal-saas-strategy-detail.html'">查看详情</button>
+      </div>
+    </div>
+
+    <!-- 卡片 4：DOGE 高频波段 -->
+    <div class="strategy-card" data-style="momentum" data-risk="mid" data-follow="968" data-roi30="18.9" data-winrate="58.3" onclick="location.href='2026-08-12-signal-saas-strategy-detail.html'">
+      <div class="strategy-top">
+        <div class="strategy-name">DOGE 高频波段</div>
+        <span class="strategy-tag momentum">动量</span>
+      </div>
+      <div class="strategy-metrics">
+        <div class="sm"><div class="m-label">30日收益</div><div class="m-value" style="color:var(--ftx-success-400)">+18.9%</div></div>
+        <div class="sm"><div class="m-label">累计胜率</div><div class="m-value">58.3%</div></div>
+        <div class="sm"><div class="m-label">风险评级</div><div class="m-value risk-l risk-mid">中</div></div>
+        <div class="sm"><div class="m-label">跟单人数</div><div class="m-value">968</div></div>
+      </div>
+      <div class="strategy-spark">
+        <svg viewBox="0 0 260 52" preserveAspectRatio="none"><path d="M0,38 C20,30 35,40 55,28 C75,16 90,34 110,24 C130,14 145,30 165,20 C185,10 200,26 220,16 C235,9 250,16 260,12" fill="none" stroke="var(--ftx-success-400)" stroke-width="1.5"/><path d="M0,38 C20,30 35,40 55,28 C75,16 90,34 110,24 C130,14 145,30 165,20 C185,10 200,26 220,16 C235,9 250,16 260,12 L260,52 L0,52 Z" fill="rgba(22,163,74,0.06)"/></svg>
+      </div>
+      <div class="strategy-bottom">
+        <span class="strategy-follow"><span class="f-ic">◉</span> 968 人跟单 · 7日 +8.7%</span>
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();location.href='2026-08-12-signal-saas-strategy-detail.html'">开启跟单</button>
+      </div>
+    </div>
+
+    <!-- 卡片 5：LINK 突破跟随 -->
+    <div class="strategy-card" data-style="trend" data-risk="mid" data-follow="712" data-roi30="15.2" data-winrate="55.6" onclick="location.href='2026-08-12-signal-saas-strategy-detail.html'">
+      <div class="strategy-top">
+        <div class="strategy-name">LINK 突破跟随</div>
+        <span class="strategy-tag trend">趋势</span>
+      </div>
+      <div class="strategy-metrics">
+        <div class="sm"><div class="m-label">30日收益</div><div class="m-value" style="color:var(--ftx-success-400)">+15.2%</div></div>
+        <div class="sm"><div class="m-label">累计胜率</div><div class="m-value">55.6%</div></div>
+        <div class="sm"><div class="m-label">风险评级</div><div class="m-value risk-l risk-mid">中</div></div>
+        <div class="sm"><div class="m-label">跟单人数</div><div class="m-value">712</div></div>
+      </div>
+      <div class="strategy-spark">
+        <svg viewBox="0 0 260 52" preserveAspectRatio="none"><path d="M0,44 C25,40 45,46 70,38 C95,30 115,40 140,32 C165,24 185,34 210,26 C230,20 245,26 260,20" fill="none" stroke="var(--ftx-cyan-400)" stroke-width="1.5"/></svg>
+      </div>
+      <div class="strategy-bottom">
+        <span class="strategy-follow"><span class="f-ic">◉</span> 712 人跟单 · 7日 +4.6%</span>
+        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();location.href='2026-08-12-signal-saas-strategy-detail.html'">查看详情</button>
+      </div>
+    </div>
+
+    <!-- 卡片 6：XRP 均线回归 -->
+    <div class="strategy-card" data-style="range" data-risk="low" data-follow="534" data-roi30="9.8" data-winrate="52.4" onclick="location.href='2026-08-12-signal-saas-strategy-detail.html'">
+      <div class="strategy-top">
+        <div class="strategy-name">XRP 均线回归</div>
+        <span class="strategy-tag range">震荡</span>
+      </div>
+      <div class="strategy-metrics">
+        <div class="sm"><div class="m-label">30日收益</div><div class="m-value" style="color:var(--ftx-success-400)">+9.8%</div></div>
+        <div class="sm"><div class="m-label">累计胜率</div><div class="m-value">52.4%</div></div>
+        <div class="sm"><div class="m-label">风险评级</div><div class="m-value risk-l risk-low">低</div></div>
+        <div class="sm"><div class="m-label">跟单人数</div><div class="m-value">534</div></div>
+      </div>
+      <div class="strategy-spark">
+        <svg viewBox="0 0 260 52" preserveAspectRatio="none"><path d="M0,30 C30,26 55,34 80,30 C105,26 130,34 155,30 C180,26 205,32 230,28 C245,26 255,28 260,26" fill="none" stroke="var(--ftx-cyan-400)" stroke-width="1.5"/></svg>
+      </div>
+      <div class="strategy-bottom">
+        <span class="strategy-follow"><span class="f-ic">◉</span> 534 人跟单 · 7日 +2.9%</span>
+        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();location.href='2026-08-12-signal-saas-strategy-detail.html'">查看详情</button>
+      </div>
+    </div>
+
+    <!-- 卡片 7：ADA 低波动套利 -->
+    <div class="strategy-card" data-style="range" data-risk="low" data-follow="1208" data-roi30="12.6" data-winrate="63.8" onclick="location.href='2026-08-12-signal-saas-strategy-detail.html'">
+      <div class="strategy-top">
+        <div class="strategy-name">ADA 低波动套利</div>
+        <span class="strategy-tag range">震荡</span>
+        <span class="badge badge-ok" style="position:absolute;top:16px;right:16px">热门</span>
+      </div>
+      <div class="strategy-metrics">
+        <div class="sm"><div class="m-label">30日收益</div><div class="m-value" style="color:var(--ftx-success-400)">+12.6%</div></div>
+        <div class="sm"><div class="m-label">累计胜率</div><div class="m-value">63.8%</div></div>
+        <div class="sm"><div class="m-label">风险评级</div><div class="m-value risk-l risk-low">低</div></div>
+        <div class="sm"><div class="m-label">跟单人数</div><div class="m-value">1,208</div></div>
+      </div>
+      <div class="strategy-spark">
+        <svg viewBox="0 0 260 52" preserveAspectRatio="none"><path d="M0,34 C25,30 50,24 75,28 C100,32 125,22 150,26 C175,30 200,20 225,24 C240,26 252,22 260,20" fill="none" stroke="var(--ftx-success-400)" stroke-width="1.5"/><path d="M0,34 C25,30 50,24 75,28 C100,32 125,22 150,26 C175,30 200,20 225,24 C240,26 252,22 260,20 L260,52 L0,52 Z" fill="rgba(22,163,74,0.07)"/></svg>
+      </div>
+      <div class="strategy-bottom">
+        <span class="strategy-follow"><span class="f-ic">◉</span> 1,208 人跟单 · 7日 +3.8%</span>
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();location.href='2026-08-12-signal-saas-strategy-detail.html'">开启跟单</button>
+      </div>
+    </div>
+
+    <!-- 卡片 8：AVAX 趋势反转 -->
+    <div class="strategy-card" data-style="trend" data-risk="high" data-follow="387" data-roi30="28.1" data-winrate="51.7" onclick="location.href='2026-08-12-signal-saas-strategy-detail.html'">
+      <div class="strategy-top">
+        <div class="strategy-name">AVAX 趋势反转</div>
+        <span class="strategy-tag trend">趋势</span>
+      </div>
+      <div class="strategy-metrics">
+        <div class="sm"><div class="m-label">30日收益</div><div class="m-value" style="color:var(--ftx-success-400)">+28.1%</div></div>
+        <div class="sm"><div class="m-label">累计胜率</div><div class="m-value">51.7%</div></div>
+        <div class="sm"><div class="m-label">风险评级</div><div class="m-value risk-l risk-high">高</div></div>
+        <div class="sm"><div class="m-label">跟单人数</div><div class="m-value">387</div></div>
+      </div>
+      <div class="strategy-spark">
+        <svg viewBox="0 0 260 52" preserveAspectRatio="none"><path d="M0,42 C20,38 40,26 60,30 C80,34 95,18 115,22 C135,26 150,12 170,16 C190,20 205,8 225,10 C240,11 252,7 260,5" fill="none" stroke="var(--ftx-success-400)" stroke-width="1.5"/><path d="M0,42 C20,38 40,26 60,30 C80,34 95,18 115,22 C135,26 150,12 170,16 C190,20 205,8 225,10 C240,11 252,7 260,5 L260,52 L0,52 Z" fill="rgba(22,163,74,0.07)"/></svg>
+      </div>
+      <div class="strategy-bottom">
+        <span class="strategy-follow"><span class="f-ic">◉</span> 387 人跟单 · 7日 +9.2%</span>
+        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();location.href='2026-08-12-signal-saas-strategy-detail.html'">查看详情</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分页 -->
+  <div class="pagination">
+    <button class="page-btn" disabled>‹</button>
+    <button class="page-btn active">1</button>
+    <button class="page-btn">2</button>
+    <button class="page-btn">3</button>
+    <span style="color:var(--ftx-text-tertiary);font-size:var(--font-size-caption);font-family:var(--font-mono)">…</span>
+    <button class="page-btn">8</button>
+    <button class="page-btn">›</button>
+  </div>
+
+</div>
+
+<script>
+/* 筛选与排序（纯前端演示） */
+const chips = document.querySelectorAll('.chip[data-filter]');
+const cards = Array.from(document.querySelectorAll('.strategy-card'));
+const state = { style: 'all', risk: 'all', sort: 'follow' };
+
+chips.forEach(chip => {
+  chip.addEventListener('click', () => {
+    const group = chip.dataset.filter;
+    document.querySelectorAll(`.chip[data-filter="${group}"]`).forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    state[group] = chip.dataset.val;
+    applyFilter();
+  });
+});
+
+function applyFilter() {
+  let visible = cards.filter(c => {
+    const okStyle = state.style === 'all' || c.dataset.style === state.style;
+    const okRisk = state.risk === 'all' || c.dataset.risk === state.risk;
+    return okStyle && okRisk;
+  });
+  if (state.sort === 'follow') visible.sort((a,b) => +b.dataset.follow - +a.dataset.follow);
+  if (state.sort === 'roi30') visible.sort((a,b) => +b.dataset.roi30 - +a.dataset.roi30);
+  if (state.sort === 'winrate') visible.sort((a,b) => +b.dataset.winrate - +a.dataset.winrate);
+  cards.forEach(c => c.style.display = 'none');
+  visible.forEach(c => c.style.display = '');
+  document.getElementById('filterCount').textContent = `共 ${visible.length} 个策略`;
+  if (visible.length === 0) {
+    showToast('warn', '没有符合筛选条件的策略');
+  }
+}
+
+/* Toast */
+function showToast(type, msg) {
+  const stack = document.getElementById('toastStack');
+  const icons = { success: '✓', warn: '!', info: 'i' };
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span class="t-ic">${icons[type]}</span><span>${msg}</span><button class="t-close" onclick="this.parentElement.remove()">✕</button>`;
+  stack.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3200);
+}
+</script>
+</body>
+</html>

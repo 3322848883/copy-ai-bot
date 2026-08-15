@@ -1,0 +1,31 @@
+# 依赖与构建产物（避免构建上下文过大）
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+web-ui/node_modules
+web-ui/.next
+web-ui/out
+node_modules
+
+# 本地数据（登录态/数据库/日志，不进镜像）
+data
+*.log
+celerybeat-schedule.*
+celerybeat.pid
+
+# 文档与无关目录
+docs
+deploy
+
+# 版本控制与 IDE
+.git
+.gitignore
+.idea
+.vscode
+.DS_Store
+
+# 密钥与环境变量（由 compose 注入）
+.env
+.env.local

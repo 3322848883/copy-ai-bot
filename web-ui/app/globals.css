@@ -1,0 +1,90 @@
+/* signal-saas 全局样式：深海军蓝 / 电光青绿 / 信号波 */
+:root {
+  --bg: #0a1628;
+  --fg: #f1f5f9;
+  --muted: #94a3b8;
+  --tertiary: #64748b;
+  --rule: rgba(51, 65, 85, 0.6);
+  --accent: #00d4aa;
+  --accent-hover: #00b894;
+  --accent-soft: rgba(0, 212, 170, 0.12);
+  --surface: #111d35;
+  --surface-overlay: #162038;
+  --danger: #ef4444;
+  --success: #28c464;
+  --warning: #eab308;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-geist-sans), -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden; /* ★ 修复：fixed 装饰背景 inset:-20% 会撑出横向滚动（移动端 8px 溢出） */
+}
+
+/* 信号宇宙背景层 */
+.aurora {
+  position: fixed; inset: -20%; pointer-events: none; z-index: 0;
+  overflow: clip; /* 装饰层自身不产生滚动溢出 */
+  background:
+    radial-gradient(circle 34% at 26% 20%, rgba(0, 212, 170, 0.10), transparent 62%),
+    radial-gradient(circle 28% at 76% 34%, rgba(43, 108, 230, 0.10), transparent 62%),
+    radial-gradient(circle 22% at 60% 84%, rgba(0, 212, 170, 0.07), transparent 58%);
+  filter: blur(46px);
+  animation: drift 28s ease-in-out infinite alternate;
+}
+@keyframes drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(2%, -1.5%, 0) scale(1.05); }
+  100% { transform: translate3d(-1.5%, 2%, 0) scale(1.03); }
+}
+.grid-bg {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(0, 212, 170, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 170, 0.05) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+}
+
+/* 通用组件 */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 24px;
+}
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; cursor: pointer; font-weight: 600; border-radius: 6px;
+  padding: 10px 24px; font-size: 14px; transition: all 0.18s; text-decoration: none;
+}
+.btn-primary { background: var(--accent); color: #06281f; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-secondary { background: transparent; border: 1px solid var(--rule); color: var(--fg); }
+.btn-secondary:hover { background: rgba(30, 41, 59, 0.5); }
+
+.input {
+  width: 100%; height: 40px; background: #070e1a; border: 1px solid var(--rule);
+  border-radius: 6px; padding: 0 14px; color: var(--fg); font-size: 14px; font-family: inherit;
+}
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.15); }
+
+.label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+
+.error-box {
+  background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171; border-radius: 6px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px;
+}
+
+/* 信号波 hero 动画 */
+.signal-wave {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 60px; opacity: 0.5;
+  background: linear-gradient(180deg, transparent, rgba(0, 212, 170, 0.25));
+}

@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>signal-saas · 后台隔离 + 邀请可视化 补充设计</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   signal-saas SUPPLEMENT — D15 后台登录隔离 · D16 邀请页收益可视化
+   与 UI 框架 v0.1 / 交互细化 v0.2 同一设计语言
+   ═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --ftx-cyan-300: #40ffc5; --ftx-cyan-400: #00d4aa; --ftx-cyan-500: #00b894; --ftx-cyan-600: #009a7a;
+  --ftx-success-400: #28c464; --ftx-success-500: #16a34a;
+  --ftx-warning-400: #facc15; --ftx-warning-500: #eab308;
+  --ftx-error-400: #f87171; --ftx-error-500: #ef4444; --ftx-error-600: #dc2626;
+  --ftx-info-400: #60a5fa; --ftx-info-500: #3b82f6;
+  --ftx-text-primary: #f1f5f9; --ftx-text-secondary: #94a3b8; --ftx-text-tertiary: #64748b; --ftx-text-disabled: #475569;
+  --ftx-surface-base: #0a1628; --ftx-surface-raised: #111d35; --ftx-surface-overlay: #162038;
+  --ftx-surface-glass: rgba(22,32,56,0.85); --ftx-surface-hover: rgba(30,41,59,0.5);
+  --ftx-surface-border: rgba(51,65,85,0.6); --ftx-surface-border-strong: rgba(100,116,139,0.4);
+  --ftx-surface-sunken: #070e1a;
+  --bg: var(--ftx-surface-base); --fg: var(--ftx-text-primary); --muted: var(--ftx-text-secondary);
+  --rule: var(--ftx-surface-border); --accent: var(--ftx-cyan-400); --accent-hover: var(--ftx-cyan-500);
+  --surface: var(--ftx-surface-raised); --surface-dim: var(--ftx-surface-sunken);
+  --font-display: 'Space Grotesk', sans-serif; --font-body: 'Space Grotesk', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+  --font-size-h1: 40px; --font-size-h2: 32px; --font-size-h3: 24px; --font-size-h4: 20px;
+  --font-size-body: 15px; --font-size-caption: 12px; --font-size-eyebrow: 11px; --font-size-mono: 14px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --size-button-height: 36px; --size-button-height-lg: 40px; --size-button-height-xl: 48px;
+  --radius-xs: 2px; --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-pill: 9999px;
+  --shadow-2: 0 4px 8px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-3: 0 8px 24px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.25);
+  --shadow-4: 0 16px 48px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.3);
+  --signal-grid: rgba(0,212,170,0.05);
+  --nav-height: 56px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-body);
+  line-height: 1.6; -webkit-font-smoothing: antialiased;
+  background-image: radial-gradient(ellipse 80% 50% at 20% -10%, rgba(0,212,170,0.08), transparent);
+  background-attachment: fixed;
+}
+.sig-grid-bg { position: fixed; inset: 0; pointer-events: none; z-index: 0; background-image: linear-gradient(var(--signal-grid) 1px, transparent 1px), linear-gradient(90deg, var(--signal-grid) 1px, transparent 1px); background-size: 48px 48px; mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, black 30%, transparent 100%); }
+
+.topnav { position: sticky; top: 0; z-index: 100; height: var(--nav-height); display: flex; align-items: center; gap: var(--space-5); padding: 0 var(--space-7); backdrop-filter: blur(12px); background: rgba(10,22,40,0.85); border-bottom: 1px solid var(--rule); }
+.brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 700; font-size: 18px; }
+.brand-mark { width: 28px; height: 28px; border-radius: var(--radius-sm); display: grid; place-items: center; background: linear-gradient(135deg, var(--ftx-cyan-400), var(--ftx-cyan-600)); box-shadow: 0 0 24px rgba(0,212,170,0.25); }
+.brand-mark svg { width: 16px; height: 16px; }
+.nav-links { display: flex; gap: var(--space-1); margin-left: var(--space-5); }
+.nav-links a { color: var(--muted); text-decoration: none; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); font-size: var(--font-size-body); transition: all .15s; border-left: 2px solid transparent; }
+.nav-links a:hover { color: var(--fg); background: var(--ftx-surface-hover); }
+.nav-links a.active { color: var(--accent); background: rgba(0,212,170,0.1); border-left-color: var(--accent); }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+
+.layout { display: grid; grid-template-columns: 220px 1fr; gap: var(--space-6); max-width: 1280px; margin: 0 auto; padding: var(--space-7) var(--space-6); position: relative; z-index: 1; }
+.sidebar { position: sticky; top: calc(var(--nav-height) + var(--space-5)); height: fit-content; display: flex; flex-direction: column; gap: var(--space-1); }
+.side-group { margin-top: var(--space-4); font-size: var(--font-size-eyebrow); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ftx-text-tertiary); padding: 0 var(--space-3); }
+.side-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); color: var(--muted); text-decoration: none; border-radius: var(--radius-sm); border-left: 2px solid transparent; transition: all .15s; font-size: var(--font-size-body); }
+.side-item:hover { background: var(--ftx-surface-hover); color: var(--fg); }
+.side-item.active { background: rgba(0,212,170,0.12); color: var(--accent); border-left-color: var(--accent); }
+.side-num { font-family: var(--font-mono); font-size: 10px; color: var(--ftx-text-tertiary); }
+.content { min-width: 0; display: flex; flex-direction: column; gap: var(--space-7); }
+
+.section { display: flex; flex-direction: column; gap: var(--space-4); scroll-margin-top: calc(var(--nav-height) + var(--space-5)); }
+.sec-eyebrow { font-family: var(--font-mono); font-size: var(--font-size-eyebrow); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.sec-title { font-size: var(--font-size-h2); font-weight: 700; letter-spacing: -0.02em; }
+.sec-desc { color: var(--muted); max-width: 720px; }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-5); box-shadow: var(--shadow-2); position: relative; overflow: hidden; }
+.card-glass { background: rgba(255,255,255,0.04); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-lg); padding: var(--space-5); box-shadow: var(--shadow-3); }
+.card-tag { position: absolute; top: 0; right: 0; font-family: var(--font-mono); font-size: 10px; padding: 4px 10px; background: rgba(0,212,170,0.15); color: var(--accent); border-bottom-left-radius: var(--radius-md); }
+.card-title { font-size: var(--font-size-h4); font-weight: 600; margin-bottom: var(--space-3); }
+.card-sub { color: var(--muted); font-size: var(--font-size-caption); margin-bottom: var(--space-4); }
+
+.btn-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.btn { display: inline-flex; align-items: center; justify-content: center; border: none; cursor: pointer; font-family: var(--font-body); font-size: var(--font-size-body); white-space: nowrap; min-width: var(--size-button-height); transition: all .15s; flex-shrink: 0; text-decoration: none; }
+.btn-primary { background: var(--accent); color: #06281f; border-radius: var(--radius-sm); height: var(--size-button-height); font-weight: 600; box-shadow: 0 0 24px rgba(0,212,170,0.25); }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-secondary { background: transparent; border: 1px solid var(--rule); color: var(--fg); border-radius: var(--radius-sm); height: var(--size-button-height); }
+.btn-secondary:hover { background: var(--ftx-surface-hover); border-color: var(--ftx-surface-border-strong); }
+.btn-danger { background: var(--ftx-error-600); color: #fff; border-radius: var(--radius-sm); height: var(--size-button-height); font-weight: 600; }
+.btn-ghost { background: transparent; color: var(--muted); border-radius: var(--radius-sm); height: var(--size-button-height); }
+.btn-ghost:hover { color: var(--fg); background: var(--ftx-surface-hover); }
+.btn-sm { height: 28px; font-size: var(--font-size-caption); padding: 0 var(--space-3); }
+.btn-lg { height: var(--size-button-height-lg); padding: 0 var(--space-5); font-weight: 600; }
+.btn-xl { height: var(--size-button-height-xl); padding: 0 var(--space-6); font-weight: 600; }
+.btn-block { width: 100%; }
+
+.tag { display: inline-block; padding: 2px 8px; border-radius: var(--radius-pill); font-size: 10px; font-weight: 500; border: 1px solid var(--rule); color: var(--muted); }
+.tag-accent { border-color: var(--ftx-cyan-600); color: var(--accent); background: rgba(0,212,170,0.08); }
+.tag-warn { border-color: var(--ftx-warning-400); color: var(--ftx-warning-400); background: rgba(234,179,8,0.08); }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: var(--radius-pill); font-size: var(--font-size-caption); font-weight: 500; white-space: nowrap; }
+.badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.badge-ok { background: rgba(22,163,74,0.15); color: var(--ftx-success-400); }
+.badge-warn { background: rgba(234,179,8,0.15); color: var(--ftx-warning-400); }
+.badge-err { background: rgba(239,68,68,0.15); color: var(--ftx-error-400); }
+.badge-info { background: rgba(59,130,246,0.15); color: var(--ftx-info-400); }
+.badge-muted { background: rgba(100,116,139,0.15); color: var(--ftx-text-secondary); }
+
+.field { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-4); }
+.field-label { font-size: var(--font-size-caption); color: var(--muted); font-weight: 500; }
+.input, .select { height: var(--size-button-height); background: var(--surface-dim); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0 var(--space-3); color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-body); transition: border-color .15s, box-shadow .15s; width: 100%; }
+.input:focus, .select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,212,170,0.15); }
+.input::placeholder { color: var(--ftx-text-tertiary); }
+.input-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+
+/* 界面模拟 */
+.mock-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--space-5); }
+.mock { border: 1px solid var(--rule); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface-dim); display: flex; flex-direction: column; }
+.mock-hdr { display: flex; align-items: center; justify-content: space-between; padding: var(--space-2) var(--space-4); background: var(--surface); border-bottom: 1px solid var(--rule); font-size: var(--font-size-caption); color: var(--muted); }
+.mock-hdr .dots { display: flex; gap: 4px; }
+.mock-hdr .dots i { width: 8px; height: 8px; border-radius: 50%; display: block; background: var(--ftx-surface-border-strong); }
+.mock-title { font-family: var(--font-mono); font-size: 11px; }
+.mock-body { flex: 1; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); position: relative; }
+.mock-cap { font-size: 10px; color: var(--ftx-text-tertiary); text-align: center; padding: var(--space-2); background: var(--surface); border-top: 1px solid var(--rule); font-family: var(--font-mono); }
+
+/* 后台登录特殊样式 */
+.admin-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: var(--radius-sm); background: rgba(239,68,68,0.12); color: var(--ftx-error-400); border: 1px solid rgba(239,68,68,0.3); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; }
+.otp-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--space-2); }
+.otp-cell { height: 48px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-dim); display: grid; place-items: center; font-family: var(--font-mono); font-size: 22px; font-weight: 600; color: var(--fg); }
+.otp-cell.filled { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,212,170,0.15); }
+.otp-cell.filled::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blink 1.2s infinite; }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+/* 表格 */
+.jump-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-caption); }
+.jump-table thead th { text-align: left; padding: var(--space-3); background: var(--surface-dim); border-bottom: 1px solid var(--rule); font-weight: 600; color: var(--muted); }
+.jump-table tbody td { padding: var(--space-3); border-bottom: 1px solid var(--ftx-surface-border); vertical-align: top; }
+.jump-table tbody tr:hover { background: var(--ftx-surface-hover); }
+.code-inline { font-family: var(--font-mono); font-size: 11px; background: rgba(0,212,170,0.08); color: var(--accent); padding: 1px 6px; border-radius: var(--radius-xs); }
+
+/* 流程节点 */
+.flow { display: flex; flex-direction: column; gap: var(--space-2); }
+.flow-node { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--rule); }
+.flow-node .fn-ic { width: 30px; height: 30px; border-radius: var(--radius-sm); display: grid; place-items: center; background: rgba(0,212,170,0.12); color: var(--accent); font-size: 13px; flex-shrink: 0; }
+.flow-node .fn-title { font-weight: 600; font-size: var(--font-size-body); }
+.flow-node .fn-desc { font-size: var(--font-size-caption); color: var(--muted); }
+.flow-arrow { text-align: center; color: var(--ftx-text-tertiary); font-family: var(--font-mono); font-size: 12px; padding: var(--space-1) 0; }
+.flow-arrow::before { content: '↓'; }
+
+/* 邀请可视化 */
+.inv-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); }
+.inv-stat { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-4); }
+.inv-stat .lbl { font-size: 10px; color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; }
+.inv-stat .val { font-family: var(--font-display); font-size: var(--font-size-h3); font-weight: 700; font-variant-numeric: tabular-nums; margin-top: var(--space-1); }
+.inv-stat .sub { font-size: 10px; color: var(--muted); margin-top: var(--space-1); }
+.bar-track { height: 8px; background: var(--surface-dim); border-radius: var(--radius-pill); overflow: hidden; }
+.bar-fill { height: 100%; background: linear-gradient(90deg, var(--ftx-cyan-600), var(--accent)); border-radius: var(--radius-pill); }
+.bar-fill.slow { background: linear-gradient(90deg, var(--ftx-warning-500), var(--ftx-warning-400)); }
+
+/* 时间轴 */
+.timeline { display: flex; flex-direction: column; gap: 0; position: relative; }
+.tl-item { display: flex; gap: var(--space-4); position: relative; padding-bottom: var(--space-4); }
+.tl-item::before { content: ''; position: absolute; left: 11px; top: 22px; bottom: 0; width: 1px; background: var(--rule); }
+.tl-item:last-child::before { display: none; }
+.tl-dot { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--rule); background: var(--surface); display: grid; place-items: center; flex-shrink: 0; z-index: 1; font-size: 10px; color: var(--muted); }
+.tl-item.done .tl-dot { border-color: var(--ftx-success-500); background: rgba(22,163,74,0.15); color: var(--ftx-success-400); }
+.tl-item.warn .tl-dot { border-color: var(--ftx-warning-400); background: rgba(234,179,8,0.15); color: var(--ftx-warning-400); }
+.tl-item.active .tl-dot { border-color: var(--accent); background: rgba(0,212,170,0.15); color: var(--accent); box-shadow: 0 0 0 4px rgba(0,212,170,0.1); }
+.tl-body { flex: 1; padding-top: 2px; }
+.tl-title { font-weight: 600; font-size: var(--font-size-body); display: flex; align-items: center; gap: var(--space-2); }
+.tl-time { font-family: var(--font-mono); font-size: 10px; color: var(--ftx-text-tertiary); }
+.tl-desc { font-size: var(--font-size-caption); color: var(--muted); margin-top: var(--space-1); }
+
+.footer { border-top: 1px solid var(--rule); padding: var(--space-6) var(--space-7); color: var(--ftx-text-tertiary); font-size: var(--font-size-caption); display: flex; justify-content: space-between; position: relative; z-index: 1; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } .nav-links { display: none; } .form-row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="sig-grid-bg"></div>
+
+<nav class="topnav">
+  <div class="brand">
+    <div class="brand-mark"><svg viewBox="0 0 16 16" fill="none"><path d="M1 9h3l2-6 3 10 2-5h4" stroke="#06281f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    signal<span style="color:var(--muted);font-weight:400;font-size:12px">·saas</span>
+  </div>
+  <div class="nav-links">
+    <a href="#admin-login">后台登录隔离</a>
+    <a href="#admin-framework">后台主框架</a>
+    <a href="#invite">邀请收益可视化</a>
+    <a href="#rules">设计规则</a>
+  </div>
+  <div class="nav-right"><span class="tag tag-accent">补充设计 v0.3</span></div>
+</nav>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="side-group">补充设计</div>
+    <a class="side-item active" href="#admin-login"><span class="side-num">D15</span> 后台登录隔离</a>
+    <a class="side-item" href="#admin-framework"><span class="side-num">D15</span> 后台主框架</a>
+    <a class="side-item" href="#invite"><span class="side-num">D16</span> 邀请收益可视化</a>
+    <a class="side-item" href="#rules"><span class="side-num">+</span> 设计规则</a>
+  </aside>
+
+  <main class="content">
+
+    <!-- ═══════ D15 后台登录隔离 ═══════ -->
+    <section class="section" id="admin-login">
+      <div class="sec-eyebrow">D15 · Admin Isolation</div>
+      <h2 class="sec-title">后台登录隔离界面</h2>
+      <p class="sec-desc">
+        对应接口 <span class="code-inline">POST /admin/v1/auth/login</span>。与用户前台<strong style="color:var(--ftx-error-400)">完全隔离</strong>：
+        独立登录入口（非前台域名路径）、独立 cookie 域、独立 JWT audience、RBAC 角色，
+        V1.1 后置 TOTP 双因素。所有写操作强制 audit-log。
+      </p>
+
+      <div class="mock-wrap">
+        <!-- 后台登录 -->
+        <div class="mock">
+          <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">后台登录 · /login</span></div>
+          <div class="mock-body">
+            <div style="text-align:center;margin-bottom:var(--space-2)">
+              <div class="admin-badge" style="margin:0 auto var(--space-2)">ADMIN CONSOLE</div>
+              <div style="font-size:20px;font-weight:700">signal<span style="color:var(--ftx-error-400)">·admin</span></div>
+              <div style="font-size:var(--font-size-caption);color:var(--muted)">运营管理后台 · 请勿泄露凭据</div>
+            </div>
+            <div class="field">
+              <label class="field-label">管理员账号</label>
+              <input class="input input-mono" placeholder="admin 前缀账号">
+            </div>
+            <div class="field">
+              <label class="field-label">密码</label>
+              <input class="input" type="password" placeholder="••••••••">
+            </div>
+            <button class="btn btn-primary btn-xl btn-block">安全登录</button>
+            <div style="font-size:10px;color:var(--ftx-text-tertiary);text-align:center">
+              独立登录体系 · 与用户前台完全隔离 · 所有操作记录审计日志
+            </div>
+          </div>
+          <div class="mock-cap">后台登录 · 独立域名/路径 + admin 标识 · 错误次数超限锁定</div>
+        </div>
+
+        <!-- TOTP 双因素 -->
+        <div class="mock">
+          <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">双因素验证 · TOTP</span></div>
+          <div class="mock-body">
+            <div style="text-align:center;margin-bottom:var(--space-3)">
+              <div style="font-size:var(--font-size-h4);font-weight:600">双因素验证</div>
+              <div style="font-size:var(--font-size-caption);color:var(--muted)">输入身份验证器中的 6 位动态码</div>
+            </div>
+            <div class="otp-grid">
+              <div class="otp-cell">3</div>
+              <div class="otp-cell">8</div>
+              <div class="otp-cell">1</div>
+              <div class="otp-cell filled">4</div>
+              <div class="otp-cell"></div>
+              <div class="otp-cell"></div>
+            </div>
+            <div style="text-align:center;font-family:var(--font-mono);font-size:var(--font-size-caption);color:var(--muted)">剩余 42 秒 <span style="color:var(--ftx-warning-400)">· 即将刷新</span></div>
+            <button class="btn btn-primary btn-xl btn-block">验证并登录</button>
+            <div style="font-size:10px;color:var(--ftx-text-tertiary);text-align:center">
+              V1.1 后置启用（TOTP）· V1 版本此步为可选配置项
+            </div>
+          </div>
+          <div class="mock-cap">TOTP 双因素 · 6 格输入 + 30s 倒计时刷新</div>
+        </div>
+
+        <!-- RBAC 角色切换 -->
+        <div class="mock">
+          <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">角色权限 · RBAC</span></div>
+          <div class="mock-body">
+            <div style="font-size:var(--font-size-h4);font-weight:600;margin-bottom:var(--space-2)">登录成功 · 角色识别</div>
+            <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+              <div style="border:1px solid var(--rule);border-radius:var(--radius-md);padding:var(--space-3);display:flex;justify-content:space-between;align-items:center">
+                <div>
+                  <div style="font-weight:600">超级管理员</div>
+                  <div style="font-size:10px;color:var(--muted)">全部 10 模块 + 风控参数 + 审计导出</div>
+                </div>
+                <span class="badge badge-err">admin</span>
+              </div>
+              <div style="border:1px solid var(--rule);border-radius:var(--radius-md);padding:var(--space-3);display:flex;justify-content:space-between;align-items:center;opacity:0.7">
+                <div>
+                  <div style="font-weight:600">审核员</div>
+                  <div style="font-size:10px;color:var(--muted)">信号审核 + 提现审核 + 主号下级审核</div>
+                </div>
+                <span class="badge badge-info">reviewer</span>
+              </div>
+              <div style="border:1px solid var(--rule);border-radius:var(--radius-md);padding:var(--space-3);display:flex;justify-content:space-between;align-items:center;opacity:0.7">
+                <div>
+                  <div style="font-weight:600">客服</div>
+                  <div style="font-size:10px;color:var(--muted)">用户查询 + 支付强制确认（无风控改权）</div>
+                </div>
+                <span class="badge badge-warn">support</span>
+              </div>
+            </div>
+            <div style="background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.3);border-radius:var(--radius-sm);padding:var(--space-3);font-size:var(--font-size-caption);color:var(--ftx-warning-400)">
+              ⚠ 敏感操作（强制确认/手动补发/提现打款）会记录 audit-log 并二次确认
+            </div>
+          </div>
+          <div class="mock-cap">RBAC · 角色决定可见模块与操作权限</div>
+        </div>
+      </div>
+
+      <!-- 隔离要求 -->
+      <div class="card">
+        <div class="card-tag">ISOLATION</div>
+        <div class="card-title">后台隔离实现要求</div>
+        <table class="jump-table">
+          <thead><tr><th style="width:180px">维度</th><th>要求</th></tr></thead>
+          <tbody>
+            <tr><td>登录入口</td><td>独立域名/子路径（如 <span class="code-inline">admin.signal-saas.com</span>），绝不复用前台登录页</td></tr>
+            <tr><td>Cookie 域</td><td>独立 cookie 域，与前台 cookie 互不可见</td></tr>
+            <tr><td>JWT audience</td><td>独立 audience（<span class="code-inline">aud=admin</span> vs <span class="code-inline">aud=web</span>），互不通用</td></tr>
+            <tr><td>RBAC</td><td>admin / reviewer / support 三角色，模块级 + 操作级权限</td></tr>
+            <tr><td>双因素</td><td>V1.1 后置 TOTP；V1 预留配置开关</td></tr>
+            <tr><td>审计</td><td>所有写操作强制 audit-log：操作人 / 时间 / 目标 / 变更前后 / IP</td></tr>
+            <tr><td>会话</td><td>30min 无操作自动登出 · 密码错误 5 次锁定 15min</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════ D15 后台主框架 ═══════ -->
+    <section class="section" id="admin-framework">
+      <div class="sec-eyebrow">D15 · Admin Framework</div>
+      <h2 class="sec-title">后台主框架（登录后）</h2>
+      <p class="sec-desc">
+        对应 <span class="code-inline">web-admin/app/</span> 骨架：dashboard + 10 模块。
+        左侧栏承载模块入口，顶部全局搜索 + 审计标识 + 管理员信息。
+      </p>
+
+      <!-- 后台整体布局 -->
+      <div class="card">
+        <div class="card-tag">LAYOUT</div>
+        <div class="card-title">后台布局蓝图</div>
+        <div style="border:1px solid var(--rule);border-radius:var(--radius-lg);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-4);background:var(--surface-dim);border-bottom:1px solid var(--rule);font-size:var(--font-size-caption)">
+            <span class="admin-badge" style="transform:scale(0.85)">ADMIN</span>
+            <span style="color:var(--muted)">全局搜索用户/订单/TxHash…</span>
+            <span style="margin-left:auto;color:var(--muted)">👤 超级管理员 · 审计日志开启</span>
+          </div>
+          <div style="display:grid;grid-template-columns:200px 1fr;min-height:340px">
+            <div style="border-right:1px solid var(--rule);background:var(--surface-dim);padding:var(--space-3);display:flex;flex-direction:column;gap:var(--space-1)">
+              <div style="padding:var(--space-2);border-radius:var(--radius-sm);font-size:var(--font-size-caption);color:var(--muted)">📊 数据概览</div>
+              <div style="padding:var(--space-2);border-radius:var(--radius-sm);background:rgba(0,212,170,0.12);border-left:2px solid var(--accent);font-size:var(--font-size-caption);color:var(--accent)">▣ 用户管理</div>
+              <div style="padding:var(--space-2);border-radius:var(--radius-sm);font-size:var(--font-size-caption);color:var(--muted)">◈ 信号源审核</div>
+              <div style="padding:var(--space-2);border-radius:var(--radius-sm);font-size:var(--font-size-caption);color:var(--muted)">▤ 跟单订单</div>
+              <div style="padding:var(--space-2);border-radius:var(--radius-sm);font-size:var(--font-size-caption);color:var(--muted)">◎ 支付记录</div>
+              <div style="padding:var(--space-2);border-radius:var(--radius-sm);font-size:var(--font-size-caption);color:var(--muted)">⇄ 邀请奖励</div>
+              <div style="padding:var(--space-2);border-radius:var(--radius-sm);font-size:var(--font-size-caption);color:var(--muted)">≋ 钱包账本</div>
+              <div style="padding:var(--space-2);border-radius:var(--radius-sm);font-size:var(--font-size-caption);color:var(--muted)">↗ 提现审核</div>
+              <div style="padding:var(--space-2);border-radius:var(--radius-sm);font-size:var(--font-size-caption);color:var(--muted)">◉ 风控中心</div>
+              <div style="padding:var(--space-2);border-radius:var(--radius-sm);font-size:var(--font-size-caption);color:var(--muted)">☰ 审计日志</div>
+            </div>
+            <div style="padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-3)">
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3)">
+                <div style="height:56px;border:1px solid var(--rule);border-radius:var(--radius-sm);display:grid;place-items:center;font-size:var(--font-size-caption);color:var(--muted);background:var(--surface)">注册用户</div>
+                <div style="height:56px;border:1px solid var(--rule);border-radius:var(--radius-sm);display:grid;place-items:center;font-size:var(--font-size-caption);color:var(--muted);background:var(--surface)">今日支付</div>
+                <div style="height:56px;border:1px solid var(--rule);border-radius:var(--radius-sm);display:grid;place-items:center;font-size:var(--font-size-caption);color:var(--muted);background:var(--surface)">待审核提现</div>
+                <div style="height:56px;border:1px solid var(--rule);border-radius:var(--radius-sm);display:grid;place-items:center;font-size:var(--font-size-caption);color:var(--muted);background:var(--surface)">风控告警</div>
+              </div>
+              <div style="height:140px;border:1px dashed var(--ftx-cyan-600);border-radius:var(--radius-sm);display:grid;place-items:center;font-size:var(--font-size-caption);color:var(--accent);background:rgba(0,212,170,0.04)">模块内容区 · 数据表格 / 审核操作 / 状态流转</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 审核操作面板 -->
+      <div class="card">
+        <div class="card-tag">REVIEW</div>
+        <div class="card-title">审核操作面板（提现审核示例）</div>
+        <div class="card-sub">对应 <span class="code-inline">/admin/v1/withdrawals/{id}/{approve,reject,fill-tx,retry,refund}</span></div>
+        <div class="mock-wrap">
+          <div class="mock">
+            <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">提现审核 · 详情</span></div>
+            <div class="mock-body">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span class="badge badge-warn">待审核</span>
+                <span class="code-inline">#W20260812001</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2);font-size:var(--font-size-caption)">
+                <div style="color:var(--muted)">用户</div><div>user***@mail.com</div>
+                <div style="color:var(--muted)">金额</div><div style="font-family:var(--font-mono)">100.00 USDT（手续费 1.00）</div>
+                <div style="color:var(--muted)">网络</div><div>TRC-20</div>
+                <div style="color:var(--muted)">地址</div><div class="code-inline">TX1a…bc34</div>
+                <div style="color:var(--muted)">提交时间</div><div class="code-inline">2026-08-12 14:22</div>
+                <div style="color:var(--muted)">风控标记</div><div><span class="badge badge-err">高危</span> 48h 奖励核实中</div>
+              </div>
+              <div style="border:1px dashed var(--rule);border-radius:var(--radius-sm);padding:var(--space-3);font-size:var(--font-size-caption);color:var(--muted)">
+                自动校验通过：可提现余额充足 · 地址格式正确 · 与实名一致
+              </div>
+              <div style="display:flex;gap:var(--space-2)">
+                <button class="btn btn-primary" style="flex:1">通过并打款</button>
+                <button class="btn btn-danger" style="flex:1">驳回</button>
+                <button class="btn btn-ghost">退还</button>
+              </div>
+              <div style="font-size:10px;color:var(--ftx-text-tertiary)">
+                通过 → 填 TxHash → 自动链上打款；驳回 → 填原因 → 资金回退可提现
+              </div>
+            </div>
+            <div class="mock-cap">提现审核 · 高危用户联动 48h 核实（G11）</div>
+          </div>
+          <div class="mock">
+            <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">审计日志 · audit</span></div>
+            <div class="mock-body">
+              <table class="jump-table">
+                <thead><tr><th>操作</th><th>管理员</th><th>时间</th></tr></thead>
+                <tbody>
+                  <tr><td>强制确认支付 <span class="code-inline">#P2026…</span></td><td>admin01</td><td class="code-inline">12:30</td></tr>
+                  <tr><td>驳回提现 <span class="code-inline">#W2026…</span></td><td>reviewer02</td><td class="code-inline">12:18</td></tr>
+                  <tr><td>信号源上架 <span class="code-inline">BTC 趋势</span></td><td>admin01</td><td class="code-inline">11:52</td></tr>
+                  <tr><td>手动补发奖励 <span class="code-inline">+10U</span></td><td>admin01</td><td class="code-inline">11:20</td></tr>
+                  <tr><td>冻结用户 <span class="code-inline">user***@</span></td><td>admin01</td><td class="code-inline">10:05</td></tr>
+                </tbody>
+              </table>
+              <div style="font-size:10px;color:var(--ftx-text-tertiary)">
+                每条记录含：操作人 / 时间 / 目标 / 变更前后 / IP · 不可删除
+              </div>
+            </div>
+            <div class="mock-cap">审计日志 · 写操作全量留痕</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════ D16 邀请页收益可视化 ═══════ -->
+    <section class="section" id="invite">
+      <div class="sec-eyebrow">D16 · Referral Visualization</div>
+      <h2 class="sec-title">邀请页收益可视化</h2>
+      <p class="sec-desc">
+        对应接口 <span class="code-inline">GET /v1/referrals/me</span> + <span class="code-inline">GET /v1/rewards/me</span>。
+        10% 现金奖励 · 24h 核实（高危 48h）· 状态流转：verifying → available → withdrawing → paid。
+      </p>
+
+      <div class="mock-wrap">
+        <!-- 邀请概览 -->
+        <div class="mock">
+          <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">邀请奖励 · /invite</span></div>
+          <div class="mock-body">
+            <div style="text-align:center;margin-bottom:var(--space-2)">
+              <div style="font-size:var(--font-size-h4);font-weight:600">邀请好友，享 10% 现金奖励</div>
+              <div style="font-size:var(--font-size-caption);color:var(--muted)">好友每支付一笔订阅费，你获得其 10%</div>
+            </div>
+            <div style="border:1px dashed var(--ftx-cyan-600);border-radius:var(--radius-md);padding:var(--space-3);display:flex;align-items:center;gap:var(--space-3);background:rgba(0,212,170,0.04)">
+              <div class="code-inline" style="font-size:14px;flex:1;text-align:center;padding:var(--space-3);background:var(--surface-dim);border-radius:var(--radius-sm);letter-spacing:2px">SIGNAL-8F3K2A</div>
+              <button class="btn btn-primary btn-sm">复制</button>
+              <button class="btn btn-secondary btn-sm">分享链接</button>
+            </div>
+            <div class="inv-stats">
+              <div class="inv-stat"><div class="lbl">已邀请</div><div class="val">12</div><div class="sub">人 · 其中 8 人已订阅</div></div>
+              <div class="inv-stat"><div class="lbl">累计奖励</div><div class="val" style="color:var(--ftx-success-400)">89.20</div><div class="sub">USDT · 10% 比例</div></div>
+              <div class="inv-stat"><div class="lbl">待核实</div><div class="val" style="color:var(--ftx-warning-400)">6.90</div><div class="sub">USDT · 核实中</div></div>
+            </div>
+            <div style="font-size:10px;color:var(--ftx-text-tertiary);text-align:center">
+              规则：下级每笔订阅费 10% 计入奖励 · 核实通过后进入可提现余额
+            </div>
+          </div>
+          <div class="mock-cap">邀请概览 · 邀请码 + 分享 + 三项统计</div>
+        </div>
+
+        <!-- 奖励时间轴 -->
+        <div class="mock">
+          <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">奖励核实 · 时间轴</span></div>
+          <div class="mock-body">
+            <div style="font-size:var(--font-size-h4);font-weight:600;margin-bottom:var(--space-2)">奖励核实状态</div>
+            <div class="timeline">
+              <div class="tl-item done">
+                <div class="tl-dot">✓</div>
+                <div class="tl-body">
+                  <div class="tl-title">下级订阅成功 <span class="badge badge-ok">已完成</span></div>
+                  <div class="tl-time">2026-08-11 15:20</div>
+                  <div class="tl-desc">下级 user*** 支付 19.9U · 触发 10% 奖励 = 1.99U</div>
+                </div>
+              </div>
+              <div class="tl-item active">
+                <div class="tl-dot">◌</div>
+                <div class="tl-body">
+                  <div class="tl-title">奖励核实中 <span class="badge badge-warn">verifying</span></div>
+                  <div class="tl-time">剩余 18h 22m · 24h 倒计时</div>
+                  <div class="tl-desc">核实期内下级退款则奖励取消 · 高危账号延长至 48h（G11）</div>
+                  <div class="bar-track" style="margin-top:var(--space-2)"><div class="bar-fill" style="width:32%"></div></div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot">◎</div>
+                <div class="tl-body">
+                  <div class="tl-title">奖励到账 <span class="badge badge-muted">available</span></div>
+                  <div class="tl-desc">核实通过 → 计入可提现余额 → 可申请提现</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mock-cap">奖励核实时间轴 · 24h/48h 倒计时（G11）</div>
+        </div>
+      </div>
+
+      <!-- 奖励流水 -->
+      <div class="card">
+        <div class="card-tag">LEDGER</div>
+        <div class="card-title">奖励流水明细</div>
+        <div class="card-sub">对应 <span class="code-inline">GET /v1/rewards</span> · 5 字段账本（累计/可提现/提现中/已提现/冻结）★G12</div>
+        <table class="jump-table">
+          <thead><tr><th>时间</th><th>来源</th><th>下级</th><th>金额</th><th>状态</th><th>备注</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="code-inline">08-11 15:20</td><td>订阅奖励</td><td>user***@</td>
+              <td style="font-family:var(--font-mono)">+1.99 U</td>
+              <td><span class="badge badge-warn">核实中</span></td>
+              <td style="color:var(--muted)">19.9U × 10% · 24h 核实</td>
+            </tr>
+            <tr>
+              <td class="code-inline">08-09 10:02</td><td>订阅奖励</td><td>trader***@</td>
+              <td style="font-family:var(--font-mono)">+1.99 U</td>
+              <td><span class="badge badge-ok">已到账</span></td>
+              <td style="color:var(--muted)">19.9U × 10% · 已可提现</td>
+            </tr>
+            <tr>
+              <td class="code-inline">08-07 22:41</td><td>订阅奖励</td><td>whale***@</td>
+              <td style="font-family:var(--font-mono)">+0.50 U</td>
+              <td><span class="badge badge-err">已取消</span></td>
+              <td style="color:var(--muted)">下级 24h 内退款 · 奖励回滚</td>
+            </tr>
+            <tr>
+              <td class="code-inline">08-05 09:15</td><td>订阅奖励</td><td>moon***@</td>
+              <td style="font-family:var(--font-mono)">+1.99 U</td>
+              <td><span class="badge badge-muted">已提现</span></td>
+              <td style="color:var(--muted)">转入提现流程 · TxHash 已记录</td>
+            </tr>
+            <tr>
+              <td class="code-inline">08-01 18:30</td><td>订阅奖励</td><td>nova***@</td>
+              <td style="font-family:var(--font-mono)">+1.99 U</td>
+              <td><span class="badge badge-warn">冻结</span></td>
+              <td style="color:var(--muted)">风控冻结 · 48h 核实（G11 高危）</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 邀请奖励收益曲线 -->
+      <div class="card">
+        <div class="card-tag">CHART</div>
+        <div class="card-title">邀请收益趋势</div>
+        <div class="card-sub">30 天邀请奖励柱状 + 累计曲线 · 数据可切换 7/30/90 天</div>
+        <div style="border:1px solid var(--rule);border-radius:var(--radius-md);overflow:hidden;background:var(--surface-dim)">
+          <div style="display:flex;gap:var(--space-2);padding:var(--space-3);border-bottom:1px solid var(--rule)">
+            <span class="tag">7 天</span><span class="tag tag-accent">30 天</span><span class="tag">90 天</span>
+            <span style="margin-left:auto;font-family:var(--font-mono);font-size:var(--font-size-caption);color:var(--muted)">累计：89.20 USDT</span>
+          </div>
+          <div style="padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-3)">
+            <div style="display:flex;align-items:flex-end;gap:6px;height:120px;padding:0 var(--space-2)">
+              <div style="flex:1;height:22%;background:linear-gradient(180deg,var(--ftx-cyan-500),var(--ftx-cyan-600));border-radius:2px 2px 0 0"></div>
+              <div style="flex:1;height:35%;background:linear-gradient(180deg,var(--ftx-cyan-500),var(--ftx-cyan-600));border-radius:2px 2px 0 0"></div>
+              <div style="flex:1;height:18%;background:linear-gradient(180deg,var(--ftx-cyan-500),var(--ftx-cyan-600));border-radius:2px 2px 0 0"></div>
+              <div style="flex:1;height:48%;background:linear-gradient(180deg,var(--ftx-cyan-400),var(--ftx-cyan-600));border-radius:2px 2px 0 0"></div>
+              <div style="flex:1;height:30%;background:linear-gradient(180deg,var(--ftx-cyan-500),var(--ftx-cyan-600));border-radius:2px 2px 0 0"></div>
+              <div style="flex:1;height:65%;background:linear-gradient(180deg,var(--ftx-cyan-400),var(--ftx-cyan-600));border-radius:2px 2px 0 0"></div>
+              <div style="flex:1;height:40%;background:linear-gradient(180deg,var(--ftx-cyan-500),var(--ftx-cyan-600));border-radius:2px 2px 0 0"></div>
+              <div style="flex:1;height:75%;background:linear-gradient(180deg,var(--accent),var(--ftx-cyan-600));border-radius:2px 2px 0 0;position:relative">
+                <span style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-family:var(--font-mono);font-size:9px;color:var(--accent)">1.99</span>
+              </div>
+              <div style="flex:1;height:52%;background:linear-gradient(180deg,var(--ftx-cyan-500),var(--ftx-cyan-600));border-radius:2px 2px 0 0"></div>
+              <div style="flex:1;height:38%;background:linear-gradient(180deg,var(--ftx-cyan-500),var(--ftx-cyan-600));border-radius:2px 2px 0 0"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9px;color:var(--ftx-text-tertiary);padding:0 var(--space-2)">
+              <span>07-14</span><span>07-19</span><span>07-24</span><span>07-29</span><span>08-03</span><span>08-08</span><span>08-12</span>
+            </div>
+            <div style="font-size:10px;color:var(--ftx-text-tertiary)">
+              柱状 = 当日新增奖励（USDT）· hover 显示明细 · 空态显示"暂无邀请奖励数据"
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 邀请奖励状态机 -->
+      <div class="card">
+        <div class="card-tag">STATE MACHINE</div>
+        <div class="card-title">奖励状态机 → 前端表现</div>
+        <table class="jump-table">
+          <thead><tr><th>状态</th><th>前端表现</th><th>触发</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge badge-info">verifying</span></td><td>时间轴"核实中" + 倒计时进度条 + 待核实金额</td><td>下级订阅成功自动触发</td></tr>
+            <tr><td><span class="badge badge-ok">available</span></td><td>奖励转入可提现余额 · 站内消息 + Toast 通知</td><td class="auto">24h/48h 核实通过（Celery 扫描）</td></tr>
+            <tr><td><span class="badge badge-err">canceled</span></td><td>流水标红"已取消" · 原因"下级退款"</td><td>24h 内下级退款</td></tr>
+            <tr><td><span class="badge badge-warn">frozen</span></td><td>流水标黄"冻结" · 48h 核实中（G11 高危）</td><td>风控批量滥用标记</td></tr>
+            <tr><td><span class="badge badge-muted">withdrawing</span></td><td>奖励转入"提现中" · 关联提现单号</td><td>用户发起提现</td></tr>
+            <tr><td><span class="badge badge-muted">paid</span></td><td>"已提现" · TxHash 可查</td><td>提现打款完成</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════ 遗漏补齐 E1-E3 ═══════ -->
+    <section class="section" id="gaps">
+      <div class="sec-eyebrow">Gap Fix · 遗漏补齐</div>
+      <h2 class="sec-title">遗漏补齐 E1-E3</h2>
+      <p class="sec-desc">
+        对照设计文档 §3.20 NotificationService 与交互矩阵发现 3 处遗漏：
+        <strong style="color:var(--ftx-error-400)">E1 通知中心</strong>（明确需求缺失）、
+        E2 全局 Toast、E3 404 错误页。
+      </p>
+
+      <!-- E1 通知中心 -->
+      <div class="card">
+        <div class="card-tag">E1 · NOTIFICATION</div>
+        <div class="card-title">通知中心 / 站内消息</div>
+        <div class="card-sub">
+          对应 <span class="code-inline">NotificationService.list_unread / mark_read</span> + WS 推送。
+          6 类触发场景：订阅开通 / 支付超时 / 奖励到账 / 提现通过 / 提现拒绝 / 风控冻结。
+        </div>
+        <div class="mock-wrap">
+          <!-- 通知下拉 -->
+          <div class="mock">
+            <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">顶栏通知下拉</span></div>
+            <div class="mock-body">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-2)">
+                <div style="font-weight:600">通知 <span class="badge badge-err" style="margin-left:var(--space-1)">3 未读</span></div>
+                <span style="font-size:var(--font-size-caption);color:var(--accent);cursor:pointer">全部已读</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:var(--space-2)">
+                <div style="border:1px solid rgba(0,212,170,0.4);background:rgba(0,212,170,0.05);border-radius:var(--radius-md);padding:var(--space-3);display:flex;gap:var(--space-3)">
+                  <div style="width:32px;height:32px;border-radius:var(--radius-sm);background:rgba(22,163,74,0.15);color:var(--ftx-success-400);display:grid;place-items:center;font-size:13px;flex-shrink:0">✓</div>
+                  <div>
+                    <div style="font-weight:600;font-size:var(--font-size-body)">奖励已到账</div>
+                    <div style="font-size:var(--font-size-caption);color:var(--muted)">下级订阅奖励 +1.99 USDT 已计入可提现余额</div>
+                    <div style="font-size:10px;color:var(--ftx-text-tertiary);margin-top:var(--space-1)">10 分钟前 · 未读</div>
+                  </div>
+                </div>
+                <div style="border:1px solid var(--rule);border-radius:var(--radius-md);padding:var(--space-3);display:flex;gap:var(--space-3)">
+                  <div style="width:32px;height:32px;border-radius:var(--radius-sm);background:rgba(234,179,8,0.15);color:var(--ftx-warning-400);display:grid;place-items:center;font-size:13px;flex-shrink:0">◌</div>
+                  <div>
+                    <div style="font-weight:600;font-size:var(--font-size-body)">支付确认超时</div>
+                    <div style="font-size:var(--font-size-caption);color:var(--muted)">订单 #P20260812001 确认超时，已提交人工处理</div>
+                    <div style="font-size:10px;color:var(--ftx-text-tertiary);margin-top:var(--space-1)">1 小时前 · 未读</div>
+                  </div>
+                </div>
+                <div style="border:1px solid var(--rule);border-radius:var(--radius-md);padding:var(--space-3);display:flex;gap:var(--space-3);opacity:0.6">
+                  <div style="width:32px;height:32px;border-radius:var(--radius-sm);background:rgba(59,130,246,0.15);color:var(--ftx-info-400);display:grid;place-items:center;font-size:13px;flex-shrink:0">◎</div>
+                  <div>
+                    <div style="font-weight:600;font-size:var(--font-size-body)">订阅开通成功</div>
+                    <div style="font-size:var(--font-size-caption);color:var(--muted)">正式版订阅已激活，有效期至 2026-09-12</div>
+                    <div style="font-size:10px;color:var(--ftx-text-tertiary);margin-top:var(--space-1)">昨天 · 已读</div>
+                  </div>
+                </div>
+              </div>
+              <div style="text-align:center;font-size:var(--font-size-caption);color:var(--accent);cursor:pointer;padding-top:var(--space-2)">查看全部通知</div>
+            </div>
+            <div class="mock-cap">顶栏铃铛 → 通知下拉 · 未读高亮青绿描边 · 全部已读</div>
+          </div>
+
+          <!-- 通知中心页 -->
+          <div class="mock">
+            <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">通知中心 · /notifications</span></div>
+            <div class="mock-body">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <div style="font-size:var(--font-size-h4);font-weight:600">通知中心</div>
+                <div class="btn-row" style="gap:var(--space-2)">
+                  <span class="tag tag-accent">全部</span><span class="tag">未读 (3)</span><span class="tag">已读</span>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:var(--space-2)">
+                <div style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--rule);border-radius:var(--radius-md);padding:var(--space-3)">
+                  <div style="display:flex;gap:var(--space-3);align-items:center">
+                    <span style="width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent)"></span>
+                    <div><div style="font-weight:600;font-size:var(--font-size-body)">提现审核通过</div>
+                    <div style="font-size:var(--font-size-caption);color:var(--muted)">#W20260812001 · 100 USDT 已通过审核，正在打款</div></div>
+                  </div>
+                  <span style="font-size:10px;color:var(--ftx-text-tertiary)">刚刚</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--rule);border-radius:var(--radius-md);padding:var(--space-3)">
+                  <div style="display:flex;gap:var(--space-3);align-items:center">
+                    <span style="width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent)"></span>
+                    <div><div style="font-weight:600;font-size:var(--font-size-body)">风控冻结通知</div>
+                    <div style="font-size:var(--font-size-caption);color:var(--muted)">检测到异常行为，奖励核实延长至 48h（G11）</div></div>
+                  </div>
+                  <span style="font-size:10px;color:var(--ftx-text-tertiary)">2 小时前</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--rule);border-radius:var(--radius-md);padding:var(--space-3);opacity:0.55">
+                  <div style="display:flex;gap:var(--space-3);align-items:center">
+                    <span style="width:6px;height:6px;border-radius:50%;background:transparent"></span>
+                    <div><div style="font-weight:600;font-size:var(--font-size-body)">提现审核拒绝</div>
+                    <div style="font-size:var(--font-size-caption);color:var(--muted)">#W20260812002 · 原因：地址与实名不符</div></div>
+                  </div>
+                  <span style="font-size:10px;color:var(--ftx-text-tertiary)">昨天</span>
+                </div>
+              </div>
+              <div style="text-align:center;font-size:var(--font-size-caption);color:var(--muted)">— 已加载全部 12 条通知 —</div>
+            </div>
+            <div class="mock-cap">通知中心页 · 全部/未读/已读筛选 · 未读红点</div>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:var(--space-3)">
+          <span class="tag">6 类场景</span><span class="tag">WS 实时</span><span class="tag">离线拉取</span><span class="tag">已读/未读</span>
+        </div>
+      </div>
+
+      <!-- E2 Toast -->
+      <div class="card">
+        <div class="card-tag">E2 · TOAST</div>
+        <div class="card-title">全局 Toast 组件</div>
+        <div class="card-sub">右上角固定 · 自动消失 3s · 成功/失败/警告/信息 4 态</div>
+        <div class="mock-wrap">
+          <div class="mock">
+            <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">Toast 成功态</span></div>
+            <div class="mock-body">
+              <div style="max-width:320px;margin:0 auto;display:flex;flex-direction:column;gap:var(--space-2)">
+                <div style="border:1px solid rgba(22,163,74,0.4);background:var(--surface);border-radius:var(--radius-md);padding:var(--space-3);display:flex;gap:var(--space-3);align-items:center;box-shadow:var(--shadow-3)">
+                  <span style="color:var(--ftx-success-400);font-size:14px">✓</span>
+                  <div style="flex:1;font-size:var(--font-size-caption)">复制成功，邀请码已复制到剪贴板</div>
+                </div>
+              </div>
+            </div>
+            <div class="mock-cap">Toast · 成功态 · 3s 自动消失</div>
+          </div>
+          <div class="mock">
+            <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">Toast 失败态</span></div>
+            <div class="mock-body">
+              <div style="max-width:320px;margin:0 auto;display:flex;flex-direction:column;gap:var(--space-2)">
+                <div style="border:1px solid rgba(239,68,68,0.4);background:var(--surface);border-radius:var(--radius-md);padding:var(--space-3);display:flex;gap:var(--space-3);align-items:center;box-shadow:var(--shadow-3)">
+                  <span style="color:var(--ftx-error-400);font-size:14px">✕</span>
+                  <div style="flex:1;font-size:var(--font-size-caption)">绑定失败：检测到提现权限，请调整后重试</div>
+                </div>
+                <div style="border:1px solid rgba(234,179,8,0.4);background:var(--surface);border-radius:var(--radius-md);padding:var(--space-3);display:flex;gap:var(--space-3);align-items:center;box-shadow:var(--shadow-3)">
+                  <span style="color:var(--ftx-warning-400);font-size:14px">!</span>
+                  <div style="flex:1;font-size:var(--font-size-caption)">订阅即将过期，剩余 3 天</div>
+                </div>
+              </div>
+            </div>
+            <div class="mock-cap">Toast · 失败/警告态 · 右上角堆叠</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- E3 404 -->
+      <div class="card">
+        <div class="card-tag">E3 · 404</div>
+        <div class="card-title">404 错误页</div>
+        <div class="card-sub">全局兜底 · 品牌信号波点缀 · 返回引导</div>
+        <div class="mock-wrap">
+          <div class="mock">
+            <div class="mock-hdr"><span class="dots"><i></i><i></i><i></i></span><span class="mock-title">404 · 页面不存在</span></div>
+            <div class="mock-body" style="justify-content:center;align-items:center;min-height:280px">
+              <div style="text-align:center;display:flex;flex-direction:column;gap:var(--space-4);align-items:center">
+                <div style="font-family:var(--font-mono);font-size:64px;font-weight:700;color:var(--ftx-text-tertiary);letter-spacing:-0.02em">404</div>
+                <div style="font-size:var(--font-size-h4);font-weight:600">信号丢失</div>
+                <div style="font-size:var(--font-size-caption);color:var(--muted);max-width:300px">你访问的页面不存在或已被移除，返回首页继续跟单</div>
+                <div class="btn-row" style="justify-content:center">
+                  <button class="btn btn-primary">返回首页</button>
+                  <button class="btn btn-secondary">去策略广场</button>
+                </div>
+              </div>
+            </div>
+            <div class="mock-cap">404 · "信号丢失"品牌化文案 · 双 CTA</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════ 设计规则 ═══════ -->
+    <section class="section" id="rules">
+      <div class="sec-eyebrow">Rules · 设计规则</div>
+      <h2 class="sec-title">补充设计规则</h2>
+
+      <div class="card">
+        <div class="card-tag">DO</div>
+        <div class="card-title">后台与邀请页强制约定</div>
+        <div class="type-row" style="display:flex;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+          <span class="code-inline" style="color:var(--muted)">01</span>
+          <span style="flex:1;margin-left:var(--space-3)">后台登录页必须有 <span class="admin-badge">ADMIN CONSOLE</span> 红色警示标识，与前台视觉区分</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+          <span class="code-inline" style="color:var(--muted)">02</span>
+          <span style="flex:1;margin-left:var(--space-3)">后台写操作二次确认 + audit-log 记录，敏感操作红色警示按钮</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+          <span class="code-inline" style="color:var(--muted)">03</span>
+          <span style="flex:1;margin-left:var(--space-3)">邀请页金额全部等宽字体 + 状态徽章；核实倒计时实时更新（WS reward.tick）</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+          <span class="code-inline" style="color:var(--muted)">04</span>
+          <span style="flex:1;margin-left:var(--space-3)">邀请码分享按钮触发系统原生分享；复制成功 Toast 反馈</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:var(--space-2) 0">
+          <span class="code-inline" style="color:var(--muted)">05</span>
+          <span style="flex:1;margin-left:var(--space-3)">时间轴组件统一规范：完成✓绿 / 进行中脉冲 / 待开始灰</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer class="footer">
+  <span>signal-saas · 补充设计 v0.3 · D15 后台隔离 + D16 邀请可视化</span>
+  <span>与 UI 框架 v0.1 / 交互细化 v0.2 同源</span>
+</footer>
+
+</body>
+</html>

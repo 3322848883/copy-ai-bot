@@ -1,0 +1,20 @@
+# 本地 Docker 测试 override：避开本机已有容器端口冲突（deploy-postgres:5432 / copy-ai-bot-redis:6379）
+# 用法：docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+services:
+  db:
+    ports:
+      - "5433:5432"
+
+  redis:
+    ports:
+      - "6381:6379"
+
+  api:
+    environment:
+      # 本地测试沿用 dev 密钥，避免与生产混淆
+      JWT_SECRET: dev-secret-please-change-in-prod
+      VAULT_KEY_HEX: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  web:
+    ports:
+      - "3000:3000"

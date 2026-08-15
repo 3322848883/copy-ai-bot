@@ -1,0 +1,1 @@
+# 静态资源目录（Next.js public）。当前 favicon 等资源位于 app/ 内，此目录保留用于 Docker 构建。

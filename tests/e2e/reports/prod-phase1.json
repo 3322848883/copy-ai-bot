@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-08-13T11:21:52.685Z",
+  "summary": {
+    "total": 4,
+    "pass": 4,
+    "issue": 0
+  },
+  "results": {
+    "A1_策略广场显示真实信号源": {
+      "status": "PASS",
+      "findings": [],
+      "detail": "期望 爱你每一天007/星图量化社/成成狠凶 全部显示"
+    },
+    "A2_策略详情真实画像": {
+      "status": "PASS",
+      "findings": []
+    },
+    "A3_注册激活登录": {
+      "status": "PASS",
+      "path": "/account"
+    },
+    "A4_订阅页展示": {
+      "status": "PASS",
+      "findings": []
+    }
+  }
+}

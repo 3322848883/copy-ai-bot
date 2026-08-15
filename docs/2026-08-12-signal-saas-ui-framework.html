@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>signal-saas · UI 设计框架</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   signal-saas UI FRAMEWORK — 基于 free-trading-system 设计库扩展
+   深海军蓝 + 电光青绿 | 信号波概念 | 锐利圆角
+   ═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  /* 继承设计库 token */
+  --ftx-blue-400: #3b82f6; --ftx-blue-500: #2b6ce6;
+  --ftx-cyan-300: #40ffc5; --ftx-cyan-400: #00d4aa; --ftx-cyan-500: #00b894; --ftx-cyan-600: #009a7a;
+  --ftx-success-400: #28c464; --ftx-success-500: #16a34a;
+  --ftx-warning-400: #facc15; --ftx-warning-500: #eab308;
+  --ftx-error-400: #f87171; --ftx-error-500: #ef4444; --ftx-error-600: #dc2626;
+  --ftx-info-400: #60a5fa; --ftx-info-500: #3b82f6;
+  --ftx-text-primary: #f1f5f9; --ftx-text-secondary: #94a3b8; --ftx-text-tertiary: #64748b; --ftx-text-disabled: #475569;
+  --ftx-surface-base: #0a1628; --ftx-surface-raised: #111d35; --ftx-surface-overlay: #162038;
+  --ftx-surface-glass: rgba(22,32,56,0.8); --ftx-surface-hover: rgba(30,41,59,0.5);
+  --ftx-surface-border: rgba(51,65,85,0.6); --ftx-surface-border-strong: rgba(100,116,139,0.4);
+  --ftx-surface-sunken: #070e1a;
+
+  /* 语义别名 */
+  --bg: var(--ftx-surface-base); --fg: var(--ftx-text-primary); --muted: var(--ftx-text-secondary);
+  --rule: var(--ftx-surface-border); --accent: var(--ftx-cyan-400); --accent-hover: var(--ftx-cyan-500);
+  --surface: var(--ftx-surface-raised); --surface-dim: var(--ftx-surface-sunken);
+
+  /* 字体 */
+  --font-display: 'Space Grotesk', sans-serif; --font-body: 'Space Grotesk', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+  --font-size-display: 56px; --font-size-h1: 40px; --font-size-h2: 32px; --font-size-h3: 24px; --font-size-h4: 20px;
+  --font-size-body: 15px; --font-size-lead: 17px; --font-size-caption: 12px; --font-size-eyebrow: 11px; --font-size-mono: 14px;
+
+  /* 间距 */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+
+  /* 尺寸 */
+  --size-button-height: 36px; --size-button-height-lg: 40px; --size-button-height-xl: 48px;
+
+  /* 圆角 — 锐利 */
+  --radius-xs: 2px; --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-pill: 9999px;
+
+  /* 阴影 */
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.15);
+  --shadow-2: 0 4px 8px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-3: 0 8px 24px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.25);
+  --shadow-4: 0 16px 48px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.3);
+
+  /* signal-saas 扩展 token */
+  --signal-grid: rgba(0,212,170,0.06);        /* 信号网格纹理 */
+  --signal-wave: rgba(0,212,170,0.35);        /* 信号波 */
+  --brand-glow: 0 0 24px rgba(0,212,170,0.25);
+  --nav-height: 56px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-body);
+  line-height: 1.6; -webkit-font-smoothing: antialiased;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(0,212,170,0.08), transparent),
+    radial-gradient(ellipse 60% 40% at 90% 0%, rgba(43,108,230,0.06), transparent);
+  background-attachment: fixed;
+}
+
+/* ── 信号网格背景纹理 ── */
+.sig-grid-bg {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(var(--signal-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--signal-grid) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, black 30%, transparent 100%);
+}
+
+/* ── 顶部导航 ── */
+.topnav {
+  position: sticky; top: 0; z-index: 100; height: var(--nav-height);
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: 0 var(--space-7); backdrop-filter: blur(12px);
+  background: rgba(10,22,40,0.85); border-bottom: 1px solid var(--rule);
+}
+.brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
+.brand-mark {
+  width: 28px; height: 28px; border-radius: var(--radius-sm); display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--ftx-cyan-400), var(--ftx-cyan-600)); box-shadow: var(--brand-glow);
+}
+.brand-mark svg { width: 16px; height: 16px; }
+.brand-tag { color: var(--muted); font-size: var(--font-size-caption); font-weight: 400; }
+.nav-links { display: flex; gap: var(--space-1); margin-left: var(--space-5); }
+.nav-links a {
+  color: var(--muted); text-decoration: none; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm);
+  font-size: var(--font-size-body); transition: all .15s; border-left: 2px solid transparent;
+}
+.nav-links a:hover { color: var(--fg); background: var(--ftx-surface-hover); }
+.nav-links a.active { color: var(--accent); background: rgba(0,212,170,0.1); border-left-color: var(--accent); }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+
+/* ── 布局容器 ── */
+.layout { display: grid; grid-template-columns: 220px 1fr; gap: var(--space-6); max-width: 1280px; margin: 0 auto; padding: var(--space-7) var(--space-6); position: relative; z-index: 1; }
+.sidebar {
+  position: sticky; top: calc(var(--nav-height) + var(--space-5)); height: fit-content;
+  display: flex; flex-direction: column; gap: var(--space-1);
+}
+.side-group { margin-top: var(--space-4); font-size: var(--font-size-eyebrow); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ftx-text-tertiary); padding: 0 var(--space-3); }
+.side-item {
+  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3);
+  color: var(--muted); text-decoration: none; border-radius: var(--radius-sm);
+  border-left: 2px solid transparent; transition: all .15s; font-size: var(--font-size-body);
+}
+.side-item:hover { background: var(--ftx-surface-hover); color: var(--fg); }
+.side-item.active { background: rgba(0,212,170,0.12); color: var(--accent); border-left-color: var(--accent); }
+.side-num { font-family: var(--font-mono); font-size: 10px; color: var(--ftx-text-tertiary); }
+
+.content { min-width: 0; display: flex; flex-direction: column; gap: var(--space-7); }
+
+/* ── 章节 ── */
+.section { display: flex; flex-direction: column; gap: var(--space-4); scroll-margin-top: calc(var(--nav-height) + var(--space-5)); }
+.sec-eyebrow { font-family: var(--font-mono); font-size: var(--font-size-eyebrow); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.sec-title { font-size: var(--font-size-h2); font-weight: 700; letter-spacing: -0.02em; }
+.sec-desc { color: var(--muted); max-width: 720px; }
+.card {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg);
+  padding: var(--space-5); box-shadow: var(--shadow-2); position: relative; overflow: hidden;
+}
+.card-glass {
+  background: rgba(255,255,255,0.04); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-lg); padding: var(--space-5);
+  box-shadow: var(--shadow-3); position: relative; overflow: hidden;
+}
+.card-tag { position: absolute; top: 0; right: 0; font-family: var(--font-mono); font-size: 10px; padding: 4px 10px; background: rgba(0,212,170,0.15); color: var(--accent); border-bottom-left-radius: var(--radius-md); }
+.card-title { font-size: var(--font-size-h4); font-weight: 600; margin-bottom: var(--space-3); }
+.card-sub { color: var(--muted); font-size: var(--font-size-caption); margin-bottom: var(--space-4); }
+
+/* ── 调色板展示 ── */
+.palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-3); }
+.swatch { border-radius: var(--radius-md); padding: var(--space-4); border: 1px solid var(--rule); display: flex; flex-direction: column; gap: var(--space-1); min-height: 88px; }
+.swatch-name { font-size: var(--font-size-caption); font-weight: 600; }
+.swatch-val { font-family: var(--font-mono); font-size: 10px; opacity: 0.8; }
+.sw-cyan { background: var(--ftx-cyan-400); color: #06281f; }
+.sw-base { background: var(--ftx-surface-base); }
+.sw-raised { background: var(--ftx-surface-raised); }
+.sw-overlay { background: var(--ftx-surface-overlay); }
+.sw-success { background: var(--ftx-success-500); color: #052e12; }
+.sw-error { background: var(--ftx-error-500); color: #fff; }
+.sw-warning { background: var(--ftx-warning-400); color: #332601; }
+.sw-info { background: var(--ftx-info-400); color: #0b1c3a; }
+.sw-text { background: var(--ftx-text-primary); color: #0a1628; }
+.sw-muted { background: var(--ftx-text-secondary); color: #0a1628; }
+
+/* ── 排版 ── */
+.type-row { display: grid; grid-template-columns: 140px 1fr; gap: var(--space-3); align-items: baseline; padding: var(--space-2) 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.type-spec { font-family: var(--font-mono); font-size: 10px; color: var(--ftx-text-tertiary); }
+.type-sample { font-weight: 600; letter-spacing: -0.01em; }
+.mono-split { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── 按钮 ── */
+.btn-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.btn { display: inline-flex; align-items: center; justify-content: center; border: none; cursor: pointer; font-family: var(--font-body); font-size: var(--font-size-body); white-space: nowrap; min-width: var(--size-button-height); transition: all .15s; flex-shrink: 0; text-decoration: none; }
+.btn-primary { background: var(--accent); color: #06281f; border-radius: var(--radius-sm); height: var(--size-button-height); font-weight: 600; box-shadow: var(--brand-glow); }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-secondary { background: transparent; border: 1px solid var(--rule); color: var(--fg); border-radius: var(--radius-sm); height: var(--size-button-height); }
+.btn-secondary:hover { background: var(--ftx-surface-hover); border-color: var(--ftx-surface-border-strong); }
+.btn-danger { background: var(--ftx-error-600); color: #fff; border-radius: var(--radius-sm); height: var(--size-button-height); font-weight: 600; }
+.btn-ghost { background: transparent; color: var(--muted); border-radius: var(--radius-sm); height: var(--size-button-height); }
+.btn-ghost:hover { color: var(--fg); background: var(--ftx-surface-hover); }
+.btn-sm { height: 28px; font-size: var(--font-size-caption); padding: 0 var(--space-3); }
+.btn-lg { height: var(--size-button-height-lg); padding: 0 var(--space-5); font-weight: 600; }
+.btn-xl { height: var(--size-button-height-xl); padding: 0 var(--space-6); font-weight: 600; }
+
+/* ── 卡片组件 ── */
+.metrics-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); }
+.metric-card { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-4); box-shadow: var(--shadow-2); position: relative; overflow: hidden; }
+.metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--accent), transparent 60%); }
+.metric-label { font-size: var(--font-size-caption); color: var(--muted); margin-bottom: var(--space-2); }
+.metric-value { font-family: var(--font-display); font-size: var(--font-size-h3); font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.metric-change { font-family: var(--font-mono); font-size: var(--font-size-caption); margin-top: var(--space-1); }
+.positive { color: var(--ftx-success-400); }
+.negative { color: var(--ftx-error-400); }
+
+/* ── 表格 ── */
+.ftx-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-caption); }
+.ftx-table thead th { height: 32px; padding: 0 var(--space-3); text-align: left; font-weight: 600; font-size: var(--font-size-caption); color: var(--ftx-text-secondary); background: var(--surface-dim); border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.ftx-table thead th.num { text-align: right; }
+.ftx-table tbody td { height: 32px; padding: 0 var(--space-3); border-bottom: 1px solid var(--ftx-surface-border); white-space: nowrap; }
+.ftx-table tbody td.num { text-align: right; font-family: var(--font-mono); font-size: var(--font-size-mono); font-variant-numeric: tabular-nums; }
+.ftx-table tbody tr { transition: background .15s; }
+.ftx-table tbody tr:hover { background: var(--ftx-surface-hover); }
+
+/* 状态徽章 */
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: var(--radius-pill); font-size: var(--font-size-caption); font-weight: 500; white-space: nowrap; }
+.badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.badge-ok { background: rgba(22,163,74,0.15); color: var(--ftx-success-400); }
+.badge-warn { background: rgba(234,179,8,0.15); color: var(--ftx-warning-400); }
+.badge-err { background: rgba(239,68,68,0.15); color: var(--ftx-error-400); }
+.badge-info { background: rgba(59,130,246,0.15); color: var(--ftx-info-400); }
+.badge-muted { background: rgba(100,116,139,0.15); color: var(--ftx-text-secondary); }
+
+/* ── 策略卡片（核心新组件）── */
+.strategy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-4); }
+.strategy-card {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg);
+  padding: var(--space-5); box-shadow: var(--shadow-2); transition: all .2s; cursor: pointer;
+  display: flex; flex-direction: column; gap: var(--space-3); position: relative; overflow: hidden;
+}
+.strategy-card:hover { transform: translateY(-3px); border-color: var(--ftx-cyan-600); box-shadow: var(--shadow-3), var(--brand-glow); }
+.strategy-card::after {
+  content: ''; position: absolute; bottom: -20px; right: -20px; width: 90px; height: 90px;
+  background: radial-gradient(circle, rgba(0,212,170,0.1), transparent 70%); pointer-events: none;
+}
+.strategy-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.strategy-name { font-size: var(--font-size-h4); font-weight: 600; letter-spacing: -0.01em; }
+.strategy-tag { font-family: var(--font-mono); font-size: 10px; padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid var(--rule); color: var(--muted); }
+.strategy-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.strategy-metric .m-label { font-size: 10px; color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; }
+.strategy-metric .m-value { font-family: var(--font-mono); font-size: var(--font-size-h4); font-weight: 600; font-variant-numeric: tabular-nums; }
+.strategy-spark { height: 44px; border-radius: var(--radius-sm); background: var(--surface-dim); position: relative; overflow: hidden; }
+.strategy-bottom { display: flex; justify-content: space-between; align-items: center; padding-top: var(--space-3); border-top: 1px solid var(--ftx-surface-border); }
+
+/* ── 跟单机器人卡片 ── */
+.bot-card { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.bot-head { display: flex; justify-content: space-between; align-items: center; }
+.bot-status { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-caption); }
+.bot-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ftx-success-400); box-shadow: 0 0 8px var(--ftx-success-400); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.bot-paused .dot { background: var(--ftx-warning-400); box-shadow: 0 0 8px var(--ftx-warning-400); animation: none; }
+.bot-stopped .dot { background: var(--ftx-error-400); box-shadow: 0 0 8px var(--ftx-error-400); animation: none; }
+.bot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.bot-f { font-size: 10px; color: var(--ftx-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; }
+.bot-v { font-family: var(--font-mono); font-size: var(--font-size-caption); font-weight: 600; font-variant-numeric: tabular-nums; }
+.bot-actions { display: flex; gap: var(--space-2); }
+
+/* ── 表单元素 ── */
+.field { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-4); }
+.field-label { font-size: var(--font-size-caption); color: var(--muted); font-weight: 500; }
+.input, .select {
+  height: var(--size-button-height); background: var(--surface-dim); border: 1px solid var(--rule);
+  border-radius: var(--radius-sm); padding: 0 var(--space-3); color: var(--fg); font-family: var(--font-body);
+  font-size: var(--font-size-body); transition: border-color .15s, box-shadow .15s; width: 100%;
+}
+.input:focus, .select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,212,170,0.15); }
+.input::placeholder { color: var(--ftx-text-tertiary); }
+.input-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+
+/* ── 信号波动画（品牌差异点）── */
+.signal-wave {
+  position: relative; height: 60px; border-radius: var(--radius-md); overflow: hidden;
+  background: var(--surface-dim); border: 1px solid var(--rule);
+}
+.signal-wave svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wave-path { fill: none; stroke: var(--signal-wave); stroke-width: 1.5; stroke-dasharray: 4 6; }
+.wave-path-glow { fill: none; stroke: var(--accent); stroke-width: 2; filter: drop-shadow(0 0 6px rgba(0,212,170,0.5)); }
+.wave-fill { fill: rgba(0,212,170,0.08); }
+
+/* ── 页面骨架蓝图 ── */
+.skeleton { display: flex; flex-direction: column; gap: var(--space-3); }
+.skeleton-bar { height: 12px; border-radius: var(--radius-sm); background: var(--ftx-surface-hover); position: relative; overflow: hidden; }
+.skeleton-bar::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); animation: shimmer 1.6s infinite; }
+@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+.page-map { display: flex; flex-direction: column; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--font-size-caption); }
+.page-map .pm-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--surface-dim); border: 1px solid var(--rule); }
+.page-map .pm-icon { width: 22px; height: 22px; display: grid; place-items: center; border-radius: var(--radius-xs); background: rgba(0,212,170,0.12); color: var(--accent); font-size: 11px; }
+.page-map .pm-path { color: var(--ftx-text-secondary); font-size: 10px; }
+.page-map .pm-desc { margin-left: auto; color: var(--ftx-text-tertiary); font-size: 10px; }
+.page-map .pm-new { border-color: rgba(0,212,170,0.4); }
+.page-map .pm-new .pm-icon { background: rgba(0,212,170,0.2); }
+
+/* ── 标签/徽章 ── */
+.tag { display: inline-block; padding: 2px 8px; border-radius: var(--radius-pill); font-size: 10px; font-weight: 500; border: 1px solid var(--rule); color: var(--muted); }
+.tag-accent { border-color: var(--ftx-cyan-600); color: var(--accent); background: rgba(0,212,170,0.08); }
+
+/* ── 组件清单表格 ── */
+.comp-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-body); }
+.comp-table thead th { text-align: left; padding: var(--space-3); background: var(--surface-dim); border-bottom: 1px solid var(--rule); font-size: var(--font-size-caption); color: var(--muted); font-weight: 600; }
+.comp-table tbody td { padding: var(--space-3); border-bottom: 1px solid var(--ftx-surface-border); vertical-align: top; }
+.comp-table tbody tr:hover { background: var(--ftx-surface-hover); }
+.code-inline { font-family: var(--font-mono); font-size: 11px; background: rgba(0,212,170,0.08); color: var(--accent); padding: 1px 6px; border-radius: var(--radius-xs); }
+
+/* ── 布局蓝本网格 ── */
+.layout-blueprint { border: 1px solid var(--rule); border-radius: var(--radius-lg); overflow: hidden; }
+.lb-top { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); background: var(--surface-dim); border-bottom: 1px solid var(--rule); font-size: var(--font-size-caption); color: var(--muted); }
+.lb-body { display: grid; grid-template-columns: 200px 1fr; min-height: 300px; }
+.lb-side { border-right: 1px solid var(--rule); background: var(--surface-dim); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.lb-side .lb-item { padding: var(--space-2); border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--rule); font-size: var(--font-size-caption); color: var(--muted); }
+.lb-side .lb-item.active { border-color: var(--ftx-cyan-600); color: var(--accent); }
+.lb-main { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.lb-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
+.lb-metric { height: 64px; border-radius: var(--radius-sm); border: 1px solid var(--rule); background: var(--surface); display: grid; place-items: center; font-size: var(--font-size-caption); color: var(--muted); }
+.lb-panel { height: 120px; border-radius: var(--radius-sm); border: 1px dashed var(--ftx-cyan-600); background: rgba(0,212,170,0.04); display: grid; place-items: center; font-size: var(--font-size-caption); color: var(--accent); }
+
+/* ── 页脚 ── */
+.footer { border-top: 1px solid var(--rule); padding: var(--space-6) var(--space-7); color: var(--ftx-text-tertiary); font-size: var(--font-size-caption); display: flex; justify-content: space-between; align-items: center; position: relative; z-index: 1; }
+
+/* ── 响应式 ── */
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .nav-links { display: none; }
+  .form-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="sig-grid-bg"></div>
+
+<!-- ═══════ 顶部导航 ═══════ -->
+<nav class="topnav">
+  <div class="brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 16 16" fill="none"><path d="M1 9h3l2-6 3 10 2-5h4" stroke="#06281f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    signal<span class="brand-tag">·saas</span>
+  </div>
+  <div class="nav-links">
+    <a href="#foundation" class="active">设计基础</a>
+    <a href="#components">组件系统</a>
+    <a href="#pages">页面骨架</a>
+    <a href="#layout">布局蓝图</a>
+    <a href="#admin">后台框架</a>
+  </div>
+  <div class="nav-right">
+    <span class="tag tag-accent">V1 框架 v0.1</span>
+  </div>
+</nav>
+
+<!-- ═══════ 主布局 ═══════ -->
+<div class="layout">
+  <!-- 侧边导航 -->
+  <aside class="sidebar">
+    <div class="side-group">框架</div>
+    <a class="side-item active" href="#foundation"><span class="side-num">01</span> 设计基础</a>
+    <a class="side-item" href="#brand"><span class="side-num">02</span> 品牌差异</a>
+    <a class="side-item" href="#components"><span class="side-num">03</span> 组件系统</a>
+    <a class="side-item" href="#strategy-card"><span class="side-num">04</span> 策略卡片</a>
+    <a class="side-item" href="#bot-card"><span class="side-num">05</span> 跟单卡片</a>
+    <a class="side-item" href="#pages"><span class="side-num">06</span> 前台页面</a>
+    <a class="side-item" href="#layout"><span class="side-num">07</span> 布局蓝图</a>
+    <a class="side-item" href="#admin"><span class="side-num">08</span> 后台框架</a>
+    <a class="side-item" href="#rules"><span class="side-num">09</span> 设计规则</a>
+  </aside>
+
+  <!-- 主内容 -->
+  <main class="content">
+
+    <!-- ═══════ 01 设计基础 ═══════ -->
+    <section class="section" id="foundation">
+      <div class="sec-eyebrow">Foundation · 设计基础</div>
+      <h1 class="sec-title">signal-saas 视觉语言</h1>
+      <p class="sec-desc">
+        基于 <span class="code-inline">free-trading-system</span> 设计库扩展。深海军蓝画布承载数据密度，
+        电光青绿 <span class="code-inline">#00d4aa</span> 作为唯一品牌高亮色。锐利圆角、玻璃态面板、
+        Space Grotesk + JetBrains Mono 双字体系统。整体是"专业交易仪器"而非"消费级产品"。
+      </p>
+
+      <div class="card">
+        <div class="card-tag">TOKENS</div>
+        <div class="card-title">色彩系统</div>
+        <div class="card-sub">6 套色阶（blue/cyan/success/warning/error/info），语义映射：success=盈利、error=亏损、warning=风控告警</div>
+        <div class="palette">
+          <div class="swatch sw-cyan"><span class="swatch-name">Brand Accent</span><span class="swatch-val">#00d4aa · cyan-400</span></div>
+          <div class="swatch sw-base"><span class="swatch-name">Canvas Base</span><span class="swatch-val">#0a1628</span></div>
+          <div class="swatch sw-raised"><span class="swatch-name">Surface Raised</span><span class="swatch-val">#111d35</span></div>
+          <div class="swatch sw-overlay"><span class="swatch-name">Surface Overlay</span><span class="swatch-val">#162038</span></div>
+          <div class="swatch sw-success"><span class="swatch-name">Success</span><span class="swatch-val">#16a34a · 盈利</span></div>
+          <div class="swatch sw-error"><span class="swatch-name">Error</span><span class="swatch-val">#ef4444 · 亏损</span></div>
+          <div class="swatch sw-warning"><span class="swatch-name">Warning</span><span class="swatch-val">#facc15 · 风控</span></div>
+          <div class="swatch sw-info"><span class="swatch-name">Info</span><span class="swatch-val">#3b82f6 · 信息</span></div>
+          <div class="swatch sw-text"><span class="swatch-name">Text Primary</span><span class="swatch-val">#f1f5f9</span></div>
+          <div class="swatch sw-muted"><span class="swatch-name">Text Muted</span><span class="swatch-val">#94a3b8</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-tag">TYPE</div>
+        <div class="card-title">字体系统</div>
+        <div class="card-sub">Space Grotesk（展示/正文）+ JetBrains Mono（价格/数据，tabular-nums 对齐）</div>
+        <div class="type-row"><span class="type-spec">Display / 56px / 700</span><span class="type-sample" style="font-size:56px;line-height:1.1">跟单策略</span></div>
+        <div class="type-row"><span class="type-spec">H1 / 40px / 700</span><span class="type-sample" style="font-size:40px;line-height:1.2">策略广场</span></div>
+        <div class="type-row"><span class="type-spec">H2 / 32px / 600</span><span class="type-sample" style="font-size:32px;line-height:1.25">我的跟单</span></div>
+        <div class="type-row"><span class="type-spec">H3 / 24px / 600</span><span class="type-sample" style="font-size:24px;line-height:1.3">邀请奖励</span></div>
+        <div class="type-row"><span class="type-spec">Body / 15px / 400</span><span class="type-sample" style="font-size:15px">数据驱动的专业交易体验</span></div>
+        <div class="type-row"><span class="type-spec">Mono / 14px</span><span class="type-sample mono-split" style="font-size:14px">1,234.56 USDT &nbsp;·&nbsp; +12.34% &nbsp;·&nbsp; 0.0001 BTC</span></div>
+        <div class="type-row"><span class="type-spec">Eyebrow / 11px / 600</span><span class="type-sample" style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted)">SIGNAL AGGREGATION PLATFORM</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-tag">RULES</div>
+        <div class="card-title">几何规则</div>
+        <div class="type-row"><span class="type-spec">Radius</span><span class="type-sample">2 / 4 / 6 / 8px 锐利圆角 · pill 仅用于状态标签</span></div>
+        <div class="type-row"><span class="type-spec">Spacing</span><span class="type-sample">4px 基础单元：4·8·12·16·24·32·48·64</span></div>
+        <div class="type-row"><span class="type-spec">Elevation</span><span class="type-sample">5 层阴影，深色画布需高不透明度阴影才有层次</span></div>
+        <div class="type-row"><span class="type-spec">密度</span><span class="type-sample">按钮 36px 高 · 表格行 32px · 紧凑数据密集</span></div>
+      </div>
+    </section>
+
+    <!-- ═══════ 02 品牌差异 ═══════ -->
+    <section class="section" id="brand">
+      <div class="sec-eyebrow">Brand Differentiation · 品牌差异</div>
+      <h2 class="sec-title">"信号波" 概念</h2>
+      <p class="sec-desc">
+        与纯交易终端的差异：本平台是<strong style="color:var(--fg)">信号聚合者</strong>。品牌视觉核心是
+        <strong style="color:var(--accent)">信号波</strong>——代表跨 5 所聚合的信号流、实时推送的生命力。
+        用于：品牌 logo 波纹、加载状态、首页英雄区背景、策略卡片活跃指示。
+      </p>
+
+      <div class="card-glass">
+        <div class="card-title">信号波动画（品牌签名元素）</div>
+        <div class="signal-wave">
+          <svg viewBox="0 0 400 60" preserveAspectRatio="none">
+            <path class="wave-fill" d="M0,45 C40,20 70,55 110,32 C150,10 180,48 220,30 C260,12 290,50 330,28 C360,14 385,30 400,22 L400,60 L0,60 Z"/>
+            <path class="wave-path" d="M0,45 C40,20 70,55 110,32 C150,10 180,48 220,30 C260,12 290,50 330,28 C360,14 385,30 400,22"/>
+            <path class="wave-path-glow" d="M0,30 C40,12 70,40 110,22 C150,6 180,34 220,20 C260,8 290,36 330,18 C360,10 385,20 400,15"/>
+          </svg>
+        </div>
+        <div class="card-sub" style="margin-top:var(--space-3);margin-bottom:0">
+          品牌 mark：<span class="code-inline">signal-wave</span> · 首页 hero 背景网格 + 波脉冲 · 加载器动画复用此路径
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-tag">VOICE</div>
+        <div class="card-title">文案基调</div>
+        <div class="type-row"><span class="type-spec">原则</span><span class="type-sample">精确、数据驱动、中文优先、界面无 emoji</span></div>
+        <div class="type-row"><span class="type-spec">模块名</span><span class="type-sample">2-4 字中文复合词，如"持仓管理""实时行情""资产总览"</span></div>
+        <div class="type-row"><span class="type-spec">数值</span><span class="type-sample">tabular-nums 对齐 · 涨跌 +/− 前缀 + 语义色</span></div>
+        <div class="type-row"><span class="type-spec">状态</span><span class="type-sample">已完成 / 进行中 / 已取消 · 错误直述"保证金不足"而非委婉语</span></div>
+      </div>
+    </section>
+
+    <!-- ═══════ 03 组件系统 ═══════ -->
+    <section class="section" id="components">
+      <div class="sec-eyebrow">Component System · 组件系统</div>
+      <h2 class="sec-title">组件清单</h2>
+      <p class="sec-desc">
+        继承设计库 6 核心组件（Button/Card/Table/Chart/Navigation/Sidebar），
+        针对 SaaS 场景扩展 <strong style="color:var(--accent)">9 个新组件</strong>。
+      </p>
+
+      <div class="card">
+        <div class="card-tag">BUTTON</div>
+        <div class="card-title">按钮</div>
+        <div class="card-sub">核心操作触发器：买（青绿主色）、止损（红色危险）、浏览（描边次级）</div>
+        <div class="btn-row">
+          <button class="btn btn-primary">开启跟单</button>
+          <button class="btn btn-secondary">查看详情</button>
+          <button class="btn btn-danger">停止跟单</button>
+          <button class="btn btn-ghost">取消</button>
+          <button class="btn btn-primary btn-sm">小额</button>
+          <button class="btn btn-primary btn-lg">提交提现</button>
+          <button class="btn btn-primary btn-xl">立即订阅</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-tag">STATUS</div>
+        <div class="card-title">状态徽章</div>
+        <div class="card-sub">颜色 + 短标签，永不单用图标 · 用于策略/机器人/订单/审核状态</div>
+        <div class="btn-row">
+          <span class="badge badge-ok">运行中</span>
+          <span class="badge badge-warn">待审核</span>
+          <span class="badge badge-err">已停止</span>
+          <span class="badge badge-info">同步中</span>
+          <span class="badge badge-muted">已过期</span>
+          <span class="tag">试用版</span>
+          <span class="tag tag-accent">正式版</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-tag">METRICS</div>
+        <div class="card-title">指标卡片</div>
+        <div class="card-sub">首页数据看板 · 玻璃态 + 顶部青绿渐变线</div>
+        <div class="metrics-row">
+          <div class="metric-card">
+            <div class="metric-label">可提现余额</div>
+            <div class="metric-value">1,234.56 <span style="font-size:14px;color:var(--muted)">USDT</span></div>
+            <div class="metric-change positive">+12.4% 本周</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">运行中机器人</div>
+            <div class="metric-value">3 <span style="font-size:14px;color:var(--muted)">个</span></div>
+            <div class="metric-change positive">2 个盈利中</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">累计奖励</div>
+            <div class="metric-value">89.20 <span style="font-size:14px;color:var(--muted)">USDT</span></div>
+            <div class="metric-change negative">-2.1% 波动</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-tag">TABLE</div>
+        <div class="card-title">数据表格</div>
+        <div class="card-sub">紧凑 32px 行高 · 数字右对齐等宽字体 · PnL 红绿着色</div>
+        <table class="ftx-table">
+          <thead>
+            <tr><th>策略</th><th>方向</th><th class="num">名义价值</th><th class="num">杠杆</th><th class="num">未实现盈亏</th><th>状态</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>BTC 趋势突破</td><td style="color:var(--ftx-success-400)">做多</td>
+              <td class="num">2,480.00</td><td class="num">10×</td>
+              <td class="num" style="color:var(--ftx-success-400)">+124.50</td>
+              <td><span class="badge badge-ok">运行中</span></td>
+            </tr>
+            <tr>
+              <td>ETH 区间震荡</td><td style="color:var(--ftx-error-400)">做空</td>
+              <td class="num">1,120.00</td><td class="num">5×</td>
+              <td class="num" style="color:var(--ftx-error-400)">-32.80</td>
+              <td><span class="badge badge-ok">运行中</span></td>
+            </tr>
+            <tr>
+              <td>SOL 动量策略</td><td style="color:var(--ftx-success-400)">做多</td>
+              <td class="num">860.00</td><td class="num">3×</td>
+              <td class="num" style="color:var(--ftx-success-400)">+18.20</td>
+              <td><span class="badge badge-warn">待审核</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-tag">FORM</div>
+        <div class="card-title">表单元素</div>
+        <div class="card-sub">API Key 绑定 · 跟单配置 · 提现表单 · 地址输入</div>
+        <div class="form-row">
+          <div class="field">
+            <label class="field-label">交易所</label>
+            <select class="select"><option>Gate.io</option><option>Binance</option><option>OKX</option></select>
+          </div>
+          <div class="field">
+            <label class="field-label">杠杆倍数</label>
+            <select class="select"><option>10×</option><option>5×</option><option>3×</option><option>1×</option></select>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">API Key（只读 + 合约交易）</label>
+          <input class="input input-mono" placeholder="粘贴 API Key · 禁止带提现权限" value="••••••••••••••••••••••">
+        </div>
+        <div class="field">
+          <label class="field-label">提现地址（TRC-20）</label>
+          <input class="input input-mono" placeholder="TXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════ 04 策略卡片 ═══════ -->
+    <section class="section" id="strategy-card">
+      <div class="sec-eyebrow">New Component · 策略卡片</div>
+      <h2 class="sec-title">策略卡片 <span class="tag tag-accent">核心新组件</span></h2>
+      <p class="sec-desc">
+        策略广场主视觉元素。不显示任何交易所 Logo（合规要求），以抽象风格标签替代；
+        收益率/胜率用等宽字体；hover 青绿辉光上浮。
+      </p>
+
+      <div class="strategy-grid">
+        <div class="strategy-card">
+          <div class="strategy-top">
+            <div class="strategy-name">BTC 趋势突破</div>
+            <span class="strategy-tag">趋势策略</span>
+          </div>
+          <div class="strategy-metrics">
+            <div class="strategy-metric"><div class="m-label">30日收益率</div><div class="m-value positive">+38.4%</div></div>
+            <div class="strategy-metric"><div class="m-label">累计胜率</div><div class="m-value">61.2%</div></div>
+            <div class="strategy-metric"><div class="m-label">风险评级</div><div class="m-value" style="color:var(--ftx-warning-400)">中高</div></div>
+            <div class="strategy-metric"><div class="m-label">跟单人数</div><div class="m-value">1,284</div></div>
+          </div>
+          <div class="strategy-spark">
+            <svg viewBox="0 0 200 44" preserveAspectRatio="none" style="width:100%;height:100%">
+              <path d="M0,32 C25,28 40,18 60,22 C80,26 95,12 115,16 C135,20 150,8 170,10 C180,11 190,6 200,4" fill="none" stroke="var(--ftx-success-400)" stroke-width="1.5"/>
+              <path d="M0,32 C25,28 40,18 60,22 C80,26 95,12 115,16 C135,20 150,8 170,10 C180,11 190,6 200,4 L200,44 L0,44 Z" fill="rgba(22,163,74,0.1)"/>
+            </svg>
+          </div>
+          <div class="strategy-bottom">
+            <span class="mono-split" style="font-size:var(--font-size-caption);color:var(--muted)">7日 +12.1%</span>
+            <button class="btn btn-primary btn-sm">开启跟单</button>
+          </div>
+        </div>
+
+        <div class="strategy-card">
+          <div class="strategy-top">
+            <div class="strategy-name">ETH 区间震荡</div>
+            <span class="strategy-tag">震荡策略</span>
+          </div>
+          <div class="strategy-metrics">
+            <div class="strategy-metric"><div class="m-label">30日收益率</div><div class="m-value positive">+22.7%</div></div>
+            <div class="strategy-metric"><div class="m-label">累计胜率</div><div class="m-value">54.8%</div></div>
+            <div class="strategy-metric"><div class="m-label">风险评级</div><div class="m-value" style="color:var(--ftx-success-400)">中低</div></div>
+            <div class="strategy-metric"><div class="m-label">跟单人数</div><div class="m-value">856</div></div>
+          </div>
+          <div class="strategy-spark">
+            <svg viewBox="0 0 200 44" preserveAspectRatio="none" style="width:100%;height:100%">
+              <path d="M0,20 C30,18 50,26 75,22 C100,18 120,30 145,24 C165,20 180,26 200,20" fill="none" stroke="var(--ftx-cyan-400)" stroke-width="1.5"/>
+            </svg>
+          </div>
+          <div class="strategy-bottom">
+            <span class="mono-split" style="font-size:var(--font-size-caption);color:var(--muted)">7日 +5.3%</span>
+            <button class="btn btn-secondary btn-sm">查看详情</button>
+          </div>
+        </div>
+
+        <div class="strategy-card">
+          <div class="strategy-top">
+            <div class="strategy-name">SOL 动量策略</div>
+            <span class="strategy-tag">动量策略</span>
+          </div>
+          <div class="strategy-metrics">
+            <div class="strategy-metric"><div class="m-label">30日收益率</div><div class="m-value negative">-4.2%</div></div>
+            <div class="strategy-metric"><div class="m-label">累计胜率</div><div class="m-value">48.9%</div></div>
+            <div class="strategy-metric"><div class="m-label">风险评级</div><div class="m-value" style="color:var(--ftx-error-400)">高</div></div>
+            <div class="strategy-metric"><div class="m-label">跟单人数</div><div class="m-value">423</div></div>
+          </div>
+          <div class="strategy-spark">
+            <svg viewBox="0 0 200 44" preserveAspectRatio="none" style="width:100%;height:100%">
+              <path d="M0,12 C30,20 55,16 80,24 C105,32 130,28 155,34 C175,38 190,36 200,38" fill="none" stroke="var(--ftx-error-400)" stroke-width="1.5"/>
+            </svg>
+          </div>
+          <div class="strategy-bottom">
+            <span class="mono-split" style="font-size:var(--font-size-caption);color:var(--muted)">7日 -1.8%</span>
+            <button class="btn btn-secondary btn-sm">查看详情</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════ 05 跟单卡片 ═══════ -->
+    <section class="section" id="bot-card">
+      <div class="sec-eyebrow">New Component · 跟单机器人</div>
+      <h2 class="sec-title">跟单机器人卡片 <span class="tag tag-accent">核心新组件</span></h2>
+      <p class="sec-desc">
+        "我的跟单"页核心卡片：状态灯（运行中脉冲/暂停/停止）、策略信息、
+        方向/杠杆/保证金模式、操作按钮。
+      </p>
+
+      <div class="strategy-grid">
+        <div class="bot-card">
+          <div class="bot-head">
+            <div class="strategy-name" style="font-size:var(--font-size-h4)">BTC 趋势突破</div>
+            <div class="bot-status"><span class="dot"></span>运行中</div>
+          </div>
+          <div class="bot-grid">
+            <div><div class="bot-f">方向</div><div class="bot-v" style="color:var(--ftx-success-400)">做多</div></div>
+            <div><div class="bot-f">杠杆</div><div class="bot-v">10×</div></div>
+            <div><div class="bot-f">保证金模式</div><div class="bot-v">逐仓</div></div>
+            <div><div class="bot-f">跟单比例</div><div class="bot-v">20%</div></div>
+            <div><div class="bot-f">未实现盈亏</div><div class="bot-v" style="color:var(--ftx-success-400)">+124.50</div></div>
+            <div><div class="bot-f">名义价值</div><div class="bot-v">2,480 USDT</div></div>
+          </div>
+          <div class="bot-actions">
+            <button class="btn btn-secondary btn-sm">暂停</button>
+            <button class="btn btn-ghost btn-sm">修改配置</button>
+          </div>
+        </div>
+
+        <div class="bot-card bot-paused">
+          <div class="bot-head">
+            <div class="strategy-name" style="font-size:var(--font-size-h4)">ETH 区间震荡</div>
+            <div class="bot-status"><span class="dot"></span>已暂停</div>
+          </div>
+          <div class="bot-grid">
+            <div><div class="bot-f">方向</div><div class="bot-v" style="color:var(--ftx-error-400)">做空</div></div>
+            <div><div class="bot-f">杠杆</div><div class="bot-v">5×</div></div>
+            <div><div class="bot-f">保证金模式</div><div class="bot-v">全仓</div></div>
+            <div><div class="bot-f">跟单比例</div><div class="bot-v">10%</div></div>
+            <div><div class="bot-f">未实现盈亏</div><div class="bot-v" style="color:var(--ftx-error-400)">-32.80</div></div>
+            <div><div class="bot-f">名义价值</div><div class="bot-v">1,120 USDT</div></div>
+          </div>
+          <div class="bot-actions">
+            <button class="btn btn-primary btn-sm">恢复</button>
+            <button class="btn btn-ghost btn-sm">修改配置</button>
+          </div>
+        </div>
+
+        <div class="bot-card bot-stopped">
+          <div class="bot-head">
+            <div class="strategy-name" style="font-size:var(--font-size-h4)">SOL 动量策略</div>
+            <div class="bot-status"><span class="dot"></span>已停止</div>
+          </div>
+          <div class="bot-grid">
+            <div><div class="bot-f">方向</div><div class="bot-v" style="color:var(--ftx-success-400)">做多</div></div>
+            <div><div class="bot-f">杠杆</div><div class="bot-v">3×</div></div>
+            <div><div class="bot-f">保证金模式</div><div class="bot-v">逐仓</div></div>
+            <div><div class="bot-f">跟单比例</div><div class="bot-v">15%</div></div>
+            <div><div class="bot-f">已平仓盈亏</div><div class="bot-v" style="color:var(--ftx-success-400)">+18.20</div></div>
+            <div><div class="bot-f">累计交易</div><div class="bot-v">47 笔</div></div>
+          </div>
+          <div class="bot-actions">
+            <button class="btn btn-secondary btn-sm">重新开启</button>
+            <button class="btn btn-danger btn-sm">删除</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════ 06 前台页面 ═══════ -->
+    <section class="section" id="pages">
+      <div class="sec-eyebrow">Pages · 前台页面骨架</div>
+      <h2 class="sec-title">前台 7 大场景</h2>
+      <p class="sec-desc">
+        对应设计文档 §7.1 前台路由：首页看板 / 策略广场 / 策略详情 / 我的跟单 /
+        个人中心 / 邀请奖励 / 提现。标注 <span class="code-inline">●</span> 的为本次框架新增组件。
+      </p>
+
+      <div class="page-map">
+        <div class="pm-item"><span class="pm-icon">⌂</span><span>首页数据看板</span><span class="pm-path">/ (marketing)</span><span class="pm-desc">指标卡 + 信号波 hero + 新手引导(G23) + 金额小眼睛(G22)</span></div>
+        <div class="pm-item pm-new"><span class="pm-icon">▤</span><span>策略广场</span><span class="pm-path">/strategies</span><span class="pm-desc">● 策略卡片网格 + 风格/风险筛选 + 排序</span></div>
+        <div class="pm-item pm-new"><span class="pm-icon">◇</span><span>策略详情</span><span class="pm-path">/strategies/[id]</span><span class="pm-desc">● 实时持仓 + 收益曲线(7/30/历史) + 最近50笔 + 开启跟单</span></div>
+        <div class="pm-item pm-new"><span class="pm-icon">▣</span><span>我的跟单</span><span class="pm-path">/bots</span><span class="pm-desc">● 跟单机器人卡片 + 暂停/恢复/配置</span></div>
+        <div class="pm-item pm-new"><span class="pm-icon">⚙</span><span>个人中心</span><span class="pm-path">/account + /account/apikeys</span><span class="pm-desc">● API Key 绑定(拒提现) + 选所 + 账户设置</span></div>
+        <div class="pm-item"><span class="pm-icon">⇄</span><span>邀请奖励</span><span class="pm-path">/invite</span><span class="pm-desc">邀请码 + 10% 奖励说明 + 数据统计</span></div>
+        <div class="pm-item"><span class="pm-icon">◎</span><span>奖励余额</span><span class="pm-path">/rewards</span><span class="pm-desc">5 字段账本(G12) + 流水表 + 待核实状态</span></div>
+        <div class="pm-item pm-new"><span class="pm-icon">↗</span><span>提现</span><span class="pm-path">/withdraw</span><span class="pm-desc">● 提现表单(10U门槛+1U手续费) + 地址输入 + 审核状态</span></div>
+        <div class="pm-item"><span class="pm-icon">◌</span><span>登录/注册</span><span class="pm-path">/(auth)</span><span class="pm-desc">邮箱 + 验证码 + 风险揭示强制模态</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-tag">NEW</div>
+        <div class="card-title">扩展组件清单（9 个）</div>
+        <table class="comp-table">
+          <thead><tr><th style="width:180px">组件</th><th>用途</th><th style="width:120px">页面</th></tr></thead>
+          <tbody>
+            <tr><td><span class="code-inline">StrategyCard</span></td><td>策略广场主卡片，含收益率/胜率/风险/跟单人数</td><td>策略广场</td></tr>
+            <tr><td><span class="code-inline">StrategyDetail</span></td><td>收益曲线 + 实时持仓 + 交易记录 + 开启跟单</td><td>策略详情</td></tr>
+            <tr><td><span class="code-inline">BotCard</span></td><td>跟单机器人状态卡片（方向/杠杆/保证金/盈亏）</td><td>我的跟单</td></tr>
+            <tr><td><span class="code-inline">ApiKeyForm</span></td><td>API 绑定表单，权限校验（拒提现），3 失败细分</td><td>个人中心</td></tr>
+            <tr><td><span class="code-inline">RewardTable</span></td><td>奖励流水账，5 字段 + 状态徽章</td><td>奖励余额</td></tr>
+            <tr><td><span class="code-inline">WithdrawalForm</span></td><td>提现申请表单 + 1U 手续费明示</td><td>提现</td></tr>
+            <tr><td><span class="code-inline">AddressInput</span></td><td>链地址输入（TRC/BEP/ERC），前 4 后 4 脱敏</td><td>提现</td></tr>
+            <tr><td><span class="code-inline">SignalWave</span></td><td>品牌信号波动画（hero/加载/活跃指示）</td><td>全局</td></tr>
+            <tr><td><span class="code-inline">RiskModal</span></td><td>风险揭示强制模态框（合规必选）</td><td>注册/开启跟单</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════ 07 布局蓝图 ═══════ -->
+    <section class="section" id="layout">
+      <div class="sec-eyebrow">Layout · 布局蓝图</div>
+      <h2 class="sec-title">页面布局体系</h2>
+      <p class="sec-desc">
+        前台采用<strong style="color:var(--fg)">顶部导航 + 左侧栏 + 主内容</strong>布局（240px 侧栏，可折叠至 64px 图标模式）。
+        后台沿用交易终端的仪表盘布局。营销落地页走独立无侧栏版式。
+      </p>
+
+      <div class="layout-blueprint">
+        <div class="lb-top">▣ 顶部导航 56px · brand + 主导航 + 用户区</div>
+        <div class="lb-body">
+          <div class="lb-side">
+            <div class="lb-item active">首页看板</div>
+            <div class="lb-item">策略广场</div>
+            <div class="lb-item">我的跟单</div>
+            <div class="lb-item">邀请奖励</div>
+            <div class="lb-item">奖励余额</div>
+            <div class="lb-item">提现</div>
+            <div class="lb-item">个人中心</div>
+          </div>
+          <div class="lb-main">
+            <div class="lb-metrics">
+              <div class="lb-metric">指标卡 ×3</div>
+              <div class="lb-metric">信号波 hero</div>
+              <div class="lb-metric">新手引导</div>
+            </div>
+            <div class="lb-panel">主内容区 · 策略卡片 / 数据表格 / 表单</div>
+            <div class="lb-panel" style="height:80px">WS 实时推送区 · 订单/奖励/审核通知</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-tag">RESPONSIVE</div>
+        <div class="card-title">响应式策略</div>
+        <div class="type-row"><span class="type-spec">≥ 900px</span><span class="type-sample">三栏：侧栏 + 主内容 + 密度面板</span></div>
+        <div class="type-row"><span class="type-spec">≤ 900px</span><span class="type-sample">侧栏隐藏 → 底部 Tab 导航（策略/跟单/我的）</span></div>
+        <div class="type-row"><span class="type-spec">策略网格</span><span class="type-sample">auto-fill minmax(260px, 1fr) 自适应</span></div>
+      </div>
+    </section>
+
+    <!-- ═══════ 08 后台框架 ═══════ -->
+    <section class="section" id="admin">
+      <div class="sec-eyebrow">Admin · 后台框架</div>
+      <h2 class="sec-title">后台 10 模块</h2>
+      <p class="sec-desc">
+        对应设计文档 §3.2 后台 web-admin。与前台<strong style="color:var(--error)">完全隔离</strong>的登录体系、
+        cookie 域、JWT audience；写接口强制 audit-log。左侧栏承载模块入口。
+      </p>
+
+      <div class="layout-blueprint">
+        <div class="lb-top">▣ 后台独立布局 · 240px 侧栏 + 主面板</div>
+        <div class="lb-body">
+          <div class="lb-side">
+            <div class="lb-item">用户管理</div>
+            <div class="lb-item active">信号源审核</div>
+            <div class="lb-item">跟单订单</div>
+            <div class="lb-item">支付记录</div>
+            <div class="lb-item">邀请奖励</div>
+            <div class="lb-item">钱包账本</div>
+            <div class="lb-item">提现审核</div>
+            <div class="lb-item">风控中心</div>
+            <div class="lb-item">系统日志</div>
+          </div>
+          <div class="lb-main">
+            <div class="lb-metrics">
+              <div class="lb-metric">待审核信号源</div>
+              <div class="lb-metric">今日提现</div>
+              <div class="lb-metric">风控告警</div>
+            </div>
+            <div class="lb-panel">数据表格 · 审核操作区（通过/驳回/退还）</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-tag">ADMIN</div>
+        <div class="card-title">后台 10 模块清单</div>
+        <div class="page-map">
+          <div class="pm-item"><span class="pm-icon">▣</span><span>用户管理</span><span class="pm-desc">列表 / 详情 / 状态 / 主号下级标记</span></div>
+          <div class="pm-item"><span class="pm-icon">◈</span><span>信号源审核</span><span class="pm-desc">待选池 → 已添加池（G04 门槛校验 + force 审计）</span></div>
+          <div class="pm-item"><span class="pm-icon">▤</span><span>跟单订单</span><span class="pm-desc">CopyOrder 全量 / 失败归因分类</span></div>
+          <div class="pm-item"><span class="pm-icon">◎</span><span>支付记录</span><span class="pm-desc">三链 TxHash 校验 / 阈值确认 / 超时回滚</span></div>
+          <div class="pm-item"><span class="pm-icon">⇄</span><span>邀请奖励</span><span class="pm-desc">邀请关系 / 24h 核实 / 48h 风控延长(G11)</span></div>
+          <div class="pm-item"><span class="pm-icon">≋</span><span>钱包账本</span><span class="pm-desc">5 字段流水账 / 冻结 / 回滚</span></div>
+          <div class="pm-item"><span class="pm-icon">↗</span><span>提现审核</span><span class="pm-desc">人工审核 / 驳回 / 退还申请 / TxHash 记录</span></div>
+          <div class="pm-item"><span class="pm-icon">◉</span><span>风控中心</span><span class="pm-desc">高危用户 / 批量滥用检测 / 延迟红线监控</span></div>
+          <div class="pm-item"><span class="pm-icon">⚙</span><span>系统配置</span><span class="pm-desc">提现门槛 / 手续费 / 套餐价格</span></div>
+          <div class="pm-item"><span class="pm-icon">☰</span><span>系统日志</span><span class="pm-desc">audit-log / 爬虫状态 / 采集器健康</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════ 09 设计规则 ═══════ -->
+    <section class="section" id="rules">
+      <div class="sec-eyebrow">Rules · 设计规则</div>
+      <h2 class="sec-title">实施约束</h2>
+
+      <div class="card">
+        <div class="card-tag">DO</div>
+        <div class="card-title">必须遵守</div>
+        <div class="type-row"><span class="type-spec">01</span><span class="type-sample">策略/界面<strong>不出现任何交易所 Logo 或名称</strong>（合规）</span></div>
+        <div class="type-row"><span class="type-spec">02</span><span class="type-sample">所有金额/价格用 <span class="code-inline">JetBrains Mono + tabular-nums</span></span></div>
+        <div class="type-row"><span class="type-spec">03</span><span class="type-sample">涨跌语义色：绿=盈利 / 红=亏损 / 黄=风控告警</span></div>
+        <div class="type-row"><span class="type-spec">04</span><span class="type-sample">状态必须 颜色 + 短标签，永不单用图标</span></div>
+        <div class="type-row"><span class="type-spec">05</span><span class="type-sample">风险揭示模态框（RiskModal）强制不可跳过</span></div>
+        <div class="type-row"><span class="type-spec">06</span><span class="type-sample">API Key 输入框 mono 字体 + 打码 + 拒提现提示</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-tag">DON'T</div>
+        <div class="card-title">禁止</div>
+        <div class="type-row"><span class="type-spec">01</span><span class="type-sample">紫色渐变、圆润友好型卡片、消费级糖果色</span></div>
+        <div class="type-row"><span class="type-spec">02</span><span class="type-sample">emoji 作为界面图标（用线性 SVG）</span></div>
+        <div class="type-row"><span class="type-spec">03</span><span class="type-sample">收益承诺文案（"稳赚""保本"违反合规）</span></div>
+        <div class="type-row"><span class="type-spec">04</span><span class="type-sample">后台复用前台登录体系（完全隔离）</span></div>
+      </div>
+
+      <div class="card-glass">
+        <div class="card-title">落地到开发计划</div>
+        <div class="card-sub" style="margin-bottom:0">
+          UI 框架冻结后，M5 前台任务与后台任务按此组件系统实施。<span class="code-inline">theme-factory</span> 可基于本框架生成主题；组件命名遵循 <span class="code-inline">web-ui/components/</span> 既有清单。
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ═══════ 页脚 ═══════ -->
+<footer class="footer">
+  <span>signal-saas · UI 设计框架 v0.1 · 基于 free-trading-system 设计库</span>
+  <span>深海军蓝 #0a1628 · 电光青绿 #00d4aa · Space Grotesk + JetBrains Mono</span>
+</footer>
+
+</body>
+</html>

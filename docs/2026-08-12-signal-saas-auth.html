@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>signal·saas 登录注册</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   signal-saas 登录 / 注册 / 忘记密码 / 首次引导 — 成品实现
+   独立认证布局（无顶部导航）· 居中玻璃卡片 · 同一设计语言
+   核心：邮箱+验证码注册 · 忘记密码 · 风险揭示 · 选所引导
+   ═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --ftx-cyan-300: #40ffc5; --ftx-cyan-400: #00d4aa; --ftx-cyan-500: #00b894; --ftx-cyan-600: #009a7a;
+  --ftx-success-300: #52d886; --ftx-success-400: #28c464; --ftx-success-500: #16a34a;
+  --ftx-warning-400: #facc15; --ftx-warning-500: #eab308;
+  --ftx-error-400: #f87171; --ftx-error-500: #ef4444; --ftx-error-600: #dc2626;
+  --ftx-info-400: #60a5fa; --ftx-info-500: #3b82f6;
+  --ftx-text-primary: #f1f5f9; --ftx-text-secondary: #94a3b8; --ftx-text-tertiary: #64748b; --ftx-text-disabled: #475569;
+  --ftx-surface-base: #0a1628; --ftx-surface-raised: #111d35; --ftx-surface-overlay: #162038;
+  --ftx-surface-glass: rgba(22,32,56,0.85); --ftx-surface-hover: rgba(30,41,59,0.5);
+  --ftx-surface-border: rgba(51,65,85,0.6); --ftx-surface-border-strong: rgba(100,116,139,0.4);
+  --ftx-surface-sunken: #070e1a;
+  --bg: var(--ftx-surface-base); --fg: var(--ftx-text-primary); --muted: var(--ftx-text-secondary);
+  --rule: var(--ftx-surface-border); --accent: var(--ftx-cyan-400); --accent-hover: var(--ftx-cyan-500);
+  --surface: var(--ftx-surface-raised); --surface-dim: var(--ftx-surface-sunken);
+  --font-display: 'Space Grotesk', sans-serif; --font-body: 'Space Grotesk', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+  --font-size-body: 15px; --font-size-caption: 12px; --font-size-mono: 14px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --size-button-height: 36px; --size-button-height-xl: 48px;
+  --radius-xs: 2px; --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-pill: 9999px;
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.15);
+  --shadow-2: 0 4px 8px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-3: 0 8px 24px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.25);
+  --shadow-4: 0 16px 48px rgba(0,0,0,0.45), 0 8px 20px rgba(0,0,0,0.3);
+  --signal-grid: rgba(0,212,170,0.05);
+  --brand-glow: 0 0 24px rgba(0,212,170,0.25);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: var(--space-5);
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-body);
+  line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-image:
+    radial-gradient(ellipse 55% 40% at 12% -8%, rgba(0,212,170,0.10), transparent 60%),
+    radial-gradient(ellipse 45% 35% at 88% 4%, rgba(43,108,230,0.09), transparent 62%),
+    radial-gradient(ellipse 40% 30% at 92% 90%, rgba(0,212,170,0.05), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* ═══ 信号宇宙背景系统（多层）═══ */
+.bg-aurora { position: fixed; inset: -20%; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(circle 34% at 26% 20%, rgba(0,212,170,0.10), transparent 62%),
+    radial-gradient(circle 28% at 76% 34%, rgba(43,108,230,0.10), transparent 62%),
+    radial-gradient(circle 22% at 60% 84%, rgba(0,212,170,0.07), transparent 58%),
+    radial-gradient(circle 18% at 18% 80%, rgba(43,108,230,0.06), transparent 58%);
+  filter: blur(46px);
+  animation: auroraDrift 28s ease-in-out infinite alternate;
+}
+@keyframes auroraDrift {
+  0% { transform: translate3d(0,0,0) scale(1); }
+  50% { transform: translate3d(2%, -1.5%, 0) scale(1.05); }
+  100% { transform: translate3d(-1.5%, 2%, 0) scale(1.03); }
+}
+.bg-grid { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(0,212,170,0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,170,0.055) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 72% at 50% 16%, black 22%, transparent 80%);
+}
+.bg-dots { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: radial-gradient(rgba(0,212,170,0.55) 1px, transparent 1.6px);
+  background-size: 52px 52px;
+  background-position: 26px 26px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 18%, black 8%, transparent 74%);
+  animation: dotsBreathe 5.5s ease-in-out infinite;
+}
+@keyframes dotsBreathe { 0%,100% { opacity: .2; } 50% { opacity: .75; } }
+.bg-particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.bg-particles i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px rgba(0,212,170,0.7); opacity: 0; animation: floatUp var(--dur,16s) linear var(--delay,0s) infinite; }
+@keyframes floatUp {
+  0% { transform: translateY(105vh) translateX(0); opacity: 0; }
+  8% { opacity: .85; }
+  82% { opacity: .45; }
+  100% { transform: translateY(-4vh) translateX(var(--drift,14px)); opacity: 0; }
+}
+.bg-sweep { position: fixed; left: 0; right: 0; top: 0; height: 180px; pointer-events: none; z-index: 0;
+  background: linear-gradient(180deg, transparent, rgba(0,212,170,0.045) 45%, rgba(0,212,170,0.085) 50%, rgba(0,212,170,0.045) 55%, transparent);
+  animation: sweepDown 12s linear infinite;
+}
+@keyframes sweepDown { 0% { transform: translateY(-180px); } 100% { transform: translateY(112vh); } }
+.bg-noise { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+}
+
+/* 认证布局 */
+.auth-wrap { position: relative; z-index: 1; width: 100%; max-width: 1120px; display: grid; grid-template-columns: 1fr 460px; gap: var(--space-7); align-items: center; }
+
+/* 左侧品牌区 */
+.brand-panel { display: flex; flex-direction: column; gap: var(--space-5); }
+.brand-logo { display: flex; align-items: center; gap: var(--space-3); font-weight: 700; font-size: 24px; letter-spacing: -0.01em; }
+.brand-mark { width: 40px; height: 40px; border-radius: var(--radius-sm); display: grid; place-items: center; background: linear-gradient(135deg, var(--ftx-cyan-400), var(--ftx-cyan-600)); box-shadow: var(--brand-glow); }
+.brand-mark svg { width: 22px; height: 22px; }
+.brand-hero { font-size: 34px; font-weight: 700; line-height: 1.25; letter-spacing: -0.02em; }
+.brand-hero .hl { color: var(--accent); }
+.brand-feats { display: flex; flex-direction: column; gap: var(--space-3); }
+.feat { display: flex; align-items: center; gap: var(--space-3); color: var(--muted); font-size: var(--font-size-body); }
+.feat-ic { width: 28px; height: 28px; border-radius: var(--radius-sm); background: rgba(0,212,170,0.12); color: var(--accent); display: grid; place-items: center; font-size: 13px; flex-shrink: 0; }
+.brand-wave { margin-top: var(--space-2); height: 70px; position: relative; opacity: 0.8; }
+.brand-wave svg { width: 100%; height: 100%; }
+
+/* 右侧认证卡片 */
+.auth-card {
+  background: var(--ftx-surface-glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--rule); border-radius: var(--radius-lg); box-shadow: var(--shadow-4);
+  padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4);
+  animation: cardIn .35s ease;
+}
+@keyframes cardIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Tab 切换 */
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-1); background: var(--surface-dim); border-radius: var(--radius-md); padding: 4px; }
+.auth-tab { padding: var(--space-2); border: none; background: transparent; color: var(--muted); font-family: var(--font-body); font-size: var(--font-size-body); border-radius: var(--radius-sm); cursor: pointer; transition: all .2s; font-weight: 500; }
+.auth-tab:hover { color: var(--fg); }
+.auth-tab.active { background: var(--accent); color: #06281f; font-weight: 600; box-shadow: var(--brand-glow); }
+
+/* 步骤指示器 */
+.steps { display: flex; align-items: center; justify-content: center; gap: var(--space-2); }
+.step { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-caption); color: var(--muted); }
+.step-num { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--rule); display: grid; place-items: center; font-family: var(--font-mono); font-size: 11px; }
+.step.active .step-num { background: var(--accent); border-color: var(--accent); color: #06281f; box-shadow: var(--brand-glow); }
+.step.active { color: var(--fg); }
+.step.done .step-num { background: rgba(22,163,74,0.2); border-color: var(--ftx-success-500); color: var(--ftx-success-400); }
+.step-line { width: 32px; height: 1px; background: var(--rule); }
+
+/* 表单 */
+.field { display: flex; flex-direction: column; gap: var(--space-2); }
+.field-label { font-size: var(--font-size-caption); color: var(--muted); font-weight: 500; display: flex; justify-content: space-between; }
+.field-label a { color: var(--accent); text-decoration: none; font-size: var(--font-size-caption); cursor: pointer; }
+.field-label a:hover { text-decoration: underline; }
+.input { height: var(--size-button-height-xl); background: var(--surface-dim); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0 var(--space-4); color: var(--fg); font-family: var(--font-body); font-size: var(--font-size-body); transition: border-color .15s, box-shadow .15s; width: 100%; }
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,212,170,0.15); }
+.input::placeholder { color: var(--ftx-text-tertiary); }
+.input-mono { font-family: var(--font-mono); }
+.input-err { border-color: var(--ftx-error-500); }
+.err-msg { font-size: var(--font-size-caption); color: var(--ftx-error-400); }
+.ok-msg { font-size: var(--font-size-caption); color: var(--ftx-success-400); }
+.input-row { display: flex; gap: var(--space-3); }
+
+/* 按钮 */
+.btn { display: inline-flex; align-items: center; justify-content: center; border: none; cursor: pointer; font-family: var(--font-body); font-size: var(--font-size-body); white-space: nowrap; min-width: var(--size-button-height); transition: all .18s; flex-shrink: 0; text-decoration: none; }
+.btn-primary { background: var(--accent); color: #06281f; border-radius: var(--radius-sm); height: var(--size-button-height-xl); font-weight: 600; box-shadow: var(--brand-glow); font-size: 16px; }
+.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.btn-secondary { background: transparent; border: 1px solid var(--rule); color: var(--fg); border-radius: var(--radius-sm); height: var(--size-button-height-xl); }
+.btn-secondary:hover { background: var(--ftx-surface-hover); border-color: var(--ftx-surface-border-strong); }
+.btn-sm { height: var(--size-button-height); font-size: var(--font-size-caption); padding: 0 var(--space-4); }
+.btn-block { width: 100%; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
+
+/* 验证码 */
+.code-row { display: flex; gap: var(--space-3); }
+.code-input { flex: 1; letter-spacing: 10px; text-align: center; font-family: var(--font-mono); font-size: 20px; font-weight: 600; }
+.send-btn { min-width: 120px; }
+
+/* 风险揭示 */
+.risk-box { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border-radius: var(--radius-md); border: 1px solid rgba(234,179,8,0.3); background: rgba(234,179,8,0.06); font-size: var(--font-size-caption); color: var(--ftx-warning-400); }
+.check-row { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-caption); color: var(--muted); cursor: pointer; }
+.check-row input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.check-row a { color: var(--accent); text-decoration: none; }
+.check-row a:hover { text-decoration: underline; }
+
+/* 分隔 */
+.divider { display: flex; align-items: center; gap: var(--space-3); color: var(--ftx-text-tertiary); font-size: var(--font-size-caption); }
+.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--rule); }
+
+/* 底部提示 */
+.auth-foot { text-align: center; font-size: var(--font-size-caption); color: var(--ftx-text-tertiary); }
+.auth-foot a { color: var(--accent); text-decoration: none; cursor: pointer; }
+.auth-foot a:hover { text-decoration: underline; }
+
+/* 选所卡片 */
+.exchange-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-2); }
+.exchange-card {
+  border: 1px solid var(--rule); border-radius: var(--radius-md); padding: var(--space-3); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-2); transition: all .2s; background: var(--surface-dim);
+}
+.exchange-card:hover { border-color: var(--ftx-surface-border-strong); transform: translateY(-2px); }
+.exchange-card.selected { border-color: var(--accent); background: rgba(0,212,170,0.08); box-shadow: 0 0 0 3px rgba(0,212,170,0.12); }
+.ex-ic { width: 34px; height: 34px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--rule); display: grid; place-items: center; font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--muted); }
+.exchange-card.selected .ex-ic { border-color: var(--accent); color: var(--accent); }
+.ex-name { font-size: 10px; color: var(--muted); }
+
+/* Toast */
+.toast-stack { position: fixed; top: var(--space-5); right: var(--space-5); z-index: 1000; display: flex; flex-direction: column; gap: var(--space-2); }
+.toast { min-width: 280px; max-width: 360px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--ftx-surface-overlay); border: 1px solid var(--rule); box-shadow: var(--shadow-4); display: flex; align-items: center; gap: var(--space-3); animation: toastIn .25s ease; backdrop-filter: blur(16px); font-size: var(--font-size-caption); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+.toast.success { border-color: rgba(22,163,74,0.4); } .toast.success .t-ic { color: var(--ftx-success-400); }
+.toast.warn { border-color: rgba(234,179,8,0.4); } .toast.warn .t-ic { color: var(--ftx-warning-400); }
+.toast.error { border-color: rgba(239,68,68,0.4); } .toast.error .t-ic { color: var(--ftx-error-400); }
+.toast.info { border-color: rgba(59,130,246,0.4); } .toast.info .t-ic { color: var(--ftx-info-400); }
+.t-ic { font-size: 14px; flex-shrink: 0; }
+.t-close { margin-left: auto; background: none; border: none; color: var(--ftx-text-tertiary); cursor: pointer; font-size: 12px; }
+
+/* 视图切换动画 */
+.view { display: none; }
+.view.active { display: flex; flex-direction: column; gap: var(--space-4); animation: viewIn .3s ease; }
+@keyframes viewIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+
+@media (max-width: 900px) {
+  .auth-wrap { grid-template-columns: 1fr; max-width: 460px; }
+  .brand-panel { display: none; }
+  .exchange-grid { grid-template-columns: repeat(3, 1fr); }
+}
+</style>
+</head>
+<body>
+<!-- 信号宇宙背景层 -->
+<div class="bg-aurora"></div>
+<div class="bg-grid"></div>
+<div class="bg-dots"></div>
+<div class="bg-sweep"></div>
+<div class="bg-noise"></div>
+<div class="bg-particles">
+  <i style="left:6%;--dur:17s;--delay:0s;--drift:14px"></i>
+  <i style="left:14%;--dur:23s;--delay:4s;--drift:-12px"></i>
+  <i style="left:23%;--dur:19s;--delay:8s;--drift:10px"></i>
+  <i style="left:32%;--dur:25s;--delay:1s;--drift:-16px"></i>
+  <i style="left:41%;--dur:16s;--delay:6s;--drift:12px"></i>
+  <i style="left:52%;--dur:21s;--delay:11s;--drift:-10px"></i>
+  <i style="left:61%;--dur:18s;--delay:2s;--drift:16px"></i>
+  <i style="left:70%;--dur:24s;--delay:9s;--drift:-14px"></i>
+  <i style="left:79%;--dur:20s;--delay:5s;--drift:10px"></i>
+  <i style="left:88%;--dur:22s;--delay:12s;--drift:-12px"></i>
+  <i style="left:94%;--dur:17s;--delay:7s;--drift:8px"></i>
+  <i style="left:10%;--dur:26s;--delay:14s;--drift:-8px"></i>
+</div>
+<div class="toast-stack" id="toastStack"></div>
+
+<div class="auth-wrap">
+  <!-- 左侧品牌区 -->
+  <div class="brand-panel">
+    <div class="brand-logo">
+      <div class="brand-mark"><svg viewBox="0 0 16 16" fill="none"><path d="M1 9h3l2-6 3 10 2-5h4" stroke="#06281f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      signal·saas
+    </div>
+    <div class="brand-hero">
+      跨 5 大交易所<br><span class="hl">信号聚合</span>，一键跟单
+    </div>
+    <div class="brand-feats">
+      <div class="feat"><span class="feat-ic">▤</span> 聚合 Binance · OKX · Bybit · Bitget · Gate 带单信号</div>
+      <div class="feat"><span class="feat-ic">▣</span> 独立跟单机器人 · 自动执行开仓/加仓/减仓/平仓</div>
+      <div class="feat"><span class="feat-ic">⇄</span> 邀请好友 · 订阅费 10% 现金奖励</div>
+      <div class="feat"><span class="feat-ic">◎</span> 资金 100% 在你自己的交易所账户</div>
+    </div>
+    <div class="brand-wave">
+      <svg viewBox="0 0 500 70" preserveAspectRatio="none">
+        <path d="M0,50 C80,30 130,60 210,42 C290,24 340,58 420,36 C460,24 480,36 500,28" fill="none" stroke="rgba(0,212,170,0.3)" stroke-width="1.5" stroke-dasharray="4 6"/>
+        <path d="M0,38 C100,22 180,48 270,30 C360,12 430,40 500,20" fill="none" stroke="var(--accent)" stroke-width="2" filter="drop-shadow(0 0 8px rgba(0,212,170,0.5))"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- 右侧认证卡片 -->
+  <div class="auth-card">
+
+    <!-- Tab 切换 -->
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchTab('login')">登 录</button>
+      <button class="auth-tab" onclick="switchTab('register')">注 册</button>
+    </div>
+
+    <!-- ═══ 登录视图 ═══ -->
+    <div class="view active" id="view-login">
+      <div class="field">
+        <label class="field-label">邮箱</label>
+        <input class="input input-mono" id="loginEmail" placeholder="you@example.com">
+      </div>
+      <div class="field">
+        <label class="field-label">密码 <a onclick="switchTab('forgot')">忘记密码？</a></label>
+        <input class="input" type="password" id="loginPwd" placeholder="••••••••" oninput="clearErr('loginPwd')">
+        <span class="err-msg" id="loginErr" style="display:none">密码错误，剩余 4 次尝试机会</span>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="doLogin()">登 录</button>
+      <div class="divider">或</div>
+      <button class="btn btn-secondary btn-block" onclick="showToast('info','V1 暂不支持第三方登录（需求 §1.3）')">使用邮箱验证码登录</button>
+      <div class="auth-foot">没有账号？<a onclick="switchTab('register')">立即注册</a></div>
+    </div>
+
+    <!-- ═══ 注册视图 ═══ -->
+    <div class="view" id="view-register">
+      <div class="steps">
+        <div class="step active" id="rs1"><span class="step-num">1</span>邮箱</div>
+        <div class="step-line"></div>
+        <div class="step" id="rs2"><span class="step-num">2</span>验证码</div>
+        <div class="step-line"></div>
+        <div class="step" id="rs3"><span class="step-num">3</span>完成</div>
+      </div>
+
+      <!-- 步骤 1：邮箱密码 -->
+      <div id="regStep1">
+        <div class="field">
+          <label class="field-label">邮箱</label>
+          <input class="input input-mono" id="regEmail" placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label class="field-label">密码</label>
+          <input class="input" type="password" id="regPwd" placeholder="至少 8 位，含字母与数字">
+          <span class="ok-msg" id="pwdHint" style="display:none">✓ 密码强度足够</span>
+        </div>
+        <div class="check-row" style="margin-bottom:var(--space-1)">
+          <input type="checkbox" id="agreeCheck">
+          <span>我已阅读并同意 <a>服务条款</a> 与 <a>隐私政策</a></span>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="regStep1Next()">获取验证码</button>
+      </div>
+
+      <!-- 步骤 2：验证码 -->
+      <div id="regStep2" style="display:none">
+        <div class="field">
+          <label class="field-label">6 位验证码 <span class="ok-msg">✓ 已发送至邮箱（5 分钟有效）</span></label>
+          <div class="code-row">
+            <input class="input input-mono code-input" id="regCode" placeholder="000000" maxlength="6">
+            <button class="btn btn-secondary send-btn" id="resendBtn" onclick="resendCode()">重新发送</button>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="regStep2Next()">验证并注册</button>
+      </div>
+
+      <!-- 步骤 3：风险揭示 + 完成 -->
+      <div id="regStep3" style="display:none">
+        <div style="text-align:center;padding:var(--space-2) 0">
+          <div style="font-size:44px;color:var(--ftx-success-400)">✓</div>
+          <div style="font-size:var(--font-size-h4);font-weight:600;margin-top:var(--space-1)">注册成功</div>
+          <div style="font-size:var(--font-size-caption);color:var(--muted)">欢迎加入 signal·saas</div>
+        </div>
+        <div class="risk-box">
+          <span>⚠</span>
+          <span>合约交易具有高风险，可能导致全部本金损失。本平台仅提供信号聚合工具，不承诺任何收益。</span>
+        </div>
+        <div class="check-row">
+          <input type="checkbox" id="riskCheck" onchange="updateRiskBtn()">
+          <span>我已阅读并同意 <a>风险揭示</a>，自愿承担交易风险</span>
+        </div>
+        <button class="btn btn-primary btn-block" id="riskBtn" disabled onclick="enterOnboarding()">进入首次引导</button>
+      </div>
+    </div>
+
+    <!-- ═══ 忘记密码视图 ═══ -->
+    <div class="view" id="view-forgot">
+      <div style="font-size:var(--font-size-h4);font-weight:600">重置密码</div>
+      <div class="steps">
+        <div class="step active" id="fs1"><span class="step-num">1</span>邮箱</div>
+        <div class="step-line"></div>
+        <div class="step" id="fs2"><span class="step-num">2</span>新密码</div>
+        <div class="step-line"></div>
+        <div class="step" id="fs3"><span class="step-num">3</span>完成</div>
+      </div>
+
+      <div id="forgotStep1">
+        <div class="field">
+          <label class="field-label">邮箱</label>
+          <input class="input input-mono" id="forgotEmail" placeholder="you@example.com">
+        </div>
+        <button class="btn btn-primary btn-block" onclick="forgotStep1Next()">发送验证码</button>
+      </div>
+
+      <div id="forgotStep2" style="display:none">
+        <div class="field">
+          <label class="field-label">验证码</label>
+          <input class="input input-mono" id="forgotCode" placeholder="6 位验证码">
+        </div>
+        <div class="field">
+          <label class="field-label">新密码</label>
+          <input class="input" type="password" id="forgotPwd" placeholder="至少 8 位，含字母与数字">
+        </div>
+        <button class="btn btn-primary btn-block" onclick="forgotStep2Next()">确认重置</button>
+      </div>
+
+      <div id="forgotStep3" style="display:none">
+        <div style="text-align:center;padding:var(--space-3) 0">
+          <div style="font-size:44px;color:var(--ftx-success-400)">✓</div>
+          <div style="font-size:var(--font-size-h4);font-weight:600;margin-top:var(--space-1)">密码已重置</div>
+          <div style="font-size:var(--font-size-caption);color:var(--muted)">请使用新密码重新登录</div>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="switchTab('login')">返回登录</button>
+      </div>
+
+      <div class="auth-foot"><a onclick="switchTab('login')">← 返回登录</a></div>
+    </div>
+
+    <!-- ═══ 首次引导视图 ═══ -->
+    <div class="view" id="view-onboarding">
+      <div class="steps">
+        <div class="step done" id="os1"><span class="step-num">✓</span>激活</div>
+        <div class="step-line"></div>
+        <div class="step active" id="os2"><span class="step-num">2</span>选所</div>
+        <div class="step-line"></div>
+        <div class="step" id="os3"><span class="step-num">3</span>交易所码</div>
+        <div class="step-line"></div>
+        <div class="step" id="os4"><span class="step-num">4</span>好友码</div>
+        <div class="step-line"></div>
+        <div class="step" id="os5"><span class="step-num">5</span>完成</div>
+      </div>
+
+      <!-- 步骤 1：选所 -->
+      <div id="onbStep1">
+        <div style="font-size:var(--font-size-h4);font-weight:600">选择所属交易所</div>
+        <div style="font-size:var(--font-size-caption);color:var(--muted)">你的跟单机器人将部署在该交易所（可后续切换）</div>
+        <div class="exchange-grid" id="exchangeGrid">
+          <div class="exchange-card" onclick="selectExchange(this)"><div class="ex-ic">GATE</div><div class="ex-name">Gate</div></div>
+          <div class="exchange-card" onclick="selectExchange(this)"><div class="ex-ic">BIN</div><div class="ex-name">Binance</div></div>
+          <div class="exchange-card" onclick="selectExchange(this)"><div class="ex-ic">OKX</div><div class="ex-name">OKX</div></div>
+          <div class="exchange-card" onclick="selectExchange(this)"><div class="ex-ic">BYB</div><div class="ex-name">Bybit</div></div>
+          <div class="exchange-card" onclick="selectExchange(this)"><div class="ex-ic">BGT</div><div class="ex-name">Bitget</div></div>
+        </div>
+        <button class="btn btn-primary btn-block" id="exNextBtn" disabled onclick="onbNext(1)">下一步</button>
+      </div>
+
+      <!-- 步骤 2：交易所邀请码（G27 强制） -->
+      <div id="onbStep2" style="display:none">
+        <div style="font-size:var(--font-size-h4);font-weight:600">填写 <span id="exInvName" style="color:var(--accent)">Gate</span> 邀请码 <span class="badge-muted-tag" style="font-size:10px;color:var(--ftx-warning-400)">必填</span></div>
+        <div style="font-size:var(--font-size-caption);color:var(--muted)">在 <strong id="exInvName2" style="color:var(--fg)">Gate</strong> 注册时使用的平台邀请码（合作返佣归属核实，★G27）</div>
+        <div class="field">
+          <label class="field-label">交易所邀请码</label>
+          <div class="code-row">
+            <input class="input input-mono" id="exInvInput" placeholder="如：8F3K2A（对应所选交易所）" oninput="checkExInvite(this)">
+            <button class="btn btn-secondary send-btn" onclick="verifyExInvite()">校验</button>
+          </div>
+          <span class="ok-msg" id="exInvOk" style="display:none">✓ 邀请码有效，已绑定该交易所合作归属</span>
+          <span class="err-msg" id="exInvErr" style="display:none">邀请码无效或不属于所选交易所，请检查</span>
+        </div>
+        <button class="btn btn-primary btn-block" id="exInvNextBtn" disabled onclick="onbNext(2)">下一步</button>
+      </div>
+
+      <!-- 步骤 3：好友邀请码（可选） -->
+      <div id="onbStep3" style="display:none">
+        <div style="font-size:var(--font-size-h4);font-weight:600">绑定好友邀请码 <span class="badge-muted-tag" style="font-size:10px;color:var(--ftx-text-tertiary)">可跳过</span></div>
+        <div style="font-size:var(--font-size-caption);color:var(--muted)">绑定后享 10% 邀请奖励；命中平台池自动标记主号下级免订阅（G06）</div>
+        <div class="field">
+          <label class="field-label">好友邀请码</label>
+          <div class="code-row">
+            <input class="input input-mono" id="inviteInput" placeholder="如：SIGNAL-8F3K2A" oninput="checkInvite(this)">
+            <button class="btn btn-secondary send-btn" onclick="verifyInvite()">校验</button>
+          </div>
+          <span class="ok-msg" id="inviteOk" style="display:none">✓ 命中平台资源池，已自动标记为主号下级（免订阅）</span>
+          <span class="err-msg" id="inviteErr" style="display:none">好友邀请码无效，请检查后重试（可跳过）</span>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="onbNext(3)">继续</button>
+      </div>
+
+      <!-- 步骤 4：完成 -->
+      <div id="onbStep4" style="display:none">
+        <div style="text-align:center;padding:var(--space-3) 0">
+          <div style="font-size:44px;color:var(--ftx-success-400)">✓</div>
+          <div style="font-size:var(--font-size-h4);font-weight:600;margin-top:var(--space-1)">引导完成</div>
+          <div style="font-size:var(--font-size-caption);color:var(--muted)">下一步：绑定交易所 API Key 开启跟单</div>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="showToast('success','进入首页看板')">进入首页</button>
+        <button class="btn btn-secondary btn-block" onclick="showToast('info','前往绑定 API（需要只读+合约交易权限）')">绑定 API Key</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ═══ Tab 切换 ═══ */
+function switchTab(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+  if (name === 'login') document.querySelectorAll('.auth-tab')[0].classList.add('active');
+  if (name === 'register') document.querySelectorAll('.auth-tab')[1].classList.add('active');
+  if (name === 'forgot') { document.getElementById('view-forgot').classList.add('active'); }
+  // 重置错误提示
+  clearErr('loginPwd');
+}
+
+/* ═══ 登录 ═══ */
+function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pwd = document.getElementById('loginPwd').value;
+  if (!email || !pwd) { showToast('warn', '请输入邮箱和密码'); return; }
+  if (pwd.length < 8) {
+    document.getElementById('loginErr').style.display = 'block';
+    document.getElementById('loginPwd').classList.add('input-err');
+    return;
+  }
+  showToast('success', '登录成功，正在进入首页看板');
+  setTimeout(() => { location.href = '2026-08-12-signal-saas-home-dashboard.html'; }, 800);
+}
+function clearErr(id) {
+  document.getElementById('loginErr').style.display = 'none';
+  document.getElementById(id).classList.remove('input-err');
+}
+
+/* ═══ 注册流程 ═══ */
+function regStep1Next() {
+  const email = document.getElementById('regEmail').value.trim();
+  const pwd = document.getElementById('regPwd').value;
+  const agree = document.getElementById('agreeCheck').checked;
+  if (!email || !pwd) { showToast('warn', '请填写邮箱和密码'); return; }
+  if (!agree) { showToast('warn', '请先阅读并同意服务条款'); return; }
+  document.getElementById('rs1').classList.remove('active');
+  document.getElementById('rs1').classList.add('done');
+  document.getElementById('rs2').classList.add('active');
+  document.getElementById('regStep1').style.display = 'none';
+  document.getElementById('regStep2').style.display = 'block';
+  startResendCountdown();
+  showToast('info', '验证码已发送至 ' + email);
+}
+function resendCode() {
+  startResendCountdown();
+  showToast('info', '验证码已重新发送（5 分钟有效）');
+}
+function startResendCountdown() {
+  const btn = document.getElementById('resendBtn');
+  let left = 30;
+  btn.disabled = true;
+  btn.textContent = left + 's 后重发';
+  const t = setInterval(() => {
+    left--;
+    if (left <= 0) { clearInterval(t); btn.disabled = false; btn.textContent = '重新发送'; }
+    else btn.textContent = left + 's 后重发';
+  }, 1000);
+}
+function regStep2Next() {
+  const code = document.getElementById('regCode').value;
+  if (code.length < 6) { showToast('warn', '请输入 6 位验证码'); return; }
+  document.getElementById('rs2').classList.remove('active');
+  document.getElementById('rs2').classList.add('done');
+  document.getElementById('rs3').classList.add('active');
+  document.getElementById('regStep2').style.display = 'none';
+  document.getElementById('regStep3').style.display = 'block';
+}
+function updateRiskBtn() {
+  document.getElementById('riskBtn').disabled = !document.getElementById('riskCheck').checked;
+}
+
+/* ═══ 忘记密码 ═══ */
+function forgotStep1Next() {
+  const email = document.getElementById('forgotEmail').value.trim();
+  if (!email) { showToast('warn', '请输入邮箱'); return; }
+  document.getElementById('fs1').classList.remove('active');
+  document.getElementById('fs1').classList.add('done');
+  document.getElementById('fs2').classList.add('active');
+  document.getElementById('forgotStep1').style.display = 'none';
+  document.getElementById('forgotStep2').style.display = 'block';
+  showToast('info', '重置验证码已发送至 ' + email);
+}
+function forgotStep2Next() {
+  const code = document.getElementById('forgotCode').value;
+  const pwd = document.getElementById('forgotPwd').value;
+  if (code.length < 6) { showToast('warn', '请输入 6 位验证码'); return; }
+  if (pwd.length < 8) { showToast('warn', '新密码至少 8 位'); return; }
+  document.getElementById('fs2').classList.remove('active');
+  document.getElementById('fs2').classList.add('done');
+  document.getElementById('fs3').classList.add('active');
+  document.getElementById('forgotStep2').style.display = 'none';
+  document.getElementById('forgotStep3').style.display = 'block';
+}
+
+/* ═══ 首次引导 ═══ */
+let selectedExchange = null;
+function enterOnboarding() {
+  document.getElementById('view-register').classList.remove('active');
+  document.getElementById('view-onboarding').classList.add('active');
+  // 重置 tab 高亮
+  document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.auth-tab')[1].classList.add('active');
+  showToast('success', '注册成功，开始首次引导');
+}
+function selectExchange(card) {
+  document.querySelectorAll('.exchange-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  selectedExchange = card.querySelector('.ex-name').textContent;
+  document.getElementById('exNextBtn').disabled = false;
+}
+function onbNext(step) {
+  if (step === 1) {
+    if (!selectedExchange) { showToast('warn', '请先选择交易所'); return; }
+    // 选所 → 交易所邀请码：更新所名显示
+    document.getElementById('exInvName').textContent = selectedExchange;
+    document.getElementById('exInvName2').textContent = selectedExchange;
+    document.getElementById('exInvInput').value = '';
+    document.getElementById('exInvOk').style.display = 'none';
+    document.getElementById('exInvErr').style.display = 'none';
+    document.getElementById('exInvNextBtn').disabled = true;
+    osGo(2, 3);
+    document.getElementById('onbStep1').style.display = 'none';
+    document.getElementById('onbStep2').style.display = 'block';
+  } else if (step === 2) {
+    osGo(3, 4);
+    document.getElementById('onbStep2').style.display = 'none';
+    document.getElementById('onbStep3').style.display = 'block';
+  } else if (step === 3) {
+    osGo(4, 5);
+    document.getElementById('onbStep3').style.display = 'none';
+    document.getElementById('onbStep4').style.display = 'block';
+  }
+}
+function osGo(from, to) {
+  document.getElementById('os' + from).classList.remove('active');
+  document.getElementById('os' + from).classList.add('done');
+  document.getElementById('os' + to).classList.add('active');
+}
+
+/* ★ G27 交易所邀请码校验 */
+function checkExInvite(input) {
+  if (!input.value.trim()) {
+    document.getElementById('exInvOk').style.display = 'none';
+    document.getElementById('exInvErr').style.display = 'none';
+    document.getElementById('exInvNextBtn').disabled = true;
+  }
+}
+function verifyExInvite() {
+  const code = document.getElementById('exInvInput').value.trim();
+  if (!code) { showToast('warn', '请填写所选交易所的邀请码'); return; }
+  // 演示：校验通过（真实后端调用 /v1/identity/bind-exchange-invite 核实）
+  if (code.length >= 4) {
+    document.getElementById('exInvOk').style.display = 'block';
+    document.getElementById('exInvErr').style.display = 'none';
+    document.getElementById('exInvNextBtn').disabled = false;
+    showToast('success', `邀请码有效，已绑定 ${selectedExchange} 合作归属（G27 核实通过）`);
+  } else {
+    document.getElementById('exInvErr').style.display = 'block';
+    document.getElementById('exInvOk').style.display = 'none';
+    document.getElementById('exInvNextBtn').disabled = true;
+    showToast('warn', '邀请码无效或不属于所选交易所');
+  }
+}
+
+function checkInvite(input) {
+  if (!input.value.trim()) {
+    document.getElementById('inviteOk').style.display = 'none';
+    document.getElementById('inviteErr').style.display = 'none';
+  }
+}
+function verifyInvite() {
+  const code = document.getElementById('inviteInput').value.trim();
+  if (!code) { showToast('warn', '请输入邀请码（可跳过）'); return; }
+  if (code.toUpperCase().startsWith('SIGNAL')) {
+    document.getElementById('inviteOk').style.display = 'block';
+    document.getElementById('inviteErr').style.display = 'none';
+    showToast('success', '邀请码有效，已绑定 10% 奖励关系');
+  } else {
+    document.getElementById('inviteErr').style.display = 'block';
+    document.getElementById('inviteOk').style.display = 'none';
+    showToast('warn', '邀请码无效，可跳过此步骤');
+  }
+}
+
+/* ═══ Toast ═══ */
+function showToast(type, msg) {
+  const stack = document.getElementById('toastStack');
+  const icons = { success: '✓', warn: '!', error: '✕', info: 'i' };
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span class="t-ic">${icons[type]}</span><span>${msg}</span><button class="t-close" onclick="this.parentElement.remove()">✕</button>`;
+  stack.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3200);
+}
+
+/* ═══ 密码强度提示 ═══ */
+document.getElementById('regPwd').addEventListener('input', (e) => {
+  const v = e.target.value;
+  const hint = document.getElementById('pwdHint');
+  hint.style.display = v.length >= 8 && /[a-zA-Z]/.test(v) && /\d/.test(v) ? 'block' : 'none';
+});
+</script>
+</body>
+</html>
