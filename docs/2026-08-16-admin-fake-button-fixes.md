@@ -63,3 +63,28 @@
 - 本地生产测试库：postgres 监听 **5433**（`docker-compose.prod.local.yml` 映射 5433:5432），user=`signal`，password=`local-test-pg-pass-2026`，库 `signal_saas`；Redis 用 **6381**。
 - 运行 API/迁移须设 `DATABASE_URL=postgresql+asyncpg://signal:local-test-pg-pass-2026@localhost:5433/signal_saas`（`.env` 默认 5432 未监听）。
 - web-admin 前端连 API **8000**（`.env.local` 的 `NEXT_PUBLIC_API_BASE`），前端为生产构建（`npm run build` 后 `next start -p 3001`）。
+
+---
+
+## 五、设置页客户端异常 + "空白页面" 修复（同日补记）
+
+### 5.1 设置页 `Application error: a client-side exception`
+- **表象**：后台「系统设置」页报 `ChunkLoadError: Loading chunk 662 failed (.../app/settings/page-*.js)`。
+- **根因**：非代码缺陷，而是**陈旧构建不一致**——`npm run build` 重新生成 chunk 哈希后，运行中的 `next start` 仍向浏览器下发引用**旧 chunk 哈希**的 HTML，浏览器拉取旧 chunk 404，触发 Next.js 错误边界。
+- **修复**：停掉 3001 前端 → `npm run build` 重建 → 以 `next start -p 3001` 重启。验证服务端 HTML 引用的 chunk 与磁盘 `.next/static/chunks/app/settings/page-*.js` 完全一致。
+- **用户侧**：若仍见旧错误，浏览器硬刷新（Ctrl+F5）即可。
+
+### 5.2 "好多空白页面" —— CORS 白名单未含前端端口
+- **表象**：后台多个页面空白/被迫跳登录。
+- **根因**：运行中的 API 以部分配置启动——DB/Redis 用 prod-local（5433/6381）正确，但 **CORS 白名单未含前端端口 3001/3002**（落到默认 3000），浏览器 CORS 预检被拒，所有 `/admin/v1/*` 请求被浏览器拦截，页面拿不到数据 → 空白。
+- **修复**：以完整 prod-local 环境重启 API：`.\scripts\set-prod-local-env.ps1`（内含 `CORS_ORIGINS=http://127.0.0.1:3001,3002,localhost:3001,3002` + `CORS_ALLOW_LOCAL_TEST=1`）后再 `uvicorn api.main:app --port 8000`。预检验证 3001/3002 均返回 200 且回显 `Access-Control-Allow-Origin`。
+
+### 5.3 启动 API 必须用 prod-local 环境（重要）
+- `.env`（dev）的 `DATABASE_URL=...:5432`、`REDIS_URL=...:6380` **均未监听**；实际容器为 **PG 5433**（口令 `local-test-pg-pass-2026`）、**Redis 6381**。
+- 直接 `uvicorn api.main:app` 会因连不上 Redis/PG 而 500（登录接口表现为 Internal Server Error）。
+- **正确启动方式**：先 `. .\scripts\set-prod-local-env.ps1` 设置环境变量，再启动 API / worker / beat / consumer。
+- 本轮已把闲置的 API 统一重启为 prod-local 环境；`.env`（dev）保持原样未改动。
+
+### 5.4 验证结果
+- Playwright 无头注入 admin token 遍历 14 个后台页面：全部 `200 + 有正文 + 无 ChunkLoad/CORS/网络错误`。
+- 设置页聚焦检查：平台参数（注册邮箱验证码/邀请奖励/链上确认/支付订单/邮件）、邮件模板（验证码/订阅临期）、订阅套餐（试用/正式）**全部渲染出真实数据**，控制台 0 错误。

@@ -140,10 +140,11 @@ class SignalStore:
         self.db.add(sig)
         try:
             await self.db.commit()
+            await self.db.refresh(sig)
         except IntegrityError:
+            # dedupe_key 已存在 → rollback 后 sig 已脱离 session，不再 refresh（属性仍保留）
             await self.db.rollback()
             sig.dropped = True
             sig.drop_reason = "duplicate(dedupe_key)"
-        await self.db.refresh(sig)
         logger.warning("signal dropped: %s (%s)", ns.source_trader_id, reason)
         return sig
