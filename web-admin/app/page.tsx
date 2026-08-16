@@ -77,6 +77,35 @@ export default function AdminDashboardPage() {
     load();
   }, [load, router]);
 
+  async function exportReport() {
+    const rows: string[][] = [
+      ["运营报表", dateStr, ""],
+      [""],
+      ["指标", "数值", "说明"],
+      ["注册用户", String(users.total), `今日新增 ${users.today}`],
+      ["今日支付额", `${pay.todayAmount.toFixed(2)} USDT`, `${pay.todayCount} 笔`],
+      ["跟单订单", String(orders), "全部"],
+      ["待审核提现", `${wd.pending} 笔`, `${wd.amount.toFixed(2)} USDT`],
+      ["风控告警", String(riskCount), "高危用户"],
+      ["今日邀请奖励", `${invite.today_amount_usdt.toFixed(2)} USDT`, `${invite.today_count} 笔`],
+      [""],
+      ["最近注册用户", "", ""],
+      ["ID", "邮箱", "加入时间"],
+      ...users.recent.map((u) => [String(u.id), u.email, u.created_at ? new Date(u.created_at).toLocaleString("zh-CN") : ""]),
+    ];
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `运营报表_${dateStr}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast("success", "运营报表已导出（CSV）");
+  }
+
   const kpis = [
     { l: "注册用户", v: users.total.toLocaleString(), sub: <><span className="u">+{users.today}</span> 今日新增</>, href: "/users" },
     { l: "今日支付额", v: pay.todayAmount.toFixed(1), sub: <>USDT · <span className="u">{pay.todayCount} 笔</span></>, href: "/payments" },
@@ -97,7 +126,7 @@ export default function AdminDashboardPage() {
           <h1 className="page-title">数据概览<small>{dateStr || "—"} · 实时</small></h1>
         </div>
         <div className="page-actions">
-          <button className="btn btn-secondary" onClick={() => toast("info", "已导出今日运营报表")}>导出报表</button>
+          <button className="btn btn-secondary" onClick={exportReport}>导出报表</button>
           <button className="btn btn-primary" onClick={() => { load(); toast("success", "数据已刷新"); }}>刷新数据</button>
         </div>
       </div>

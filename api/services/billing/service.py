@@ -9,36 +9,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.errors import ConflictError, NotFoundError
 from api.models.billing import PaymentOrder, Subscription
+from api.services.settings import service as settings_svc
 
 logger = logging.getLogger("signal-saas.billing")
 
-# 套餐定义（设计蓝本 §5.2）
-PLANS: dict[str, dict] = {
-    "trial_5u": {"name": "试用套餐", "price_usdt": 5.0, "duration_days": 7, "trial": True, "max_purchase": 1},
-    "monthly_19_9u": {"name": "正式套餐", "price_usdt": 19.9, "duration_days": 30, "trial": False, "max_purchase": None},
-}
-
 
 class BillingService:
-    """套餐购买 / 订阅激活 / 有效期查询。"""
+    """套餐购买 / 订阅激活 / 有效期查询。套餐后台可增删改。"""
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    def get_plan(self, plan_id: str) -> dict:
-        plan = PLANS.get(plan_id)
-        if plan is None:
+    def _plan(self, plan_id: str) -> dict:
+        plan = settings_svc.get_plan(plan_id)
+        if plan is None or not plan.get("enabled", True):
             raise NotFoundError("套餐不存在")
-        return {"plan_id": plan_id, **plan}
+        return plan
+
+    def get_plan(self, plan_id: str) -> dict:
+        plan = self._plan(plan_id)
+        return {"plan_id": plan_id, "name": plan["name"], "price_usdt": plan["price_usdt"],
+                "duration_days": plan["duration_days"], "trial": plan.get("trial", False),
+                "max_purchase": plan.get("max_purchase")}
 
     def list_plans(self) -> list[dict]:
-        return [{"plan_id": pid, **p} for pid, p in PLANS.items()]
+        return [{"plan_id": p["plan_id"], "name": p["name"], "price_usdt": p["price_usdt"],
+                 "duration_days": p["duration_days"], "trial": p.get("trial", False),
+                 "max_purchase": p.get("max_purchase")}
+                for p in settings_svc.get_plans() if p.get("enabled", True)]
 
     async def can_purchase(self, user_id: int, plan_id: str) -> None:
         """★ 5U 试用限购 1 次（DB 强校验）。"""
-        plan = PLANS.get(plan_id)
-        if plan is None:
-            raise NotFoundError("套餐不存在")
+        plan = self._plan(plan_id)
         if plan.get("trial"):
             # ★ 生产修复：仅统计已确认订单，失败/作废/超时不占用试用限购名额
             count = await self.db.scalar(
@@ -53,7 +55,7 @@ class BillingService:
 
     async def activate_subscription(self, user_id: int, plan_id: str, payment_order_id: int) -> Subscription:
         """支付确认后激活订阅（先过期旧订阅，再建新订阅）。"""
-        plan = PLANS[plan_id]
+        plan = self._plan(plan_id)
         # 使旧订阅过期
         old = (
             await self.db.execute(

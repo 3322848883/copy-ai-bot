@@ -10,6 +10,7 @@ from api.core.errors import PaymentError
 from api.deps import DbDep, get_current_user
 from api.models.billing import PaymentOrder
 from api.services.payment.service import PaymentService
+from api.services.settings import service as settings_svc
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -40,6 +41,7 @@ async def create_order(body: CreateOrderIn, db: DbDep = None, user_id: int = Dep
             .limit(1)
         )
     ).scalars().first()
+    ttl_min = int(settings_svc.get_rule("payment_order_ttl_min") or 30)
     return {
         "order_id": order.id,
         "amount_usdt": order.amount_usdt,
@@ -48,6 +50,7 @@ async def create_order(body: CreateOrderIn, db: DbDep = None, user_id: int = Dep
         "required_confirmations": order.required_confirmations,
         "platform_address": addr or "",
         "note": "" if addr else f"{body.network} 网络暂未开放收款，请联系客服",
+        "ttl_seconds": ttl_min * 60,
     }
 
 

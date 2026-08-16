@@ -15,6 +15,20 @@ type UserRow = {
   created_at: string | null;
 };
 type HighRisk = { user_id: number; email: string; trigger: string; bind_1h: number; frozen_amount_usdt: number; status: string };
+type Financial = {
+  total_usdt: number;
+  available_usdt: number;
+  withdrawing_usdt: number;
+  paid_usdt: number;
+  frozen_usdt: number;
+};
+type UserDetail = UserRow & {
+  exchange: string | null;
+  identity_type: string | null;
+  admin_note: string | null;
+  financial: Financial;
+  copy: { running_bots: number; today_orders: number; week_orders_count: number };
+};
 type ReviewDone = { id: number; action: string; target_id: string; actor_id: number; reason: string | null; created_at: string | null };
 
 const ROLE_LABEL: Record<string, string> = { user: "普通用户", admin: "管理员", reviewer: "审核员", support: "客服" };
@@ -39,7 +53,43 @@ export default function AdminUsersPage() {
   const [riskMap, setRiskMap] = useState<Record<number, HighRisk>>({});
   const [subIds, setSubIds] = useState<Set<number>>(new Set());
   const [drawer, setDrawer] = useState<UserRow | null>(null);
+  const [detail, setDetail] = useState<UserDetail | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [editingNote, setEditingNote] = useState(false);
   const [freezing, setFreezing] = useState(false);
+  const [savingNote, setSavingNote] = useState(false);
+
+  const openDrawer = useCallback(async (u: UserRow) => {
+    setDrawer(u);
+    setDetail(null);
+    setEditingNote(false);
+    try {
+      const d = await apiFetch<UserDetail>(`/admin/v1/users/${u.id}`, {}, tokenStore.adminAccess);
+      setDetail(d);
+      setNoteDraft(d.admin_note ?? "");
+    } catch {
+      /* 详情加载失败时保留占位 */
+    }
+  }, []);
+
+  async function saveNote() {
+    if (!detail) return;
+    setSavingNote(true);
+    try {
+      const r = await apiFetch<{ admin_note: string | null }>(
+        `/admin/v1/users/${detail.id}/note`,
+        { method: "PATCH", body: JSON.stringify({ note: noteDraft }) },
+        tokenStore.adminAccess,
+      );
+      setDetail((prev) => (prev ? { ...prev, admin_note: r.admin_note } : prev));
+      setEditingNote(false);
+      toast("success", "备注已保存 · 操作已记入审计日志");
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSavingNote(false);
+    }
+  }
 
   const load = useCallback(async (query = "") => {
     try {
@@ -194,14 +244,14 @@ export default function AdminUsersPage() {
                 </tr>
               )}
               {filtered.map((u) => (
-                <tr key={u.id} style={{ cursor: "pointer" }} onClick={() => setDrawer(u)}>
+                <tr key={u.id} style={{ cursor: "pointer" }} onClick={() => openDrawer(u)}>
                   <td style={{ fontFamily: "var(--font-geist-mono), monospace", fontWeight: 600 }}>{u.email}</td>
                   <td>{roleBadge(u.role)}</td>
                   <td>{subBadge(u)}</td>
                   <td>{statusBadge(u)}</td>
                   <td className="sub-ref">{fmtTime(u.created_at)}</td>
                   <td>
-                    <button className="action-link" onClick={(e) => { e.stopPropagation(); setDrawer(u); }}>详情</button>
+                    <button className="action-link" onClick={(e) => { e.stopPropagation(); openDrawer(u); }}>详情</button>
                   </td>
                 </tr>
               ))}
@@ -238,24 +288,26 @@ export default function AdminUsersPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={secLabel}>基本信息</div>
               <div style={rowStyle}><span style={{ color: "var(--muted)" }}>用户 ID</span><span style={monoVal}>#{drawer.id}</span></div>
-              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>所选交易所</span><span style={monoVal}>—</span></div>
+              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>所选交易所</span><span style={monoVal}>{detail?.exchange || "—"}</span></div>
               <div style={rowStyle}><span style={{ color: "var(--muted)" }}>注册时间</span><span style={monoVal}>{drawer.created_at?.slice(0, 16) || "—"}</span></div>
-              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>身份类型</span><span style={monoVal}>{ROLE_LABEL[drawer.role] || drawer.role}</span></div>
+              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>身份类型</span><span style={monoVal}>{detail?.identity_type === "sub_account" ? "主号下级" : ROLE_LABEL[drawer.role] || drawer.role}</span></div>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={secLabel}>财务概览</div>
-              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>累计奖励</span><span style={monoVal}>—</span></div>
-              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>可提现余额</span><span style={monoVal}>—</span></div>
-              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>提现中</span><span style={monoVal}>—</span></div>
+              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>累计奖励</span><span style={monoVal}>{detail ? `${detail.financial.total_usdt.toFixed(2)} U` : "—"}</span></div>
+              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>可提现余额</span><span style={monoVal}>{detail ? `${detail.financial.available_usdt.toFixed(2)} U` : "—"}</span></div>
+              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>提现中</span><span style={monoVal}>{detail ? `${detail.financial.withdrawing_usdt.toFixed(2)} U` : "—"}</span></div>
+              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>已提现</span><span style={monoVal}>{detail ? `${detail.financial.paid_usdt.toFixed(2)} U` : "—"}</span></div>
+              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>冻结</span><span style={monoVal}>{detail ? `${detail.financial.frozen_usdt.toFixed(2)} U` : "—"}</span></div>
               <div style={rowStyle}><span style={{ color: "var(--muted)" }}>风险确认</span><span style={monoVal}>{drawer.risk_disclosure_accepted === undefined ? "—" : drawer.risk_disclosure_accepted ? "已确认" : "未确认"}</span></div>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={secLabel}>跟单概览</div>
-              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>运行机器人</span><span style={monoVal}>—</span></div>
-              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>今日成交</span><span style={monoVal}>—</span></div>
-              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>本周已实现盈亏</span><span style={monoVal}>—</span></div>
+              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>运行机器人</span><span style={monoVal}>{detail ? `${detail.copy.running_bots} 个` : "—"}</span></div>
+              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>今日成交</span><span style={monoVal}>{detail ? `${detail.copy.today_orders} 单` : "—"}</span></div>
+              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>本周订单</span><span style={monoVal}>{detail ? `${detail.copy.week_orders_count} 单` : "—"}</span></div>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -273,8 +325,36 @@ export default function AdminUsersPage() {
               <div style={rowStyle}><span style={{ color: "var(--muted)" }}>1h 绑定数</span><span style={monoVal}>{riskMap[drawer.id] !== undefined ? riskMap[drawer.id].bind_1h : "—"}</span></div>
             </div>
 
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={secLabel}>管理员备注</div>
+              {editingNote ? (
+                <>
+                  <textarea
+                    className="input"
+                    rows={3}
+                    style={{ fontFamily: "inherit", resize: "vertical" }}
+                    placeholder="记录该用户的备注信息…"
+                    value={noteDraft}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                  />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn btn-primary" style={{ flex: 1 }} disabled={savingNote} onClick={saveNote}>保存备注</button>
+                    <button className="btn btn-secondary" style={{ flex: 1 }} disabled={savingNote} onClick={() => { setEditingNote(false); setNoteDraft(detail?.admin_note ?? ""); }}>取消</button>
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ flex: 1, fontSize: 12, color: detail?.admin_note ? "var(--foreground)" : "var(--muted)", wordBreak: "break-all" }}>
+                    {detail?.admin_note || "暂无备注"}
+                  </span>
+                  <button className="btn btn-secondary" style={{ padding: "5px 12px", height: "auto", minWidth: 0 }} onClick={() => setEditingNote(true)}>
+                    {detail?.admin_note ? "编辑" : "添加"}
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div style={{ display: "flex", gap: 12, marginTop: "auto" }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => toast("info", "已记录审计日志")}>备注</button>
               {drawer.is_frozen ? (
                 <button className="btn btn-primary" style={{ flex: 1 }} disabled={freezing} onClick={() => toggleFreeze(drawer)}>解冻用户</button>
               ) : (

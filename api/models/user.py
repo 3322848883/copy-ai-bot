@@ -19,6 +19,7 @@ class User(TimestampMixin, Base):
     is_frozen: Mapped[bool] = mapped_column(Boolean, default=False)
     role: Mapped[str] = mapped_column(String(32), default="user")  # user / admin / reviewer / support
     risk_disclosure_accepted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")  # ★ T1.7
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)  # ★ 后台用户管理「备注」
 
     identity: Mapped["Identity"] = relationship(back_populates="user", uselist=False, foreign_keys="Identity.user_id")
 

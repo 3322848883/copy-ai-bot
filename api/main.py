@@ -158,6 +158,7 @@ from api.routers.admin import orders as admin_orders  # noqa: E402
 from api.routers.admin import review as admin_review  # noqa: E402
 from api.routers.admin import wallets as admin_wallets  # noqa: E402
 from api.routers.admin import invites as admin_invites  # noqa: E402
+from api.routers.admin import settings as admin_settings  # noqa: E402
 
 app.include_router(admin_auth.router, prefix=settings.admin_prefix)
 app.include_router(admin_users.router, prefix=settings.admin_prefix)
@@ -172,3 +173,4 @@ app.include_router(admin_orders.router, prefix=settings.admin_prefix)
 app.include_router(admin_review.router, prefix=settings.admin_prefix)
 app.include_router(admin_wallets.router, prefix=settings.admin_prefix)
 app.include_router(admin_invites.router, prefix=settings.admin_prefix)
+app.include_router(admin_settings.router, prefix=settings.admin_prefix)

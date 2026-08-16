@@ -12,13 +12,32 @@ from api.core.errors import AuthError, ConflictError, NotFoundError
 from api.core.security import create_token, hash_password, verify_password
 from api.models.user import User
 from api.services.mailer.service import Mailer
+from api.services.settings import service as settings_svc
 
-_EMAIL_CODE_TTL_MIN = 5  # 验证码 5 分钟 TTL
-_EMAIL_CODE_MAX_ATTEMPTS = 5  # ★ H8：错误尝试 ≥5 次即作废
 # 开发环境内存验证码存储兜底（Redis 不可用时；生产用 Redis，多实例一致）
 _email_codes: dict[str, dict] = {}
 
 _VERIFY_CODE_KEY = "verify_code:{email}"
+
+
+def _code_ttl_min() -> int:
+    return int(settings_svc.get_rule("verify_code_ttl_min") or 5)
+
+
+def _code_max_attempts() -> int:
+    return int(settings_svc.get_rule("verify_code_max_attempts") or 5)
+
+
+def _code_length() -> int:
+    return int(settings_svc.get_rule("verify_code_length") or 6)
+
+
+def _code_enabled() -> bool:
+    return bool(settings_svc.get_rule("verify_code_enabled"))
+
+
+def _dev_code() -> str:
+    return str(settings_svc.get_rule("verify_code_dev_code") or "123456")
 
 
 def _store_email_code(email: str, code: str) -> None:
@@ -27,14 +46,15 @@ def _store_email_code(email: str, code: str) -> None:
 
     from redis import Redis
 
+    ttl = _code_ttl_min()
     record = {
         "code": code,
         "attempts": 0,
-        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=_EMAIL_CODE_TTL_MIN)).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=ttl)).isoformat(),
     }
     try:
         r = Redis.from_url(get_settings().redis_url, decode_responses=True)
-        r.set(_VERIFY_CODE_KEY.format(email=email), json.dumps(record), ex=_EMAIL_CODE_TTL_MIN * 60)
+        r.set(_VERIFY_CODE_KEY.format(email=email), json.dumps(record), ex=ttl * 60)
         return
     except Exception:  # noqa: BLE001
         _email_codes[email] = record
@@ -74,7 +94,10 @@ class AuthService:
 
     # ── 注册 ──
     async def register(self, email: str, password: str) -> User:
-        """邮箱注册：生成 6 位验证码（5min TTL），用户 is_active=False。"""
+        """邮箱注册：生成 N 位验证码（TTL 可配置），用户 is_active=False。
+
+        ★ 后台「系统设置」verify_code_enabled=False 时跳过验证码，注册即激活。
+        """
         settings = get_settings()
         email = email.strip().lower()
         if len(password) < settings.password_min_length:
@@ -84,32 +107,46 @@ class AuthService:
         if existing:
             raise ConflictError("邮箱已注册")
 
-        code = f"{random.randint(0, 999999):06d}"
-        # dev 环境固定验证码 123456，便于本地端到端测试
-        if settings.app_env == "dev":
-            code = "123456"
-        _store_email_code(email, code)
-
-        user = User(email=email, password_hash=hash_password(password), is_active=False)
+        enabled = _code_enabled()
+        user = User(email=email, password_hash=hash_password(password), is_active=not enabled)
         self.db.add(user)
         await self.db.commit()
         await self.db.refresh(user)
 
-        # 发送验证码邮件（dev 控制台输出；生产 SMTP）
-        await self.mailer.send_verify_code(email, code, ttl_min=_EMAIL_CODE_TTL_MIN)
+        if enabled:
+            length = _code_length()
+            code = f"{random.randint(0, 10**length - 1):0{length}d}"
+            # dev 环境固定验证码，便于本地端到端测试（后台可配置）
+            if settings.app_env == "dev":
+                code = _dev_code()
+            _store_email_code(email, code)
+            # 发送验证码邮件（dev 控制台输出；生产 SMTP）
+            await self.mailer.send_verify_code(email, code, ttl_min=_code_ttl_min())
         return user
 
     # ── 邮箱验证激活 ──
     async def verify_email(self, email: str, code: str) -> User:
-        """验证码激活：校验 6 位码 + 5min TTL + ★ H8 尝试次数限制 → is_active=True。"""
+        """验证码激活：校验 N 位码 + TTL + ★ H8 尝试次数限制 → is_active=True。
+
+        ★ verify_code_enabled=False 时无验证码，历史未激活用户直接激活。
+        """
         email = email.strip().lower()
+        user = await self.db.scalar(select(User).where(User.email == email))
+        if not _code_enabled():
+            if user and not user.is_active:
+                user.is_active = True
+                await self.db.commit()
+                await self.db.refresh(user)
+            if not user:
+                raise NotFoundError("用户不存在")
+            return user
         record = _get_email_code(email)
         if not record:
             raise AuthError("请先注册获取验证码")
         if datetime.now(timezone.utc) > datetime.fromisoformat(record["expires_at"]):
             _delete_email_code(email)
             raise AuthError("验证码已过期，请重新注册")
-        if record["attempts"] >= _EMAIL_CODE_MAX_ATTEMPTS:
+        if record["attempts"] >= _code_max_attempts():
             _delete_email_code(email)
             raise AuthError("验证码错误次数过多，请重新注册获取新验证码")
         if record["code"] != code.strip():
@@ -121,7 +158,7 @@ class AuthService:
 
             try:
                 r = Redis.from_url(get_settings().redis_url, decode_responses=True)
-                r.set(_VERIFY_CODE_KEY.format(email=email), json.dumps(record), ex=_EMAIL_CODE_TTL_MIN * 60)
+                r.set(_VERIFY_CODE_KEY.format(email=email), json.dumps(record), ex=_code_ttl_min() * 60)
             except Exception:  # noqa: BLE001
                 _email_codes[email] = record
             raise AuthError("验证码错误")

@@ -16,6 +16,7 @@ type Order = {
   plan_id?: string;
   platform_address?: string;
   note?: string;
+  ttl_seconds?: number;
 };
 type SubStatus = { active: boolean; plan_id?: string; expires_at?: string };
 type Toast = { type: "success" | "warn" | "info" | "error"; msg: string };
@@ -23,9 +24,9 @@ type Toast = { type: "success" | "warn" | "info" | "error"; msg: string };
 const NETWORKS = [
   { key: "trc20", label: "TRC-20", note: "12 确认" },
   { key: "bep20", label: "BEP-20", note: "15 确认" },
-  { key: "erc20", label: "ERC-20", note: "12 确认" },
+  { key: "erc20", label: "ERC-20", note: "32 确认" },
 ];
-const PENDING_LIMIT_MS = 30 * 60 * 1000; // 30min 订单倒计时
+const PENDING_LIMIT_MS = 30 * 60 * 1000; // 30min 订单倒计时（后台 payment_order_ttl_min 可配，创建订单时返回 ttl_seconds 覆盖）
 
 /** M4 T4.10 订阅：推荐标签 + 套餐卡（正式上试用下）+ 订单信息卡 + 订阅状态卡 + 支付状态机。 */
 export default function SubscriptionsPage() {
@@ -158,7 +159,8 @@ export default function SubscriptionsPage() {
   const subProgress = sub?.active ? Math.min(100, Math.max(0, ((1 - subLeftMs / (subDuration * 86400_000)) * 100))) : 0;
 
   /* ── 支付状态机 ── */
-  const pendingLeft = orderCreatedAt && order?.status === "pending" ? Math.max(0, PENDING_LIMIT_MS - (nowTick - orderCreatedAt)) : 0;
+  const orderTtlMs = order?.ttl_seconds ? order.ttl_seconds * 1000 : PENDING_LIMIT_MS;
+  const pendingLeft = orderCreatedAt && order?.status === "pending" ? Math.max(0, orderTtlMs - (nowTick - orderCreatedAt)) : 0;
   const required = order?.required ?? order?.required_confirmations ?? 0;
   const confirmPct = order && required > 0 ? Math.min(100, Math.round(((order.confirmations ?? 0) / required) * 100)) : 0;
 

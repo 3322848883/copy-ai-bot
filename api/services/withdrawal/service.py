@@ -11,6 +11,7 @@ from api.core.config import get_settings
 from api.core.errors import NotFoundError, ValidationError, WithdrawalError
 from api.models.billing import Reward, Withdrawal
 from api.services.ledger.service import LedgerService
+from api.services.settings import service as settings_svc
 
 logger = logging.getLogger("signal-saas.withdrawal")
 
@@ -30,8 +31,11 @@ class WithdrawalService:
         """申请提现：门槛校验 → 地址正则 → 冻结可用余额。"""
         if not self._valid_address(network, address):
             raise ValidationError("收款地址格式错误")
-        if amount_usdt < self.settings.withdraw_min_usdt:
-            raise WithdrawalError(f"最低提现门槛 {self.settings.withdraw_min_usdt}U")
+        # ★ 后台「风控中心」min_withdrawal / withdrawal_fee 可配置，未设回退 config 默认
+        min_usdt = settings_svc.risk_rule_float("min_withdrawal", float(self.settings.withdraw_min_usdt))
+        fee_usdt = settings_svc.risk_rule_float("withdrawal_fee", float(self.settings.withdraw_fee_usdt))
+        if amount_usdt < min_usdt:
+            raise WithdrawalError(f"最低提现门槛 {min_usdt:g}U")
 
         ledger = LedgerService(self.db)
         balance = await ledger.balance(user_id)
@@ -43,7 +47,7 @@ class WithdrawalService:
         wd = Withdrawal(
             user_id=user_id,
             amount_usdt=amount_usdt,
-            fee_usdt=self.settings.withdraw_fee_usdt,
+            fee_usdt=fee_usdt,
             network=network,
             address=address,
             status="pending_review",

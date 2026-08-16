@@ -4,14 +4,16 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from api.deps import DbDep, get_current_user
-from api.services.billing.service import BillingService, PLANS
+from api.services.settings import service as settings_svc
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
 
 @router.get("/plans")
-async def list_plans() -> dict:
-    return {"plans": [{"plan_id": pid, **p} for pid, p in PLANS.items()]}
+async def list_plans(db: DbDep = None) -> dict:
+    from api.services.billing.service import BillingService
+
+    return {"plans": BillingService(db).list_plans()}
 
 
 @router.get("/me")

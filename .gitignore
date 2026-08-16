@@ -30,9 +30,13 @@ dist/
 # 数据与日志
 *.db
 *.sqlite
+*.log
 logs/
 runtime/
 data/
+
+# 临时验证脚本（不入库）
+scripts/_tmp_*.py
 
 # 大型二进制 / 运行时产物（不入库）
 chrome-stable.deb

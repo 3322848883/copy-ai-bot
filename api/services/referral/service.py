@@ -11,11 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.billing import Invite, PaymentOrder, Reward
 from api.models.user import Identity, User
+from api.services.settings import service as settings_svc
 
 logger = logging.getLogger("signal-saas.referral")
 
-# ★ T4.9：1h 内 ≥N 个下级只买试用 → RiskFlag
-ABUSE_TRIAL_THRESHOLD = 3
+# ★ T4.9：1h 内 ≥N 个下级只买试用 → RiskFlag（阈值后台可配置）
 ABUSE_WINDOW_HOURS = 1
 
 
@@ -100,17 +100,21 @@ class ReferralService:
         }
 
     async def detect_batch_abuse(self, inviter_id: int) -> bool:
-        """★ T4.9：1h 内 ≥3 个下级只买试用 → 标记刷单风险。"""
+        """★ T4.9：1h 内 ≥阈值 个下级只买试用 → 标记刷单风险（参数后台可配置）。"""
+        threshold = int(settings_svc.get_rule("referral_abuse_trial_threshold") or 3)
+        trial_plans = [p["plan_id"] for p in settings_svc.get_plans() if p.get("trial")]
+        if not trial_plans:
+            return False
         one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=ABUSE_WINDOW_HOURS)
         rows = await self.db.execute(
             select(PaymentOrder.id)
             .join(Invite, Invite.invitee_id == PaymentOrder.user_id)
             .where(
                 Invite.inviter_id == inviter_id,
-                PaymentOrder.plan_id == "trial_5u",
+                PaymentOrder.plan_id.in_(trial_plans),
                 PaymentOrder.status == "confirmed",
                 PaymentOrder.created_at >= one_hour_ago,
             )
             .distinct()
         )
-        return len(rows.scalars().all()) >= ABUSE_TRIAL_THRESHOLD
+        return len(rows.scalars().all()) >= threshold

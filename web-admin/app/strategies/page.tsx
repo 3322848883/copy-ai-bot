@@ -67,6 +67,24 @@ export default function AdminStrategiesPage() {
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
   const [searchMsg, setSearchMsg] = useState("");
   const [searching, setSearching] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  async function syncProfiles() {
+    setSyncing(true);
+    try {
+      const r = await apiFetch<{ mode: string; async?: boolean; task_id?: string; count?: number; note?: string }>(
+        "/admin/v1/signals/sync",
+        { method: "POST", body: JSON.stringify({}) },
+        tokenStore.adminAccess,
+      );
+      toast("success", r.async ? "已触发全量画像同步（后台任务）" : `画像同步完成：${r.count ?? 0} 个带单员`);
+      load();
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "同步失败");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -200,12 +218,15 @@ export default function AdminStrategiesPage() {
 
   return (
     <div>
+      {/* 同步画像 */}
       <div className="page-hdr">
         <div>
           <div className="page-eyebrow">SIGNAL REVIEW · 信号源审核</div>
           <h1 className="page-title">信号源审核<small>{pendingFiltered.length} 待审 · G04 门槛校验</small></h1>
         </div>
-        <button className="btn btn-secondary" onClick={() => toast("info", "已触发全量画像同步")}>同步画像</button>
+        <button className="btn btn-secondary" onClick={syncProfiles} disabled={syncing}>
+          {syncing ? "同步中…" : "同步画像"}
+        </button>
       </div>
 
       {/* 交易所 Tab */}

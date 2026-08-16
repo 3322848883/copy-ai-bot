@@ -38,6 +38,35 @@ async def run_sync_daily(limit: int = 50) -> int:
     return count
 
 
+def run_sync_one_sync(trader_id: str) -> dict:
+    """同步单个带单员画像（后台「同步画像」手动触发，同步执行）。"""
+    import asyncio
+
+    from api.db.session import get_session_factory
+    from api.services.scraper.adapters.gate import GateScraper
+    from api.services.signalstore.service import SignalStore
+    from api.workers.tasks_signal import _save_profile
+
+    async def _one() -> dict:
+        factory = get_session_factory()
+        async with factory() as db:
+            store = SignalStore(db)
+            scraper = GateScraper()
+            leader = await scraper.get_leader_by_id(trader_id)
+            if leader is None:
+                return {"trader_id": trader_id, "updated": False, "reason": "未找到该带单员"}
+            await store.upsert_trader("gate", leader.trader_id, leader.name)
+            await _save_profile(store, leader)
+            await db.commit()
+            return {"trader_id": trader_id, "updated": True, "name": leader.name}
+
+    try:
+        return asyncio.run(_one())
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("manual profile sync failed: %s", exc)
+        return {"trader_id": trader_id, "updated": False, "reason": str(exc)}
+
+
 @celery_app.task(name="profile.sync_daily")
 def sync_daily_profiles(exchange: str | None = None) -> int:
     """同步 TraderProfile 快照（00:00-05:00 Celery Beat 调度；dev/prod 统一真实执行）。"""

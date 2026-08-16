@@ -13,7 +13,8 @@ from api.core.errors import PaymentError, ValidationError
 from api.models.billing import Invite, PaymentOrder, Reward, PlatformAddress
 from api.models.user import Identity
 from api.services.billing.service import BillingService
-from api.services.payment.chain_client import REQUIRED_CONFIRMATIONS, get_chain_client
+from api.services.payment.chain_client import get_chain_client
+from api.services.settings import service as settings_svc
 
 logger = logging.getLogger("signal-saas.payment")
 
@@ -49,7 +50,7 @@ class PaymentService:
             amount_usdt=plan["price_usdt"],
             network=network,
             status="pending",
-            required_confirmations=REQUIRED_CONFIRMATIONS[network],
+            required_confirmations=settings_svc.get_chain_confirmations().get(network, 12),
         )
         self.db.add(order)
         await self.db.commit()
@@ -173,7 +174,7 @@ class PaymentService:
         await self._trigger_rewards(order)
 
     async def _trigger_rewards(self, order: PaymentOrder) -> None:
-        """按 Invite 关系给邀请人发 10% 奖励（★ G11：24h 核实期）。"""
+        """按 Invite 关系给邀请人发奖励（★ G11：核实期可配置）。"""
         identity = (
             await self.db.execute(select(Identity).where(Identity.user_id == order.user_id))
         ).scalars().first()
@@ -190,16 +191,17 @@ class PaymentService:
         )
         if existing_reward is not None:
             return
-        # ★ G11：48h 风控延长（detect_batch_abuse → verifying_hours=48）
+        # ★ G11：风控延长核实期（referral_verify_hours 默认 24h / 风控 referral_abuse_verify_hours 默认 48h）
         verifying_hours = await self._check_risk_extension(invite.inviter_id)
         from datetime import timedelta
 
         now = datetime.now(timezone.utc)
+        reward_pct = float(settings_svc.get_rule("referral_reward_pct") or 10.0)
         reward = Reward(
             owner_id=invite.inviter_id,
             source_user_id=order.user_id,
             source_payment_order_id=order.id,
-            amount_usdt=round(order.amount_usdt * 0.10, 2),
+            amount_usdt=round(order.amount_usdt * reward_pct / 100.0, 2),
             status="verifying",
             verifying_started_at=now,
             verifying_ends_at=now + timedelta(hours=verifying_hours),
@@ -226,8 +228,16 @@ class PaymentService:
             pass
 
     async def _check_risk_extension(self, inviter_id: int) -> int:
-        """★ G11：1h 内 ≥3 个下级只买试用 → 48h 风控延长；否则 24h。"""
+        """★ G11：1h 内 ≥阈值 个下级只买试用 → 风控延长核实期；否则正常核实期。参数后台可配置。"""
         from datetime import timedelta
+
+        threshold = int(settings_svc.get_rule("referral_abuse_trial_threshold") or 3)
+        normal_hours = int(settings_svc.get_rule("referral_verify_hours") or 24)
+        abuse_hours = int(settings_svc.get_rule("referral_abuse_verify_hours") or 48)
+        # 动态获取所有试用套餐 plan_id（后台可增删套餐）
+        trial_plans = [p["plan_id"] for p in settings_svc.get_plans() if p.get("trial")]
+        if not trial_plans:
+            return normal_hours
 
         one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
         rows = await self.db.execute(
@@ -235,13 +245,13 @@ class PaymentService:
             .join(Invite, Invite.invitee_id == PaymentOrder.user_id)
             .where(
                 Invite.inviter_id == inviter_id,
-                PaymentOrder.plan_id == "trial_5u",
+                PaymentOrder.plan_id.in_(trial_plans),
                 PaymentOrder.created_at >= one_hour_ago,
             )
             .distinct()
         )
         trial_count = len(rows.scalars().all())
-        return 48 if trial_count >= 3 else 24
+        return abuse_hours if trial_count >= threshold else normal_hours
 
     # ── ★ G09 三校验 ──
     @staticmethod

@@ -30,6 +30,39 @@ class ForceListIn(BaseModel):
     force_reason: str
 
 
+# ── 策略级风控（Redis 可配，键 risk:strategy:{id}:*，默认单笔 2000 / 回撤 25%）──
+STRATEGY_RISK_DEFAULTS = {
+    "max_order_notional": 2000.0,
+    "max_drawdown_pct": 25.0,
+}
+
+
+def _redis():
+    from redis import Redis
+
+    from api.core.config import get_settings
+
+    return Redis.from_url(get_settings().redis_url, decode_responses=True)
+
+
+def get_strategy_risk(strategy_id: int) -> dict:
+    """读取某策略级风控配置（未单独配置时返回默认值 + opt=None）。"""
+    r = _redis()
+    out = {}
+    for key, default in STRATEGY_RISK_DEFAULTS.items():
+        raw = r.get(f"risk:strategy:{strategy_id}:{key}")
+        if raw is None:
+            out[key] = default
+            out[f"{key}_set"] = False
+        else:
+            try:
+                out[key] = float(raw)
+            except ValueError:
+                out[key] = default
+            out[f"{key}_set"] = True
+    return out
+
+
 @router.get("/pending")
 async def pending_list(db: DbDep = None, _admin=Depends(get_current_admin)) -> dict:
     """待选池：无 Strategy 的 Trader + 最新画像快照。"""
@@ -91,6 +124,7 @@ async def list_strategies(
                 .limit(1)
             )
         ).scalars().first()
+        risk = get_strategy_risk(s.id)
         items.append(
             {
                 "id": s.id,
@@ -108,6 +142,8 @@ async def list_strategies(
                 "win_rate_all": profile.win_rate_all if profile else 0,
                 "max_drawdown": profile.max_drawdown if profile else 0,
                 "trading_days": profile.trading_days if profile else 0,
+                # ★ 策略级风控（Redis 可配，opt 为 None 表示未单独配置）
+                "risk": risk,
             }
         )
     return {"items": items}
@@ -171,3 +207,78 @@ async def set_gray(strategy_id: int, body: GrayIn, db: DbDep = None, admin=Depen
         before={"gray_pct": before}, after={"gray_pct": strategy.gray_pct},
     )
     return {"id": strategy_id, "gray_pct": strategy.gray_pct}
+
+
+class StrategyRiskIn(BaseModel):
+    max_order_notional: float | None = None
+    max_drawdown_pct: float | None = None
+
+
+class SyncIn(BaseModel):
+    trader_id: str | None = None  # 指定同步单个带单员；空则全量（后台异步）
+
+
+@router.post("/sync")
+async def sync_profiles(body: SyncIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
+    """★ 同步画像（后台「同步画像」按钮）：单带单员同步执行；全量投递 Celery 后台。"""
+    from api.core.errors import ValidationError
+
+    from api.workers.tasks_profile import run_sync_one_sync
+
+    await AuditService(db).log(
+        actor_id=admin["id"], action="strategy.sync_profile",
+        target_type="strategy", target_id=body.trader_id or "all",
+        after={"trader_id": body.trader_id},
+    )
+    if body.trader_id:
+        result = run_sync_one_sync(body.trader_id)
+        return {"mode": "one", "result": result}
+    # 全量：优先投递 Celery 后台任务；broker 不可用时降级同步执行 top 50
+    try:
+        from api.workers.celery_app import celery_app
+
+        task = celery_app.send_task("profile.sync_daily", kwargs={"limit": 50})
+        return {"mode": "all", "async": True, "task_id": getattr(task, "id", None)}
+    except Exception:  # noqa: BLE001 broker 不可用 → 同步降级
+        import asyncio
+
+        from api.workers.tasks_profile import run_sync_daily
+
+        count = asyncio.run(run_sync_daily(50))
+        return {"mode": "all", "async": False, "count": count, "note": "broker 不可用，已同步降级"}
+
+
+@router.get("/{strategy_id}/risk")
+async def get_risk(strategy_id: int, db: DbDep = None, _admin=Depends(get_current_admin)) -> dict:
+    """★ 策略级风控参数（Redis 可配，未配置返回默认值）。"""
+    strategy = await db.get(Strategy, strategy_id)
+    if strategy is None:
+        raise NotFoundError("策略不存在")
+    return {"id": strategy_id, **get_strategy_risk(strategy_id)}
+
+
+@router.patch("/{strategy_id}/risk")
+async def set_risk(strategy_id: int, body: StrategyRiskIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
+    """★ 更新策略级风控参数（audit 留痕）。"""
+    from api.core.errors import ValidationError
+
+    strategy = await db.get(Strategy, strategy_id)
+    if strategy is None:
+        raise NotFoundError("策略不存在")
+    payload = body.model_dump(exclude_none=True)
+    if not payload:
+        raise ValidationError("至少提供一个参数")
+    r = _redis()
+    before = get_strategy_risk(strategy_id)
+    for key, value in payload.items():
+        if key not in STRATEGY_RISK_DEFAULTS:
+            raise ValidationError(f"未知参数: {key}")
+        if value < 0:
+            raise ValidationError(f"{key} 不能为负")
+        r.set(f"risk:strategy:{strategy_id}:{key}", str(value))
+    await AuditService(db).log(
+        actor_id=admin["id"], action="strategy.risk_update",
+        target_type="strategy", target_id=str(strategy_id),
+        before=before, after=payload,
+    )
+    return {"id": strategy_id, **get_strategy_risk(strategy_id)}

@@ -7,7 +7,13 @@ import { useToast } from "@/components/Toast";
 
 type Rules = Record<string, number | boolean>;
 type HighRiskUser = { user_id: number; email: string; trigger: string; bind_1h: number; frozen_amount_usdt: number; status: string };
-type Strategy = { id: number; display_name: string; max_drawdown: number; status: string };
+type Strategy = {
+  id: number;
+  display_name: string;
+  max_drawdown: number;
+  status: string;
+  risk?: { max_order_notional: number; max_drawdown_pct: number; max_order_notional_set?: boolean; max_drawdown_pct_set?: boolean };
+};
 
 /** 风控中心：全局参数 4 卡 + 策略级风控 + 高危用户 + 紧急制动/限额/刷单检测。 */
 export default function AdminRiskPage() {
@@ -22,6 +28,9 @@ export default function AdminRiskPage() {
   const [flag, setFlag] = useState<boolean | null>(null);
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editVal, setEditVal] = useState("");
+  const [stratEdit, setStratEdit] = useState<Strategy | null>(null);
+  const [stratOrder, setStratOrder] = useState("");
+  const [stratDraw, setStratDraw] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -76,11 +85,53 @@ export default function AdminRiskPage() {
     }
   }
 
+  async function reviewHighRisk(u: HighRiskUser, freeze: boolean) {
+    try {
+      await apiFetch(
+        `/admin/v1/users/${u.user_id}/freeze`,
+        { method: "PATCH", body: JSON.stringify({ frozen: freeze }) },
+        tokenStore.adminAccess,
+      );
+      setHighRisk((prev) => prev.filter((x) => x.user_id !== u.user_id));
+      toast("success", freeze ? `已冻结 ${u.email}（复核中）` : `已解除风控标记 ${u.email}`);
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "操作失败");
+    }
+  }
+
   async function saveRule(key: string, value: number | boolean) {
     try {
       await apiFetch("/admin/v1/risk/rules", { method: "POST", body: JSON.stringify({ key, value }) }, tokenStore.adminAccess);
       setRules((prev) => ({ ...prev, [key]: value }));
       toast("success", "风控参数已更新（audit 留痕）");
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "更新失败");
+    }
+  }
+
+  function openStratEdit(s: Strategy) {
+    setStratEdit(s);
+    setStratOrder(String(s.risk?.max_order_notional ?? 2000));
+    setStratDraw(String(s.risk?.max_drawdown_pct ?? 25));
+  }
+
+  async function saveStratRisk() {
+    if (!stratEdit) return;
+    const order = Number(stratOrder);
+    const draw = Number(stratDraw);
+    if (Number.isNaN(order) || Number.isNaN(draw) || order <= 0 || draw <= 0) {
+      toast("error", "请输入大于 0 的数值");
+      return;
+    }
+    try {
+      await apiFetch(
+        `/admin/v1/signals/${stratEdit.id}/risk`,
+        { method: "PATCH", body: JSON.stringify({ max_order_notional: order, max_drawdown_pct: draw }) },
+        tokenStore.adminAccess,
+      );
+      setStrategies((prev) => prev.map((s) => (s.id === stratEdit.id ? { ...s, risk: { max_order_notional: order, max_drawdown_pct: draw, max_order_notional_set: true, max_drawdown_pct_set: true } } : s)));
+      toast("success", "策略风控已更新（audit 留痕）");
+      setStratEdit(null);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "更新失败");
     }
@@ -214,10 +265,13 @@ export default function AdminRiskPage() {
               {strategies.map((s) => (
                 <tr key={s.id}>
                   <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{s.display_name}</td>
-                  <td className="num" style={{ color: s.max_drawdown > 25 ? "#f87171" : undefined }}>{s.max_drawdown.toFixed(1)}%{s.max_drawdown > 25 ? "（接近红线）" : ""}</td>
-                  <td className="num">2,000</td>
+                  <td className="num" style={{ color: s.risk?.max_drawdown_pct && s.max_drawdown > s.risk.max_drawdown_pct ? "#f87171" : undefined }}>
+                    {s.risk?.max_drawdown_pct != null ? `${s.risk.max_drawdown_pct.toFixed(1)}%` : "25.0%"}
+                    {s.risk?.max_drawdown_pct_set ? "" : "（默认）"}
+                  </td>
+                  <td className="num">{s.risk?.max_order_notional != null ? s.risk.max_order_notional.toLocaleString() : "2,000"}</td>
                   <td>{s.status === "listed" ? <span className="badge badge-ok">正常</span> : <span className="badge badge-warn">关注</span>}</td>
-                  <td><button className="edit-btn" onClick={() => toast("info", "编辑策略风控参数")}>编辑</button></td>
+                  <td><button className="edit-btn" onClick={() => openStratEdit(s)}>编辑</button></td>
                 </tr>
               ))}
             </tbody>
@@ -248,9 +302,9 @@ export default function AdminRiskPage() {
                   <td className="num">{u.frozen_amount_usdt.toFixed(2)}</td>
                   <td><span className="badge badge-err">{u.status}</span></td>
                   <td>
-                    <button className="action-link" onClick={() => toast("warn", "已标记复核 · 审计留痕")}>复核</button>
+                    <button className="action-link" onClick={() => reviewHighRisk(u, true)}>复核</button>
                     {" · "}
-                    <button className="action-link danger" onClick={() => toast("success", "已解除风控标记")}>解除</button>
+                    <button className="action-link danger" onClick={() => reviewHighRisk(u, false)}>解除</button>
                   </td>
                 </tr>
               ))}
@@ -287,6 +341,30 @@ export default function AdminRiskPage() {
             <div className="modal-btn-row">
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setEditKey(null)}>取消</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={confirmEdit}>保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 策略级风控编辑弹窗 */}
+      {stratEdit && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-hdr">
+              <div className="modal-title">策略风控「{stratEdit.display_name}」</div>
+              <button className="modal-close" onClick={() => setStratEdit(null)}>✕</button>
+            </div>
+            <div className="field">
+              <label className="field-label">单笔上限（USDT）</label>
+              <input className="input" type="number" value={stratOrder} onChange={(e) => setStratOrder(e.target.value)} />
+            </div>
+            <div className="field">
+              <label className="field-label">最大回撤上限（%）</label>
+              <input className="input" type="number" value={stratDraw} onChange={(e) => setStratDraw(e.target.value)} />
+            </div>
+            <div className="modal-btn-row">
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStratEdit(null)}>取消</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={saveStratRisk}>保存</button>
             </div>
           </div>
         </div>
