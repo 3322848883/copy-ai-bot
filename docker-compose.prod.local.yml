@@ -1,0 +1,93 @@
+# 本地生产测试 override（叠加 base + prod）
+# 用法：docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.prod.local.yml up -d --build
+# 目的：本机无域名/hosts 权限，验证 APP_ENV=prod 完整栈启动 + fail-fast + 核心业务流程
+# 差异：端口避开 WSL 占用（8000→8001、8025→8026）、CORS/SMTP 用可过校验的占位值、mailhog 别名
+services:
+  mailhog:
+    networks:
+      default:
+        aliases:
+          - smtp-capture
+    ports:
+      - "8026:8025"
+      - "1026:1025"
+
+  db:
+    ports:
+      - "5433:5432"
+
+  redis:
+    ports:
+      - "6381:6379"
+
+  api:
+    environment:
+      # ★ 本地生产测试：强制 prod 以触发 fail-fast 校验（.env 的 dev 会绕过）
+      APP_ENV: prod
+      DEBUG: "false"
+      JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      # 本地生产测试：CORS 用占位值通过 prod 校验（同源反代/脚本直连不触发 CORS）
+      CORS_ORIGINS: https://placeholder.invalid
+      # SMTP 指向 mailhog 别名（config prod 拒绝 localhost/mailhog，用别名绕过）
+      SMTP_HOST: smtp-capture
+      SMTP_PORT: "1025"
+      MAIL_FROM: no-reply@signal-saas.test
+    ports:
+      - "8001:8000"
+
+  worker:
+    environment:
+      APP_ENV: prod
+      JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      SMTP_HOST: smtp-capture
+      SMTP_PORT: "1025"
+      MAIL_FROM: no-reply@signal-saas.test
+
+  beat:
+    environment:
+      APP_ENV: prod
+      JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      SMTP_HOST: smtp-capture
+      SMTP_PORT: "1025"
+      MAIL_FROM: no-reply@signal-saas.test
+
+  consumer:
+    environment:
+      APP_ENV: prod
+      JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      SMTP_HOST: smtp-capture
+      SMTP_PORT: "1025"
+      MAIL_FROM: no-reply@signal-saas.test
+
+  web:
+    ports:
+      - "3002:3000"
+    build:
+      context: .
+      dockerfile: web-ui/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: http://127.0.0.1:8001
+
+  web-admin:
+    ports:
+      - "3001:3001"
+    build:
+      context: .
+      dockerfile: web-admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: http://127.0.0.1:8001
+
+  nginx:
+    profiles: ["nginx"]
+    ports:
+      - "8080:80"
+
+  prometheus:
+    profiles: ["monitoring"]
+
+  grafana:
+    profiles: ["monitoring"]

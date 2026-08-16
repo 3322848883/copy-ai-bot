@@ -57,6 +57,11 @@ class TestProdRejectsDefaults:
         with pytest.raises(ValueError, match="CORS_ORIGINS"):
             Settings(_env_file=None)
 
+    def test_localhost_cors_rejected(self, monkeypatch):
+        _prod_env(monkeypatch, CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:3000")
+        with pytest.raises(ValueError, match="CORS_ORIGINS"):
+            Settings(_env_file=None)
+
     def test_local_db_rejected(self, monkeypatch):
         _prod_env(monkeypatch, DATABASE_URL="postgresql+asyncpg://signal:signal@localhost:5432/signal_saas")
         with pytest.raises(ValueError, match="DATABASE_URL"):
@@ -65,6 +70,11 @@ class TestProdRejectsDefaults:
     def test_empty_enabled_exchanges_rejected(self, monkeypatch):
         _prod_env(monkeypatch, ENABLED_EXCHANGES="")
         with pytest.raises(ValueError, match="ENABLED_EXCHANGES"):
+            Settings(_env_file=None)
+
+    def test_debug_true_rejected(self, monkeypatch):
+        _prod_env(monkeypatch, DEBUG="true")
+        with pytest.raises(ValueError, match="DEBUG"):
             Settings(_env_file=None)
 
 

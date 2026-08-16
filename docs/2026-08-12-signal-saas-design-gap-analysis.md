@@ -805,3 +805,26 @@ class PaymentService:
 ---
 
 > 本文档完成于 2026-08-12；共 20 条差异，11 条 🔴 必须修复，7 条 🟡 建议修复，2 条 🟢 可后置。
+
+---
+
+## 执行状态补充（2026-08-16）
+
+本文档所列后台相关差异与后续新增要求已落地，核对结果：
+
+- **后台 UI 全部对齐演示 HTML**：登录 / 数据概览 / 用户管理 / 主号审核 / 信号源审核 / 跟单订单 / 支付记录 / 邀请奖励 / 钱包账本 / 提现审核 / 交易所邀请码 / 风控中心 / 审计日志 / 信号源登录 共 13 页，按 `docs/2026-08-12-signal-saas-admin-*.html` 蓝本逐页重写，Playwright 端到端 13/13 通过、0 JS 错误。
+- **TOTP 双因素（原 V1.1 后置项）已实现**：pyotp + Redis 挑战码一次性验证；`totp-verify` / `totp/setup` / `totp/confirm` / `totp/disable` 四个端点；连续 5 次密码错误锁定 15 分钟。详见 `OPERATIONS_RUNBOOK.md` §8。
+- **CORS 中间件顺序修复**：429 限流响应原先绕过 CORSMiddleware 导致浏览器报 `No 'Access-Control-Allow-Origin'`，调整注册顺序后限流错误可正常透传前端。
+- **信号源登录页完善**：状态 KPI + 三步引导 + 远程浏览器视图工具栏 + 带单员搜索（`/signal-session/search` 由 API 暴露至 UI）。
+- **支付接口补充**：`/admin/v1/payments` 列表响应新增 `created_at` 字段（供数据概览"今日支付额"统计）。
+
+### 前台页面对齐（2026-08-16，追加）
+
+前台 9 个业务页面按 `docs/2026-08-12-signal-saas-*.html` 蓝本补齐，Playwright 端到端 9/9 通过、0 JS 错误：
+
+- **全站共性**：6 层信号宇宙背景（aurora/grid/dots/sweep/noise/particles）、页面容器 1240px、顶栏（品牌 logo + 通知铃铛下拉 + 用户 chip）、全局组件类（panel / ftx-table / badge / kpi-grid / chip / filter-bar / pagination / action-tag / toast）。
+- **登录/注册**：左侧品牌区双栏 + 玻璃拟态认证卡 + 登录/注册 Tab + 忘记密码入口（后端无接口，提示型）；注册 3 步指示器 + 条款勾选 + 密码强度 + 验证码倒计时 + 注册成功/风险揭示 + 首次引导 5 步（选所 → G27 交易所邀请码 → 好友码 → 完成）。
+- **策略广场/详情/我的跟单**：策略卡 spark 迷你曲线 + chip 筛选 + 页码分页 + 风格彩色标签；详情 hero 大卡 + 持仓卡片化 + 交易表 7 列 + 跟单弹窗高级字段（方向/保证金模式/单笔上限）；我的跟单暂停/恢复确认弹窗 + G10 订阅过期横幅 + 卡片 2×2 参数网格 + 空态引导。
+- **邀请/奖励/提现/账户/订阅**：邀请 10% Hero + 核实时间轴（倒计时/进度条）+ 收益趋势图 + 流水明细表 + 规则说明 + 5 统计卡；奖励可提现高亮首卡 + 流水 6 列 + 页头提现按钮；提现余额卡 + 二次确认弹窗 + 双栏布局；账户侧栏 4 Tab（概览/API/选所/安全）+ API 卡片 + 绑定弹窗；订阅正式版推荐标签 + 订阅状态卡（进度条/续费）+ 支付状态机 UI（pending 倒计时 / verifying 进度 / confirmed / failed / timeout / manual）+ G10 过期黄条。
+- **修复**：account 页 useState 初始化读 localStorage 导致 SSR hydration 报错（React #418），改为 useEffect 内读取。
+- **测试数据**：通过后台 API 从待选池上架 2 个策略（trader 30585 / 30879），供前台策略广场与详情展示。

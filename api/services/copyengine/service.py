@@ -99,12 +99,18 @@ class CopyEngine:
 
     @staticmethod
     def _gray_allowed(strategy_id: int, user_id: int, gray_pct: int) -> bool:
-        """★ M6 T6.1：稳定哈希放量，同一用户对同一策略结果恒定。"""
+        """★ M6 T6.1：稳定哈希放量，同一用户对同一策略结果恒定。
+        用 hashlib + 固定 seed 而非内建 hash()：内建 hash() 受 PYTHONHASHSEED 随机化，
+        跨进程/重启/多副本会导致同一用户放量结果不稳定。
+        """
+        import hashlib
+
         if gray_pct >= 100:
             return True
         if gray_pct <= 0:
             return False
-        bucket = hash(f"{strategy_id}:{user_id}") % 100
+        digest = hashlib.sha256(f"gray:{strategy_id}:{user_id}".encode()).hexdigest()
+        bucket = int(digest[:8], 16) % 100
         return bucket < gray_pct
 
     async def _process_bot(self, bot: CopyBot, sig: SourceSignal) -> CopyOrder | None:

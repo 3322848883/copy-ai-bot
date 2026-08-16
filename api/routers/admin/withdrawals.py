@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from api.deps import DbDep, get_current_admin
+from api.deps import DbDep, get_current_admin, require_admin
 from api.services.audit.service import AuditService
 from api.services.withdrawal.service import WithdrawalService
 
@@ -63,7 +63,7 @@ class ActionIn(BaseModel):
 
 
 @router.post("/{withdrawal_id}/approve")
-async def approve(withdrawal_id: int, _body: ApproveIn, db: DbDep = None, admin=Depends(get_current_admin)) -> dict:
+async def approve(withdrawal_id: int, _body: ApproveIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
     svc = WithdrawalService(db)
     wd = await svc.approve(withdrawal_id, admin["id"])
     await AuditService(db).log(
@@ -75,7 +75,7 @@ async def approve(withdrawal_id: int, _body: ApproveIn, db: DbDep = None, admin=
 
 
 @router.post("/{withdrawal_id}/reject")
-async def reject(withdrawal_id: int, body: RejectIn, db: DbDep = None, admin=Depends(get_current_admin)) -> dict:
+async def reject(withdrawal_id: int, body: RejectIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
     svc = WithdrawalService(db)
     wd = await svc.reject(withdrawal_id, admin["id"], body.reason)
     await AuditService(db).log(
@@ -87,7 +87,7 @@ async def reject(withdrawal_id: int, body: RejectIn, db: DbDep = None, admin=Dep
 
 
 @router.post("/{withdrawal_id}/fill-tx")
-async def fill_tx(withdrawal_id: int, body: FillTxIn, db: DbDep = None, admin=Depends(get_current_admin)) -> dict:
+async def fill_tx(withdrawal_id: int, body: FillTxIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
     svc = WithdrawalService(db)
     wd = await svc.fill_tx(withdrawal_id, admin["id"], body.tx_hash)
     await AuditService(db).log(
@@ -99,7 +99,7 @@ async def fill_tx(withdrawal_id: int, body: FillTxIn, db: DbDep = None, admin=De
 
 
 @router.post("/{withdrawal_id}/retry")
-async def retry(withdrawal_id: int, _body: ActionIn, db: DbDep = None, admin=Depends(get_current_admin)) -> dict:
+async def retry(withdrawal_id: int, _body: ActionIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
     svc = WithdrawalService(db)
     wd = await svc.retry(withdrawal_id)
     await AuditService(db).log(
@@ -111,7 +111,7 @@ async def retry(withdrawal_id: int, _body: ActionIn, db: DbDep = None, admin=Dep
 
 
 @router.post("/{withdrawal_id}/refund")
-async def refund(withdrawal_id: int, _body: ActionIn, db: DbDep = None, admin=Depends(get_current_admin)) -> dict:
+async def refund(withdrawal_id: int, _body: ActionIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
     svc = WithdrawalService(db)
     wd = await svc.refund(withdrawal_id)
     await AuditService(db).log(

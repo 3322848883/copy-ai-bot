@@ -39,21 +39,7 @@ class WithdrawalService:
         if amount_usdt > available:
             raise WithdrawalError(f"可提现余额不足：{available}U")
 
-        # 锁定：冻结对应 Reward（available → withdrawing）
-        rewards = (
-            await self.db.execute(
-                select(Reward).where(Reward.owner_id == user_id, Reward.status == "available")
-            )
-        ).scalars().all()
-        to_lock = amount_usdt
-        for r in rewards:
-            if to_lock <= 0:
-                break
-            r.status = "withdrawing"
-            to_lock = round(to_lock - r.amount_usdt, 2)
-        if to_lock > 0:
-            raise WithdrawalError("奖励拆分锁定失败，请重试")
-
+        # 先建提现单拿到 id，再把锁定 Reward 绑定到该单（★ 修复：并发提现互不干扰）
         wd = Withdrawal(
             user_id=user_id,
             amount_usdt=amount_usdt,
@@ -63,6 +49,41 @@ class WithdrawalService:
             status="pending_review",
         )
         self.db.add(wd)
+        await self.db.flush()
+
+        # 锁定：冻结对应 Reward（available → withdrawing），绑定 withdrawal_id
+        # ★ P0 修复：部分提现时拆分奖励，只锁定本次申请金额，避免整张奖励被吞没
+        rewards = (
+            await self.db.execute(
+                select(Reward).where(Reward.owner_id == user_id, Reward.status == "available")
+                .with_for_update()  # ★ 行锁：防并发两笔提现锁定同一张奖励（双花）
+            )
+        ).scalars().all()
+        to_lock = round(amount_usdt, 2)
+        for r in rewards:
+            if to_lock <= 0:
+                break
+            if r.amount_usdt <= to_lock:
+                r.status = "withdrawing"
+                r.withdrawal_id = wd.id
+                to_lock = round(to_lock - r.amount_usdt, 2)
+            else:
+                # 该奖励大于剩余需锁金额 → 拆分：原奖励保留盈余，新奖励绑定本次提现
+                split = Reward(
+                    owner_id=r.owner_id,
+                    source_user_id=r.source_user_id,
+                    source_payment_order_id=r.source_payment_order_id,
+                    amount_usdt=to_lock,
+                    status="withdrawing",
+                    withdrawal_id=wd.id,
+                )
+                self.db.add(split)
+                r.amount_usdt = round(r.amount_usdt - to_lock, 2)
+                to_lock = 0
+        if to_lock > 0:
+            await self.db.rollback()
+            raise WithdrawalError("奖励拆分锁定失败，请重试")
+
         await self.db.commit()
         await self.db.refresh(wd)
         await self._push_status(wd)
@@ -182,27 +203,31 @@ class WithdrawalService:
         return wd
 
     async def _release_funds(self, wd: Withdrawal) -> None:
-        """拒绝/退还：withdrawing → available。"""
+        """拒绝/退还：释放归属该提现单的 withdrawing 资金 → available。"""
         rewards = (
             await self.db.execute(
                 select(Reward).where(
                     Reward.owner_id == wd.user_id,
                     Reward.status == "withdrawing",
+                    Reward.withdrawal_id == wd.id,
                 )
             )
         ).scalars().all()
         for r in rewards:
             r.status = "available"
+            r.withdrawal_id = None
 
     async def _mark_paid(self, wd: Withdrawal) -> None:
-        """发放成功：withdrawing → paid。"""
+        """发放成功：归属该提现单的 withdrawing 资金 → paid。"""
         rewards = (
             await self.db.execute(
                 select(Reward).where(
                     Reward.owner_id == wd.user_id,
                     Reward.status == "withdrawing",
+                    Reward.withdrawal_id == wd.id,
                 )
             )
         ).scalars().all()
         for r in rewards:
             r.status = "paid"
+            r.withdrawal_id = None

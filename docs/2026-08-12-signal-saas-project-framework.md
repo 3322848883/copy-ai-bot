@@ -317,6 +317,13 @@ web-admin/
 
 隔离约束：独立登录入口、独立 cookie 名与 JWT audience、写接口强制写 audit-log、RBAC 双层权限。
 
+> ✅ **双 SPA 拆分已落地（2026-08-16）**：`web-admin` 为独立 Next.js 应用，前台/后台彻底隔离。
+> - **路由**：后台页面全部挂在应用根路径（`/`、`/users`、`/review`、`/orders`…），移除 `/admin` 前缀；后台 401 跳 `/login`。
+> - **容器**：独立 `web-admin/Dockerfile`（`PORT=3001`），`docker-compose.yml`/`docker-compose.prod.yml` 新增 `web-admin` 服务，生产不对外。
+> - **反代**：`deploy/nginx/nginx.conf` 增加后台子域 server 块（`${ADMIN_SUBDOMAIN}`），由 `docker-compose.prod.yml` 的 `envsubst` 注入域名；子域同源反代后台 SPA + `/v1`、`/admin/v1`。
+> - **构建 API base**：`web-admin` 构建期以 `NEXT_PUBLIC_API_BASE` 注入后台子域（生产）或 `http://localhost:8000`（本地）。
+> - **验证**：`web-admin` 独立构建通过（18 静态页）；`web-ui` 移除后台路由后独立构建通过（16 静态页）。
+
 > ✅ **后台 UI 成品已交付（2026-08-12）**：11 个页面全部完成（后台登录 / 数据概览 / 用户管理 / 信号源审核 / 跟单订单 / 支付记录 / 邀请奖励 / 钱包账本 / 提现审核 / 风控中心 / 审计日志），红色 ADMIN 设计语言 + 信号宇宙背景，全部互链。入口：[后台页面导航索引](./2026-08-12-signal-saas-admin-index.html)。上述 `web-admin/app/` 骨架全部有成品实现，可直接作为 M5 开发视觉蓝本。
 
 ---

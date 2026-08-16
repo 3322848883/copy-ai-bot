@@ -71,6 +71,38 @@ async def get_user_id_by_email(email_addr: str) -> int | None:
         await conn.close()
 
 
+async def prep_platform_pool(invite_code: str, exchange: str = "gate", label: str = "E2E平台池") -> None:
+    """预插 PlatformPool（★G06），幂等：已存在仅更新启用状态。"""
+    conn = await _connect()
+    try:
+        await conn.execute(
+            "INSERT INTO platform_pool(invite_code, exchange, label, is_active)"
+            " VALUES($1,$2,$3,true)"
+            " ON CONFLICT (invite_code) DO UPDATE SET is_active=true, exchange=$2, label=$3",
+            invite_code.upper(), exchange, label,
+        )
+    finally:
+        await conn.close()
+
+
+async def get_identity_type(user_id: int) -> str | None:
+    conn = await _connect()
+    try:
+        return await conn.fetchval("SELECT identity_type FROM identities WHERE user_id=$1", user_id)
+    finally:
+        await conn.close()
+
+
+async def count_audit_events(user_id: int, action: str) -> int:
+    conn = await _connect()
+    try:
+        return await conn.fetchval(
+            "SELECT count(*) FROM audit_events WHERE actor_id=$1 AND action=$2", user_id, action
+        ) or 0
+    finally:
+        await conn.close()
+
+
 async def prep_apikey(user_id: int, exchange: str) -> int:
     """DB 直插 ApiKey 记录（prod 模式真实交易所校验无法通过，bot 创建仅校验归属+交易所）。
     vault 加密字段用占位值；幂等：同 user+exchange 已存在则返回现有 id。"""

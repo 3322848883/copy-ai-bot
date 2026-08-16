@@ -20,7 +20,7 @@
 
 ## 技术栈
 
-- **后端**：Python 3.11 + FastAPI + SQLAlchemy（async）+ Alembic + Celery + Redis + JWT
+- **后端**：Python 3.11 + FastAPI + SQLAlchemy（async）+ Alembic + Celery + Redis + JWT + pyotp（后台 TOTP）
 - **前端**：Next.js 15（App Router）+ TypeScript，前台与后台同仓库隔离
 - **执行层**：决策 B，弃用 ccxt，直接对接 5 家交易所官方 API（AES-256-GCM 凭证保险库）
 - **数据**：PostgreSQL（生产）/ SQLite（本地开发一键直跑）
@@ -30,7 +30,7 @@
 
 - **决策 B**：执行层直接对接 5 家官方 API（`api/exchange_clients/`），适配器统一接口（test_connect / fetch_balance / check_permissions / place_order）。
 - **单体**：后端为单个 FastAPI 应用（`api/`），19 业务服务模块 + 前台/后台双端。
-- **隔离**：后台与前台完全隔离（独立登录 / JWT aud=admin / 写操作强制 audit-log）。
+- **隔离**：后台与前台完全隔离（独立登录 / JWT aud=admin / 写操作强制 audit-log / TOTP 双因素 + 5 次错误锁定 15 分钟）。
 - **双轨信号源**：模式 A 爬虫（Gate 带单广场，3-8s）/ 模式 B 跟单账户 WS 镜像（1.5-3s），信号清洗标准化，延迟红线 A>10s、B>5s 丢弃。
 - **跟单引擎**：USDT 本位换算 4 步法、独立虚拟账本隔离、8 类失败归因、币种/精度/余额风控。
 - **订阅变现**：试用/正式双套餐、多链支付自动核实（即时 3 项 + 4 次轮询）、到期禁开仓加仓、试用限购数据库强校验。
@@ -52,13 +52,17 @@
 │   ├── workers/         # Celery 任务（信号/画像/奖励/支付/提醒）
 │   ├── ws/              # WebSocket Hub（8 频道 + pnl.tick 周期推送）
 │   └── tests/           # 单元 + 集成测试
-├── web-ui/              # Next.js 15 前端（前台 + admin/ 后台）
-│   ├── app/             # 页面路由（含 admin/ 12 后台页面）
-│   ├── components/      # Nav / WsProvider / AdminShell / RiskDisclosureModal 等
-│   └── lib/             # api 客户端 + ws 客户端（心跳/重连/频道分发）
-├── deploy/              # docker-compose + prometheus + grafana
+├── web-ui/               # Next.js 15 前台 SPA（独立应用，无后台路由）
+│   ├── app/              # 前台页面路由（首页/策略/跟单/钱包/邀请/订阅）
+│   ├── components/       # Nav / WsProvider / RiskDisclosureModal 等
+│   └── lib/              # api 客户端 + ws 客户端（心跳/重连/频道分发）
+├── web-admin/            # Next.js 15 后台 SPA（独立应用，经子域访问）
+│   ├── app/              # 后台页面路由（根路径：/users /review /orders …）
+│   ├── components/       # AdminShell / ConfirmDialog / ExchangeTabs
+│   └── lib/              # admin api 客户端（adminAccess token）
+├── deploy/              # docker-compose + nginx + prometheus + grafana
 ├── docs/                # 设计 / 框架 / 开发计划 / 验收报告 / UI 成品（33 份）
-├── scripts/             # 建库 / 种子 / 验证脚本
+├── scripts/             # 建库 / 种子 / 备份 / 密钥轮换脚本
 └── data/                # 运行时数据（signal_session 会话，不入库）
 ```
 
@@ -84,14 +88,20 @@ uvicorn api.main:app --reload
 python scripts/rebuild_devdb.py
 python scripts/seed_demo.py
 
-# 5. 启动前端
+# 5. 启动前端（双 SPA：前台 + 后台各自独立应用）
 cd web-ui
 npm install
 npm run dev
-# 前台: http://localhost:3000   后台: http://localhost:3000/admin/login
+# 前台: http://localhost:3000
+
+# 另开终端启动后台
+cd ../web-admin
+npm install
+npm run dev
+# 后台: http://localhost:3001（独立应用，登录页 /login）
 ```
 
-> 本地测试账号：`alice@test.com / test123456`（前台用户），`admin@test.com / admin123456`（后台管理员）。
+> 本地测试账号：`alice@test.com / test123456`（前台用户），`admin@test.com / admin123456`（后台管理员）。生产本地测试环境：`648511672@qq.com / 648511672`（见 `scripts/set-prod-local-env.ps1`）。
 
 ## 环境变量（`.env`）
 
@@ -107,10 +117,22 @@ npm run dev
 | `SIGNAL_FOLLOWER_LEADER_IDS` | 模式 B 跟单 leader_id 列表 | `["32801","24264"]` |
 | `SIGNAL_SESSION_ENABLED` | 持久化浏览器会话（后台登录 Gate） | `true` |
 
+### 生产部署环境变量（`docker-compose.prod.yml` 强制必填）
+
+| 变量 | 说明 |
+|---|---|
+| `SITE_DOMAIN` | 前台主域名（如 `signal-saas.com`），nginx 反代 + TLS |
+| `ADMIN_SUBDOMAIN` | 后台子域（如 `admin.signal-saas.com`），独立 SPA 入口；证书须覆盖该子域 |
+| `CORS_ORIGINS` | 生产 CORS 白名单，须含前台域名 + 后台子域（如 `https://signal-saas.com,https://admin.signal-saas.com`）；禁止 `*`/`localhost` |
+| `POSTGRES_PASSWORD` | 生产 DB 密码 |
+| `GRAFANA_ADMIN_PASSWORD` | Grafana 管理员密码 |
+
+> 完整上线清单见 `docs/PRODUCTION_CHECKLIST.md`；操作演练见 `docs/OPERATIONS_RUNBOOK.md`。
+
 ## API 概览
 
 - 前台 `api/routers/v1/`：auth、identity、account、apikeys、strategies、bots、dashboard、subscriptions、payments、referrals、rewards、withdrawals、ws
-- 后台 `api/routers/admin/`（prefix `/admin/v1`，aud=admin）：auth、users、exchange_invites、signals、withdrawals、payments、audit、risk、signal_session、orders、review、wallets、invites
+- 后台 `api/routers/admin/`（prefix `/admin/v1`，aud=admin）：auth（含 TOTP 双因素：`totp-verify` / `totp/setup` / `totp/confirm` / `totp/disable`）、users、exchange_invites、signals、withdrawals、payments、audit、risk、signal_session、orders、review、wallets、invites
 - 实时 `GET /ws/stream?token=<JWT>`：鉴权（aud=web）后推送 8 频道，30s 心跳保活，断线自动重连
 
 ## 里程碑

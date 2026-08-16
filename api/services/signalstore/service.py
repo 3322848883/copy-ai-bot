@@ -94,6 +94,11 @@ class SignalStore:
             return sig
         await self.db.refresh(sig)
 
+        # ★ M6 T6.2：信号源监控打点（signal_received_total）
+        from api.core import metrics as M
+
+        M.signal_received_total.labels(exchange=ns.exchange, source=ns.source_mode).inc()
+
         # Redis Pub/Sub 事件（M3 copy-engine 订阅）
         await self.redis.publish(
             TOPIC_SIGNAL_NEW,

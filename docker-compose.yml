@@ -176,5 +176,18 @@ services:
       - "3000:3000"
     restart: unless-stopped
 
+  # ★ 独立后台 SPA（M5 结构偏差消除：与前台 web-ui 完全隔离，独立镜像/端口）
+  web-admin:
+    build:
+      context: .
+      dockerfile: web-admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: http://localhost:8000
+    depends_on:
+      - api
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+
 volumes:
   pgdata:

@@ -21,7 +21,7 @@ class MockAdapterMixin(ExchangeAdapter):
     async def set_leverage(self, symbol: str, leverage: int, api_key: str, api_secret: str) -> None:
         return None
 
-    async def set_margin_mode(self, symbol: str, mode: str, api_key: str, api_secret: str) -> None:
+    async def set_margin_mode(self, symbol: str, mode: str, leverage: int, api_key: str, api_secret: str) -> None:
         return None
 
     async def place_order(

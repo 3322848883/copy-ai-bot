@@ -1,12 +1,24 @@
 "use client";
 
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
 import Link from "next/link";
 import { apiFetch, tokenStore } from "@/lib/api";
 import RiskDisclosureModal from "@/components/RiskDisclosureModal";
+import AuthBrand from "@/components/AuthBrand";
+import { ToastStack, useToasts } from "@/components/Toast";
+import * as S from "@/components/authStyles";
 
+/** ★ 登录页：对齐设计稿（双栏品牌区 + 玻璃拟态认证卡 + Tab 滑动高亮 + 忘记密码入口）。 */
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -14,6 +26,23 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [riskOpen, setRiskOpen] = useState(false);
+  /** 卡片内视图：login（登录）| forgot（忘记密码，提示型入口） */
+  const [view, setView] = useState<"login" | "forgot">("login");
+  const [tab, setTab] = useState<"login" | "register">("login");
+  const [forgotEmail, setForgotEmail] = useState("");
+  const { toasts, push } = useToasts();
+
+  /** 响应式：<900px 隐藏品牌区、卡片单列（设计稿 @media max-width:900px） */
+  const [wide, setWide] = useState(true);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 900px)");
+    const update = () => setWide(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  const activated = searchParams.get("activated") === "1";
 
   /** ★ M3 修复：回跳受保护页面（middleware 的 ?next= 参数，同源校验）。 */
   function redirectAfterLogin() {
@@ -35,6 +64,8 @@ export default function LoginPage() {
         { method: "POST", body: JSON.stringify({ email, password }) }
       );
       tokenStore.set(res);
+      // 保存邮箱（个人中心概览展示用）
+      localStorage.setItem("ss_email", email);
       if (res.risk_disclosure_accepted === false && !tokenStore.riskAccepted) {
         // ★ T1.9：首次登录强制风险揭示
         setRiskOpen(true);
@@ -59,34 +90,158 @@ export default function LoginPage() {
     }
   }
 
+  /** ★ 忘记密码：后端 api/routers/v1/auth.py 无 forgot/reset 端点 → 提示型入口（联系管理员重置）。 */
+  function onForgotSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      push("warn", "请输入邮箱");
+      return;
+    }
+    push("warn", "自助密码重置暂未开放（后端无 forgot/reset 接口），请联系管理员重置密码");
+  }
+
   return (
-    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", position: "relative" }}>
-      <div className="aurora" />
-      <div className="grid-bg" />
-      <div className="card" style={{ width: 400, position: "relative", zIndex: 1 }}>
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 22, fontWeight: 700, color: "#00d4aa" }}>signal·saas</div>
-          <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>信号聚合跟单平台 · 登录</div>
-        </div>
-        {error && <div className="error-box">{error}</div>}
-        <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div>
-            <label className="label">邮箱</label>
-            <input className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+    <main style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+      <div style={{ ...S.authWrap, gridTemplateColumns: wide ? "1fr 460px" : "1fr", maxWidth: wide ? 1120 : 520 }}>
+        {/* 左侧品牌区 */}
+        <AuthBrand visible={wide} />
+
+        {/* 右侧玻璃拟态认证卡片 */}
+        <div style={S.authCard}>
+          {/* Tab 切换（auth-tabs 滑动高亮；注册保留独立路由 /register） */}
+          <div style={S.tabsWrap}>
+            <div
+              style={{
+                ...S.tabIndicator,
+                transform: tab === "login" ? "translateX(0)" : "translateX(calc(100% + 4px))",
+              }}
+            />
+            <button
+              type="button"
+              style={{ ...S.tabBtn, color: tab === "login" ? "#06281f" : "var(--muted)", fontWeight: tab === "login" ? 600 : 500 }}
+              onClick={() => {
+                setTab("login");
+                setView("login");
+              }}
+            >
+              登 录
+            </button>
+            <button
+              type="button"
+              style={{ ...S.tabBtn, color: tab === "register" ? "#06281f" : "var(--muted)", fontWeight: tab === "register" ? 600 : 500 }}
+              onClick={() => router.push("/register")}
+            >
+              注 册
+            </button>
           </div>
-          <div>
-            <label className="label">密码</label>
-            <input className="input" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="至少 8 位" />
-          </div>
-          <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? "登录中…" : "登 录"}
-          </button>
-        </form>
-        <div style={{ marginTop: 20, fontSize: 13, color: "var(--muted)", textAlign: "center" }}>
-          还没有账号？ <Link href="/register" style={{ color: "var(--accent)" }}>立即注册</Link>
+
+          {view === "login" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {activated && (
+                <div style={{ background: "rgba(40,196,100,0.1)", border: "1px solid rgba(40,196,100,0.35)", color: "var(--success)", borderRadius: 6, padding: "10px 14px", fontSize: 13 }}>
+                  ✓ 邮箱验证成功，请使用新账号登录
+                </div>
+              )}
+              {error && <div className="error-box">{error}</div>}
+              <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={S.field}>
+                  <label style={S.fieldLabel}>邮箱</label>
+                  <input
+                    className="input"
+                    style={{ ...S.input48, ...S.inputMono }}
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                  />
+                </div>
+                <div style={S.field}>
+                  <label style={S.fieldLabel}>
+                    密码
+                    <a style={S.link} onClick={() => setView("forgot")}>
+                      忘记密码？
+                    </a>
+                  </label>
+                  <input
+                    className="input"
+                    style={S.input48}
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setError("");
+                    }}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                  />
+                </div>
+                <button className="btn btn-primary" type="submit" disabled={loading} style={S.btnPrimary48}>
+                  {loading ? "登录中…" : "登 录"}
+                </button>
+              </form>
+              <div style={S.divider}>
+                <span style={S.dividerLine} />
+                或
+                <span style={S.dividerLine} />
+              </div>
+              <button className="btn btn-secondary" type="button" style={S.btnSecondary48} onClick={() => push("info", "V1 暂不支持验证码登录，请使用密码登录或注册")}>
+                使用邮箱验证码登录
+              </button>
+              <div style={S.authFoot}>
+                没有账号？ <Link href="/register" style={S.link}>立即注册</Link>
+              </div>
+            </div>
+          ) : (
+            /* ★ 忘记密码视图（3 步指示器；后端无接口 → 提示型入口：联系管理员重置） */
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={S.subTitle}>重置密码</div>
+              <div style={S.steps}>
+                <div style={{ ...S.stepItem, ...S.stepActiveColor }}>
+                  <span style={{ ...S.stepNum, ...S.stepActiveNum }}>1</span>邮箱
+                </div>
+                <div style={S.stepLine} />
+                <div style={S.stepItem}>
+                  <span style={S.stepNum}>2</span>新密码
+                </div>
+                <div style={S.stepLine} />
+                <div style={S.stepItem}>
+                  <span style={S.stepNum}>3</span>完成
+                </div>
+              </div>
+              <form onSubmit={onForgotSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={S.field}>
+                  <label style={S.fieldLabel}>邮箱</label>
+                  <input
+                    className="input"
+                    style={{ ...S.input48, ...S.inputMono }}
+                    type="email"
+                    required
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <div style={S.riskBox}>
+                  <span>⚠</span>
+                  <span>自助密码重置暂未开放（后端暂无 forgot/reset 接口）。如需重置密码，请联系管理员处理。</span>
+                </div>
+                <button className="btn btn-primary" type="submit" style={S.btnPrimary48}>
+                  发送验证码
+                </button>
+              </form>
+              <div style={S.authFoot}>
+                <a style={S.link} onClick={() => setView("login")}>← 返回登录</a>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
       <RiskDisclosureModal open={riskOpen} onConfirm={onRiskConfirm} />
+      <ToastStack toasts={toasts} />
     </main>
   );
 }

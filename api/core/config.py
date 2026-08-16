@@ -63,6 +63,9 @@ class Settings(BaseSettings):
 
     # ── M6 T6.3 安全：CORS 白名单（逗号分隔），生产收紧 ──
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # ★ 本地生产测试专用：显式开启后允许 localhost/127.0.0.1 进 CORS 白名单
+    #   仅用于本机无域名/无 nginx 反代的跨源联调；生产部署绝不设置此开关
+    cors_allow_local_test: bool = False
 
     # ── M6 T6.1 灰度默认值 ──
     strategy_default_gray_pct: int = 20
@@ -109,6 +112,8 @@ class Settings(BaseSettings):
         errors: list[str] = []
         if self.jwt_secret == "change-me-in-prod" or len(self.jwt_secret) < 32:
             errors.append("JWT_SECRET 必须 ≥32 位且非默认值")
+        if self.debug is not False:
+            errors.append("DEBUG 生产必须为 false")
         if self.vault_key_hex == "0" * 64 or len(self.vault_key_hex) != 64:
             errors.append("VAULT_KEY_HEX 必须为 64 位 hex 且非全 0")
         else:
@@ -120,6 +125,10 @@ class Settings(BaseSettings):
             errors.append("SMTP_HOST 不能为本地调试地址（mailhog）")
         if "*" in self.cors_origins or not self.cors_origins.strip():
             errors.append("CORS_ORIGINS 生产不能为 * 或空")
+        # ★ 修复：生产 CORS 拒绝 localhost/127.0.0.1（纵深防御，防止默认白名单上线）
+        #   本地生产测试可显式设 CORS_ALLOW_LOCAL_TEST=1 放行（仅本机联调）
+        if any(h in self.cors_origins for h in ("localhost", "127.0.0.1")) and not self.cors_allow_local_test:
+            errors.append("CORS_ORIGINS 生产不能包含 localhost/127.0.0.1")
         # ★ 修复：拦截任意 host 的默认弱口令连接串（含 signal:signal@db 等）
         if "://signal:signal@" in self.database_url:
             errors.append("DATABASE_URL 不能使用默认弱口令 signal:signal")

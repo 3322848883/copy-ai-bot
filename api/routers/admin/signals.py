@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from api.core.errors import NotFoundError
-from api.deps import DbDep, get_current_admin
-from api.models.signal import Strategy
+from api.deps import DbDep, get_current_admin, require_admin
+from api.models.signal import Strategy, Trader
 from api.services.audit.service import AuditService
 from api.services.strategies.service import StrategyService
 
@@ -51,6 +51,7 @@ async def pending_list(db: DbDep = None, _admin=Depends(get_current_admin)) -> d
         items.append(
             {
                 "id": trader.id,
+                "exchange": trader.exchange,
                 "trader_id": trader.trader_id,
                 "name": trader.trader_id,
                 "roi_7d": profile.roi_7d if profile else 0,
@@ -59,7 +60,7 @@ async def pending_list(db: DbDep = None, _admin=Depends(get_current_admin)) -> d
                 "win_rate_all": profile.win_rate_all if profile else 0,
                 "max_drawdown": profile.max_drawdown if profile else 0,
                 "trading_days": profile.trading_days if profile else 0,
-                "followers": 0,
+                "followers": trader.followers or 0,
             }
         )
     return {"items": items}
@@ -81,6 +82,7 @@ async def list_strategies(
     rows = (await db.execute(stmt)).scalars().all()
     items = []
     for s in rows:
+        trader = await db.get(Trader, s.trader_id)
         profile = (
             await db.execute(
                 select(TraderProfile)
@@ -92,20 +94,27 @@ async def list_strategies(
         items.append(
             {
                 "id": s.id,
+                "trader_id": s.trader_id,
+                "exchange": s.source_exchange,
                 "display_name": s.display_name,
                 "style": s.style,
                 "risk_rating": s.risk_rating,
                 "status": s.status,
-                "followers": 0,
+                "followers": trader.followers if trader else 0,
+                "roi_7d": profile.roi_7d if profile else 0,
                 "roi_30d": profile.roi_30d if profile else 0,
+                "roi_all": profile.roi_all if profile else 0,
+                "win_rate_30d": profile.win_rate_30d if profile else 0,
                 "win_rate_all": profile.win_rate_all if profile else 0,
+                "max_drawdown": profile.max_drawdown if profile else 0,
+                "trading_days": profile.trading_days if profile else 0,
             }
         )
     return {"items": items}
 
 
 @router.post("")
-async def force_list(body: ForceListIn, db: DbDep = None, admin=Depends(get_current_admin)) -> dict:
+async def force_list(body: ForceListIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
     """★ G04：强制上架（跳过门槛，必须填理由留痕 audit-log）。"""
     svc = StrategyService(db)
     strategy, gate = await svc.add_strategy(
@@ -129,7 +138,7 @@ async def force_list(body: ForceListIn, db: DbDep = None, admin=Depends(get_curr
 
 
 @router.patch("/{strategy_id}/status")
-async def update_status(strategy_id: int, body: StatusIn, db: DbDep = None, admin=Depends(get_current_admin)) -> dict:
+async def update_status(strategy_id: int, body: StatusIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
     svc = StrategyService(db)
     strategy = await svc.update_status(strategy_id, body.status, actor_id=admin["id"])
     # ★ M6 T5.19：strategy.update 实时推送
@@ -143,7 +152,7 @@ async def update_status(strategy_id: int, body: StatusIn, db: DbDep = None, admi
 
 
 @router.patch("/{strategy_id}/gray")
-async def set_gray(strategy_id: int, body: GrayIn, db: DbDep = None, admin=Depends(get_current_admin)) -> dict:
+async def set_gray(strategy_id: int, body: GrayIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
     """★ M6 T6.1 灰度发布：设置放量比例（0-100），audit 留痕。"""
     from api.core.errors import ValidationError
 

@@ -73,3 +73,23 @@ def test_headless_args_new_mode():
 def test_headless_args_old_mode():
     """无头 old 模式：--headless=old。"""
     assert GateScraper._headless_args(True, "old") == ["--headless=old"]
+
+
+# ── 灰度放量哈希稳定性（M6 P1 修复）──
+def test_gray_allowed_boundaries():
+    """灰度边界：100 全量、0 全拦、中间按比例。"""
+    assert CopyEngine._gray_allowed(1, 1, 100) is True
+    assert CopyEngine._gray_allowed(1, 1, 0) is False
+
+
+def test_gray_allowed_deterministic_across_calls():
+    """同一用户/策略/比例 → 结果恒定（跨进程稳定）。"""
+    a = CopyEngine._gray_allowed(42, 7, 30)
+    b = CopyEngine._gray_allowed(42, 7, 30)
+    assert a == b
+
+
+def test_gray_allowed_distribution_roughly_correct():
+    """100 个用户放量 30% → 命中数接近 30（±8）。"""
+    hits = sum(CopyEngine._gray_allowed(1, uid, 30) for uid in range(100))
+    assert 22 <= hits <= 38, f"灰度命中偏离过大: {hits}"

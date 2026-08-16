@@ -25,3 +25,5 @@ tronpy>=0.4
 web3>=6.15
 # 监控（M6 T6.2：/metrics Prometheus 文本格式）
 prometheus-client>=0.20
+# 后台双因素（TOTP，RFC 6238）
+pyotp>=2.9

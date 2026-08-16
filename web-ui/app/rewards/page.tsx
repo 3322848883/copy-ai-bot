@@ -6,14 +6,20 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 
 type Balance = { total_usdt: number; available_usdt: number; withdrawing_usdt: number; paid_usdt: number; frozen_usdt: number };
-type LedgerItem = { id: number; amount_usdt: number; status: string; verifying_ends_at: string | null };
+type LedgerItem = { id: number; amount_usdt: number; status: string; verifying_ends_at: string | null; created_at?: string | null };
 
-const STATUS_LABEL: Record<string, string> = {
-  verifying: "核实中", available: "可提现", withdrawing: "提现中",
-  paid: "已发放", frozen: "冻结", canceled: "已取消", paid_failed: "发放失败", rolled_back: "已回滚",
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  verifying: { label: "核实中", cls: "badge-warn" },
+  available: { label: "可提现", cls: "badge-ok" },
+  withdrawing: { label: "提现中", cls: "badge-info" },
+  paid: { label: "已发放", cls: "badge-ok" },
+  frozen: { label: "冻结", cls: "badge-err" },
+  canceled: { label: "已取消", cls: "badge-err" },
+  paid_failed: { label: "发放失败", cls: "badge-err" },
+  rolled_back: { label: "已回滚", cls: "badge-muted" },
 };
 
-/** M4 T4.11 奖励余额：★G12 5 字段 + 24h/48h 核实倒计时 + 流水。 */
+/** M4 T4.11 奖励余额：★G12 5 字段（首卡高亮）+ 6 列流水 + 筛选角标 + 方块分页 + 倒计时。 */
 export default function RewardsPage() {
   const router = useRouter();
   const [bal, setBal] = useState<Balance | null>(null);
@@ -31,7 +37,7 @@ export default function RewardsPage() {
     ["paid", "已发放"],
     ["frozen", "冻结"],
   ];
-  const PAGE_SIZE = 10;
+  const PAGE_SIZE = 8;
   const filtered = filter === "all" ? ledger : ledger.filter((i) => i.status === filter);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -66,93 +72,140 @@ export default function RewardsPage() {
     const h = Math.floor(diff / 3_600_000);
     const m = Math.floor((diff % 3_600_000) / 60_000);
     const s = Math.floor((diff % 60_000) / 1000);
-    return `${h}时 ${m}分 ${s}秒`;
+    return `${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`;
   }
 
-  const cards: Array<[string, number | undefined, string]> = [
-    ["累计奖励", bal?.total_usdt, ""],
-    ["可提现", bal?.available_usdt, "success"],
-    ["提现中", bal?.withdrawing_usdt, ""],
-    ["已提现", bal?.paid_usdt, ""],
-    ["冻结（核实中）", bal?.frozen_usdt, "warning"],
+  const cards: Array<{ label: string; val: number | undefined; color?: string; sub: string; highlight?: boolean }> = [
+    { label: "可提现余额", val: bal?.available_usdt, color: "var(--accent)", sub: "USDT · 可立即申请提现", highlight: true },
+    { label: "累计奖励", val: bal?.total_usdt, sub: "USDT · 所有记录 SUM（含取消/回滚）" },
+    { label: "提现中", val: bal?.withdrawing_usdt, color: "#60a5fa", sub: "USDT · 审核 / 打款中" },
+    { label: "已提现", val: bal?.paid_usdt, color: "var(--muted)", sub: "USDT · 含链上 TxHash" },
+    { label: "冻结", val: bal?.frozen_usdt, color: "var(--danger)", sub: "USDT · 48h 风控核实中（G11）" },
   ];
+
+  function remark(item: LedgerItem): string {
+    switch (item.status) {
+      case "verifying": return `24h 核实 · 剩余 ${countdown(item.verifying_ends_at)}`;
+      case "frozen": return "48h 风控核实（G11）";
+      case "available": return "核实通过 · 已计入可提现";
+      case "withdrawing": return "已发起提现";
+      case "paid": return "已转入提现流程 · TxHash 已记录";
+      case "canceled": return "下级退款 · 奖励回滚";
+      case "rolled_back": return "奖励回滚（风控）";
+      case "paid_failed": return "发放失败 · 异常池";
+      default: return "—";
+    }
+  }
+
+  const pageNums = Array.from({ length: totalPages }, (_, i) => i + 1);
+  const startPage = Math.max(1, Math.min(page - 2, totalPages - 4));
+  const visiblePages = pageNums.slice(startPage - 1, startPage + 4);
 
   return (
     <main style={{ minHeight: "100vh", position: "relative" }}>
       <div className="aurora" />
       <div className="grid-bg" />
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "48px 24px", position: "relative", zIndex: 1 }}>
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>奖励余额</div>
-          <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>邀请奖励 · 10% 返佣 · 24h/48h 核实</div>
+      <div className="page-wrap">
+        {/* 页头 + 右上"提现"大按钮 */}
+        <div className="page-hdr">
+          <div>
+            <div className="page-eyebrow">REWARD BALANCE · 奖励余额</div>
+            <h1 className="page-title">奖励余额<small>邀请奖励 · 5 字段账本</small></h1>
+          </div>
+          <div className="page-actions">
+            <Link href="/withdraw">
+              <button className="btn btn-primary" style={{ height: 44, padding: "0 32px", fontSize: 15 }}>提现</button>
+            </Link>
+          </div>
         </div>
 
-        {/* ★ G12 5 字段 */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 24 }}>
-          {cards.map(([label, val, tone]) => (
-            <div key={label} className="card" style={{ padding: 18 }}>
-              <div style={{ color: "var(--muted)", fontSize: 12 }}>{label}</div>
-              <div style={{ fontSize: 20, fontWeight: 800, marginTop: 6, color: tone === "success" ? "var(--success)" : tone === "warning" ? "var(--warning)" : "var(--fg)" }}>
-                {(val ?? 0).toFixed(2)} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)" }}>USDT</span>
+        {/* 5 字段账本：首卡 accent 渐变 + 实线顶 + 28px 数字 */}
+        <div className="kpi-grid" style={{ marginBottom: 24 }}>
+          {cards.map((c) => (
+            <div
+              key={c.label}
+              className="kpi-card"
+              style={
+                c.highlight
+                  ? { borderColor: "rgba(0,212,170,0.45)", background: "linear-gradient(135deg, rgba(0,212,170,0.06), var(--surface))", borderTop: "2px solid var(--accent)" }
+                  : undefined
+              }
+            >
+              <div className="kpi-l">{c.label}</div>
+              <div className="kpi-v" style={{ fontSize: c.highlight ? 28 : 26, color: c.color }}>
+                {(c.val ?? 0).toFixed(2)}
               </div>
+              <div className="kpi-s">{c.sub}</div>
             </div>
           ))}
         </div>
 
-        <Link href="/withdraw" style={{ display: "inline-block", marginBottom: 28 }}>
-          <button className="btn btn-primary">申请提现（≥10U，手续费 1U）</button>
-        </Link>
+        {/* 奖励流水：6 列 ftx-table + 筛选角标 + 方块分页 */}
+        <div className="panel">
+          <div className="panel-hdr">
+            <div className="panel-title"><span className="sec-dot"></span>奖励流水</div>
+            <span className="panel-sub">时间 / 来源 / 下级 / 金额 / 状态 / 备注</span>
+          </div>
 
-        <div className="card">
-          <div style={{ fontWeight: 600, marginBottom: 12 }}>奖励流水</div>
-
-          {/* ★ 状态筛选 Tabs */}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+          {/* 状态筛选 Tabs（数量角标） */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
             {FILTERS.map(([key, label]) => {
               const count = key === "all" ? ledger.length : ledger.filter((i) => i.status === key).length;
               return (
                 <button
                   key={key}
+                  className={`chip${filter === key ? " active" : ""}`}
                   onClick={() => { setFilter(key); setPage(1); }}
-                  style={{
-                    padding: "4px 12px", borderRadius: 16, fontSize: 12, cursor: "pointer",
-                    border: filter === key ? "1px solid var(--accent)" : "1px solid var(--rule)",
-                    background: filter === key ? "var(--accent-soft)" : "transparent",
-                    color: filter === key ? "var(--accent)" : "var(--muted)",
-                  }}
                 >
-                  {label} {count}
+                  {label} <span style={{ fontFamily: "var(--font-geist-mono), monospace", opacity: 0.75 }}>{count}</span>
                 </button>
               );
             })}
           </div>
 
           {pageItems.length === 0 ? (
-            <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>该状态下暂无奖励记录</div>
+            <div className="empty-state" style={{ minHeight: 180 }}>
+              <div className="es-ic">◇</div>
+              <div style={{ fontSize: 13 }}>该状态下暂无奖励记录</div>
+            </div>
           ) : (
-            pageItems.map((item) => (
-              <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--rule)", fontSize: 13 }}>
-                <div>
-                  <div style={{ fontWeight: 600 }}>+{item.amount_usdt.toFixed(2)} USDT</div>
-                  <div style={{ color: "var(--muted)", fontSize: 11 }}>
-                    {item.status === "verifying" && item.verifying_ends_at
-                      ? `核实倒计时 ${countdown(item.verifying_ends_at)}`
-                      : STATUS_LABEL[item.status] || item.status}
-                  </div>
-                </div>
-                <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: item.status === "available" ? "rgba(40,196,100,.15)" : "rgba(100,116,139,.15)", color: item.status === "available" ? "var(--success)" : "var(--muted)" }}>
-                  {STATUS_LABEL[item.status] || item.status}
-                </span>
-              </div>
-            ))
+            <table className="ftx-table">
+              <thead>
+                <tr><th>时间</th><th>来源</th><th>下级</th><th className="num">金额</th><th>状态</th><th>备注</th></tr>
+              </thead>
+              <tbody>
+                {pageItems.map((item) => {
+                  const st = STATUS_META[item.status] || { label: item.status, cls: "badge-muted" };
+                  const negative = item.status === "canceled" || item.status === "rolled_back";
+                  return (
+                    <tr key={item.id}>
+                      <td className="num">{item.created_at ? item.created_at.slice(0, 16) : "—"}</td>
+                      <td>{negative ? "奖励回滚" : "订阅奖励"}</td>
+                      <td>—</td>
+                      <td className="num" style={{ color: negative ? "var(--danger)" : "var(--success)" }}>
+                        {negative ? "-" : "+"}{item.amount_usdt.toFixed(2)} U
+                      </td>
+                      <td><span className={`badge ${st.cls}`}>{st.label}</span></td>
+                      <td className="sub-ref">{remark(item)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           )}
 
-          {/* ★ 分页 */}
+          {/* 页码方块分页 */}
           {totalPages > 1 && (
-            <div style={{ display: "flex", justifyContent: "center", gap: 8, alignItems: "center", paddingTop: 14 }}>
-              <button className="btn btn-secondary" style={{ padding: "4px 12px", fontSize: 12 }} disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</button>
-              <span style={{ fontSize: 13, color: "var(--muted)" }}>{page} / {totalPages}</span>
-              <button className="btn btn-secondary" style={{ padding: "4px 12px", fontSize: 12 }} disabled={page >= totalPages} onClick={() => setPage(page + 1)}>下一页</button>
+            <div className="pagination">
+              <button className="page-btn" disabled={page <= 1} onClick={() => setPage(page - 1)}>‹</button>
+              {startPage > 1 && <span style={{ fontSize: 12, color: "var(--tertiary)" }}>…</span>}
+              {visiblePages.map((n) => (
+                <button key={n} className={`page-btn${n === page ? " active" : ""}`} onClick={() => setPage(n)}>
+                  {n}
+                </button>
+              ))}
+              {startPage + 4 < totalPages && <span style={{ fontSize: 12, color: "var(--tertiary)" }}>…</span>}
+              <button className="page-btn" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>›</button>
             </div>
           )}
         </div>

@@ -184,6 +184,7 @@ async def list_orders(
                 "confirmations": o.confirmations,
                 "required": o.required_confirmations,
                 "poll_attempts": o.poll_attempts,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
             }
             for o in rows
         ],

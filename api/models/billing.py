@@ -47,6 +47,8 @@ class Reward(TimestampMixin, Base):
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     source_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     source_payment_order_id: Mapped[int] = mapped_column(ForeignKey("payment_orders.id"))
+    # ★ 生产修复：锁定资金归属于具体提现单，避免并发提现互相解锁/误发
+    withdrawal_id: Mapped[int | None] = mapped_column(ForeignKey("withdrawals.id"), nullable=True, index=True)
     amount_usdt: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(16), default="verifying")
     # verifying / available / withdrawing / paid / frozen / canceled / paid_failed / rolled_back

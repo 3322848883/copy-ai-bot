@@ -876,6 +876,11 @@ WSS;JWT in subprotocol 或 query;帧 `{channel, payload}`。
 | POST | /admin/v1/withdrawals/{id}/{approve,reject,fill-tx,retry,refund} | 审核操作 |
 | GET/PATCH | /admin/v1/risk/{rules,strategies/{id}} | 全局/策略级风控参数 |
 | GET | /admin/v1/audit | 审计日志 |
+| POST | /admin/v1/auth/totp-verify | TOTP 双因素验证（挑战一次性）→ 签发令牌 |
+| GET | /admin/v1/auth/totp/status | 当前管理员 TOTP 启用状态 |
+| POST | /admin/v1/auth/totp/setup | 生成 TOTP 密钥 + otpauth URI（pending 10min） |
+| POST | /admin/v1/auth/totp/confirm | 动态码确认 → 正式启用双因素 |
+| POST | /admin/v1/auth/totp/disable | 动态码确认后停用双因素 |
 
 ---
 
@@ -883,7 +888,7 @@ WSS;JWT in subprotocol 或 query;帧 `{channel, payload}`。
 
 1. **用户 API key 加密**：AES-256-GCM;nonce=12B;tag=16B;AAD 绑 `user_id|exchange|key_id`;主密钥经 `MASTER_KEY_B64` 注入,预留 KMS。
 2. **拒绝提现权限**：绑定时强制探测 `withdraw=false`,发现直接拒绝,绝不入库。
-3. **后台完全隔离**：独立登录入口、独立 cookie 域、独立 JWT audience、`role=admin` 双因素(V1.1 后置 TOTP)。
+3. **后台完全隔离**：独立登录入口、独立 cookie 域、独立 JWT audience、`role=admin` 双因素（TOTP 已启用：pyotp RFC6238 + Redis 挑战码一次性验证；连续 5 次密码错误锁定 15 分钟，Redis `admin:login_lock:{email}`）。
 4. **审计留痕**：所有后台写操作必填 actor/action/target/before/after/reason/ts;用户关键动作(绑定/解绑 API、提现申请、修改密码)也留痕。
 5. **邀请永久锁定**：`locked=true`;管理员特权修改需 before/after + reason + 写 audit-log。
 6. **防循环邀请**：`bind_invite_code` 中实现祖先链回溯,禁止出现 A→B→A 或更长环。

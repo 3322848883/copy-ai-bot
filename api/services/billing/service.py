@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.errors import ConflictError, NotFoundError
@@ -40,13 +40,15 @@ class BillingService:
         if plan is None:
             raise NotFoundError("套餐不存在")
         if plan.get("trial"):
+            # ★ 生产修复：仅统计已确认订单，失败/作废/超时不占用试用限购名额
             count = await self.db.scalar(
-                select(PaymentOrder).where(
+                select(func.count()).select_from(PaymentOrder).where(
                     PaymentOrder.user_id == user_id,
                     PaymentOrder.plan_id == plan_id,
+                    PaymentOrder.status == "confirmed",
                 )
             )
-            if count is not None:
+            if count:
                 raise ConflictError("试用套餐限购 1 次")
 
     async def activate_subscription(self, user_id: int, plan_id: str, payment_order_id: int) -> Subscription:

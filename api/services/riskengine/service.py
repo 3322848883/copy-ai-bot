@@ -88,25 +88,34 @@ class RiskEngine:
         start = datetime.now(timezone.utc)
         await self._run_hooks(intent)
 
+        # ★ M6 T6.2：风控决策监控打点
+        from api.core import metrics as M
+
+        def _decide(decision, **kw):
+            M.risk_decisions_total.labels(decision=decision.value).inc()
+            if decision == RiskDecision.REJECTED:
+                kw.setdefault("latency_ms", int((datetime.now(timezone.utc) - start).total_seconds() * 1000))
+            return RiskResult(decision, **kw)
+
         # ★ G03：action 合法性
         if intent.action not in ("open", "add", "reduce", "close"):
-            return RiskResult(RiskDecision.REJECTED, rule="action", reason=f"unknown action: {intent.action}")
+            return _decide(RiskDecision.REJECTED, rule="action", reason=f"unknown action: {intent.action}")
 
         # ★ G10：订阅过期拦截 OPEN/ADD，放行 REDUCE/CLOSE
         if not intent.subscription_active and intent.identity_type != "sub_account":
             if intent.action in ("open", "add"):
-                return RiskResult(
+                return _decide(
                     RiskDecision.REJECTED, rule="subscription",
                     reason="subscription expired, open/add blocked",
                 )
 
         # 1. 策略白名单
         if not intent.strategy_whitelisted:
-            return RiskResult(RiskDecision.REJECTED, rule="whitelist", reason="strategy not whitelisted")
+            return _decide(RiskDecision.REJECTED, rule="whitelist", reason="strategy not whitelisted")
 
         # 2. 机器人名义上限
         if intent.bot_virtual_locked + intent.margin_usdt > intent.bot_max_total_position:
-            return RiskResult(
+            return _decide(
                 RiskDecision.REJECTED, rule="position_limit",
                 reason=f"bot cap: locked {intent.bot_virtual_locked:.2f} + margin {intent.margin_usdt:.2f} > max {intent.bot_max_total_position:.2f}",
             )
@@ -114,7 +123,7 @@ class RiskEngine:
         # 3. 全局并发节流
         max_concurrent = self.settings.risk_max_concurrent if hasattr(self.settings, "risk_max_concurrent") else 50
         if intent.global_concurrent_now >= max_concurrent:
-            return RiskResult(
+            return _decide(
                 RiskDecision.REJECTED, rule="concurrency",
                 reason=f"global throttle: {intent.global_concurrent_now} >= {max_concurrent}",
             )
@@ -122,20 +131,20 @@ class RiskEngine:
         # ★ 延迟红线：模式 A >10s / 模式 B >5s
         age_ms = (datetime.now(timezone.utc) - intent.signal_received_at).total_seconds() * 1000
         if intent.source_mode == "A" and age_ms > self.settings.delay_redline_mode_a_ms:
-            return RiskResult(RiskDecision.REJECTED, rule="delay", reason=f"mode A age {age_ms:.0f}ms > 10s")
+            return _decide(RiskDecision.REJECTED, rule="delay", reason=f"mode A age {age_ms:.0f}ms > 10s")
         if intent.source_mode == "B" and age_ms > self.settings.delay_redline_mode_b_ms:
-            return RiskResult(RiskDecision.REJECTED, rule="delay", reason=f"mode B age {age_ms:.0f}ms > 5s")
+            return _decide(RiskDecision.REJECTED, rule="delay", reason=f"mode B age {age_ms:.0f}ms > 5s")
 
         # 4. 当日亏损上限
         if intent.today_realized_pnl < intent.daily_loss_limit:
-            return RiskResult(
+            return _decide(
                 RiskDecision.REJECTED, rule="daily_loss",
                 reason=f"daily loss {intent.today_realized_pnl:.2f} < limit {intent.daily_loss_limit:.2f}",
             )
 
         # 5. 紧急制动
         if intent.emergency_stop:
-            return RiskResult(RiskDecision.REJECTED, rule="emergency_stop", reason="emergency stop engaged")
+            return _decide(RiskDecision.REJECTED, rule="emergency_stop", reason="emergency stop engaged")
 
         latency = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
-        return RiskResult(RiskDecision.APPROVED, latency_ms=latency)
+        return _decide(RiskDecision.APPROVED, latency_ms=latency)

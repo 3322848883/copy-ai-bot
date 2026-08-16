@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-/** 前台路由守卫：未登录跳 /login（生产 httpOnly cookie 生效后启用；admin 走 localStorage 由页面自行守卫）。 */
+/** 前台路由守卫：未登录跳 /login（生产 httpOnly cookie 生效后启用）。 */
 const PROTECTED = ["/account", "/bots", "/rewards", "/invite", "/withdraw", "/subscriptions"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   // dev：token 走 localStorage，cookie 守卫不生效（生产 nginx 同域 + httpOnly cookie 时启用）
   if (process.env.NODE_ENV === "development") return NextResponse.next();
-  // /admin 走后台 localStorage token，页面内守卫，此处跳过
-  if (pathname.startsWith("/admin")) return NextResponse.next();
 
   const hasToken = Boolean(req.cookies.get("ss_access")?.value);
   const needsAuth = PROTECTED.some((p) => pathname === p || pathname.startsWith(p + "/"));

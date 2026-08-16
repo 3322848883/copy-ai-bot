@@ -17,6 +17,9 @@ services:
   api:
     environment:
       DATABASE_URL: postgresql+asyncpg://signal:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/signal_saas
+      # ★ 生产 CORS 必填（含前台域名 + 后台子域，如 https://signal-saas.com,https://admin.signal-saas.com）
+      #   同源反代下浏览器不触发 CORS，但作为纵深防御必须显式声明；禁止 localhost/* 上线
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set (e.g. https://signal-saas.com,https://admin.signal-saas.com)}
       # ★ 生产邮件必填（config prod fail-fast 拒绝 mailhog）
       SMTP_HOST: ${SMTP_HOST:?SMTP_HOST must be set}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -51,6 +54,21 @@ services:
       MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
   web:
     ports: []
+    # ★ 生产修复：前台 SPA 构建期注入主域 API base（同源反代），否则前端会请求用户本机 127.0.0.1:8000
+    build:
+      context: .
+      dockerfile: web-ui/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: https://${SITE_DOMAIN:?SITE_DOMAIN must be set}
+  # ★ 独立后台：生产不对外（由 nginx 子域反代），仅内网
+  #   构建期注入后台子域 API base → admin SPA 与其同源反代
+  web-admin:
+    ports: []
+    build:
+      context: .
+      dockerfile: web-admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: https://${ADMIN_SUBDOMAIN:?ADMIN_SUBDOMAIN must be set}
 
   # ── 统一入口：nginx 反代（cookie 同域前提 + TLS）──
   nginx:
@@ -58,12 +76,21 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    # envsubst 仅替换域名占位符，避免误伤 $host/$remote_addr 等 nginx 运行时变量
+    command: >
+      sh -c "envsubst '\${SITE_DOMAIN} \${ADMIN_SUBDOMAIN}' \
+        < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf \
+        && exec nginx -g 'daemon off;'"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?SITE_DOMAIN must be set}
+      ADMIN_SUBDOMAIN: ${ADMIN_SUBDOMAIN:?ADMIN_SUBDOMAIN must be set}
     volumes:
-      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf.template:ro
       - ./certs:/etc/nginx/certs:ro
     depends_on:
       - api
       - web
+      - web-admin
     restart: unless-stopped
 
   # ── 监控栈 ──

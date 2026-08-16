@@ -19,8 +19,6 @@ class StrategyCreate(BaseModel):
     style: Literal["trend", "range", "momentum"] = "trend"
     risk_rating: Literal["low", "mid", "high"] = "mid"
     exchange: str = "gate"
-    force: bool = False
-    force_reason: str | None = Field(default=None, max_length=200)
 
 
 class StrategyStatusUpdate(BaseModel):
@@ -78,14 +76,15 @@ async def add_strategy(
     user_id: int = Depends(get_current_user),
 ) -> dict:
     svc = StrategyService(db)
+    # ★ G04：公开端点强制门槛校验，禁止 force 绕过（force 仅限 admin 端点）
     strategy, gate = await svc.add_strategy(
         trader_id=body.trader_id,
         display_name=body.display_name,
         style=body.style,
         risk_rating=body.risk_rating,
         exchange=body.exchange,
-        force=body.force,
-        force_reason=body.force_reason,
+        force=False,
+        force_reason="",
         actor_id=user_id,
     )
     return {

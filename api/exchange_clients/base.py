@@ -46,8 +46,8 @@ class ExchangeAdapter(ABC):
     async def set_leverage(self, symbol: str, leverage: int, api_key: str, api_secret: str) -> None: ...
 
     @abstractmethod
-    async def set_margin_mode(self, symbol: str, mode: str, api_key: str, api_secret: str) -> None: ...
-    # ★ G07：下单前必须调用 set_margin_mode + set_leverage
+    async def set_margin_mode(self, symbol: str, mode: str, leverage: int, api_key: str, api_secret: str) -> None: ...
+    # ★ G07：下单前必须调用 set_margin_mode + set_leverage（leverage 用于区分 cross=0/isolated>0）
 
     @abstractmethod
     async def place_order(

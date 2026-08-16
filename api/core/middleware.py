@@ -81,3 +81,34 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if xri:
             return xri
         return request.client.host if request.client else "unknown"
+
+
+# ★ M6 T6.4 安全：CSP + 点击劫持 + MIME 嗅探 + 外链策略
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https:; "
+    "connect-src 'self' ws: wss:; "
+    "font-src 'self' data:; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """为所有响应注入安全响应头（生产必开）。"""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        headers = {
+            "Content-Security-Policy": _CSP,
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+            "X-XSS-Protection": "1; mode=block",
+        }
+        for name, value in headers.items():
+            response.headers.setdefault(name, value)
+        return response

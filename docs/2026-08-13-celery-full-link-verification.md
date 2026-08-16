@@ -279,7 +279,7 @@ $env:PYTHONPATH = 'c:\Users\w6485\Desktop\AI 量化\信号聚合AI'
 - `api/services/scraper/adapters/gate.py`：新增 `search_leaders(keyword,page,page_size)`（复用已登录持久化会话走 `_api`），
   `_to_pct` 把接口小数比例转百分比；新增常量 `LEADER_SEARCH_PATH`。
 - `api/routers/admin/signal_session.py`：新增 `GET /search?keyword=`（aud=admin），复用 `GateScraper.search_leaders`。
-- `web-ui/app/admin/signals/page.tsx`：信号源管理页新增「搜索带单员」卡片（输入昵称 → 展示 leader_id/昵称/收益/胜率/回撤/跟单人数/已跟单状态）。
+- `web-admin/app/strategies/page.tsx`：策略管理页新增「搜索带单员」卡片（输入昵称 → 展示 leader_id/昵称/收益/胜率/回撤/跟单人数/已跟单状态）。★ 拆分后由原 `web-ui/app/admin/signals/page.tsx` 迁移并入（2026-08-16）。
 
 **单元测试**：`api/tests/unit/test_signalfeed.py` 新增 2 例（按昵称解析画像、空关键字返回空），共 18 例全通过。
 
@@ -289,7 +289,7 @@ $env:PYTHONPATH = 'c:\Users\w6485\Desktop\AI 量化\信号聚合AI'
 - 搜「三」→ 模糊匹配多个（一剑三仟/农夫三十拳/三年之期已到等），含 roi30/胜率/回撤/跟单人数画像。
 
 修复合入点：`api/services/scraper/adapters/gate.py`、`api/routers/admin/signal_session.py`、
-`web-ui/app/admin/signals/page.tsx`、`api/tests/unit/test_signalfeed.py`。
+`web-admin/app/strategies/page.tsx`、`api/tests/unit/test_signalfeed.py`。
 
 ### 8.1 按 ID 精确查兜底（★ 2026-08 新增）
 
@@ -301,7 +301,7 @@ $env:PYTHONPATH = 'c:\Users\w6485\Desktop\AI 量化\信号聚合AI'
   非纯数字 ID 直接返回 None。markets 截断前 15 个（detail 返回全部历史标的多达 600+）。
   detail 接口不返回昵称，nick 用 `Leader{id}` 占位。
 - `signal_session.py`：`/search` 端点对 `keyword.isdigit()` 走 `get_leader_by_id`，返回 `source:"detail"`。
-- `signals/page.tsx`：detail 结果在表格下方展示风格/跟单区间/简介/交易标的画像区。
+- `strategies/page.tsx`：detail 结果在表格下方展示风格/跟单区间/简介/交易标的画像区。
 
 **单元测试**：新增 2 例（detail 画像解析、非数字 ID 拒绝），共 20 例全通过。
 

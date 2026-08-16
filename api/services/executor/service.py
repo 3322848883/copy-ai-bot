@@ -68,7 +68,7 @@ class OrderRouter:
 
         # ★ G07：下单前 set_margin_mode + set_leverage
         try:
-            await adapter.set_margin_mode(symbol, margin_mode, api_key, api_secret)
+            await adapter.set_margin_mode(symbol, margin_mode, leverage, api_key, api_secret)
             await adapter.set_leverage(symbol, leverage, api_key, api_secret)
         except Exception as exc:  # noqa: BLE001
             return ExecResult(False, "leverage", f"设置杠杆/保证金模式失败: {exc}")

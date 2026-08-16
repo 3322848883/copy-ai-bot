@@ -55,27 +55,31 @@ class IdentityService:
             pool_hit = await self.auto_detect_platform_pool(user_id, code)
             if pool_hit:
                 identity = await self._get_or_create(user_id)
+                self._guard_one_time_bind(identity)  # 一次性绑定
                 identity.invite_code = code
                 await self.db.commit()
+                await self.audit.log(
+                    actor_id=user_id,
+                    action="identity.bind_invite",
+                    target_type="identity",
+                    target_id=user_id,
+                    after={"code": code, "source": "platform_pool"},
+                )
                 return identity
             raise NotFoundError("邀请码无效")
         if inviter.id == user_id:
             raise ConflictError("不能邀请自己")
 
         identity = await self._get_or_create(user_id)
+        self._guard_one_time_bind(identity)  # 一次性绑定：已绑定则拒绝覆盖
 
-        # 防循环：从本用户祖先链回溯，验证码的 owner 不在其下游
-        # 简化实现：直接回溯 identity.inviter_id 链，若遇到 code 的 owner 则拒绝
-        cursor = identity.inviter_id
-        visited = {user_id}
-        while cursor is not None:
-            if cursor == inviter.id:
-                raise ConflictError("邀请关系成环，已拒绝")
-            if cursor in visited:
-                break
-            visited.add(cursor)
-            parent = await self.db.get(Identity, cursor)
-            cursor = parent.inviter_id if parent else None
+        # 防循环（双向检测）：
+        #   1) 邀请人是本用户祖先（本用户下游邀请上游）→ 成环
+        #   2) 本用户是邀请人祖先（互邀 2 元环 A↔B）→ 成环
+        if await self._is_ancestor_of(inviter.id, user_id):
+            raise ConflictError("邀请关系成环，已拒绝")
+        if await self._is_ancestor_of(user_id, inviter.id):
+            raise ConflictError("邀请关系成环，已拒绝")
 
         identity.inviter_id = inviter.id
         identity.invite_code = code
@@ -101,6 +105,13 @@ class IdentityService:
 
         # ★ G06：命中平台池自动标记主号下级
         await self.auto_detect_platform_pool(user_id, code)
+        await self.audit.log(
+            actor_id=user_id,
+            action="identity.bind_invite",
+            target_type="identity",
+            target_id=user_id,
+            after={"inviter_id": inviter.id, "code": code, "source": "friend"},
+        )
         return identity
 
     # ── ★ G27 交易所邀请码核实（必填）──
@@ -164,6 +175,25 @@ class IdentityService:
         return False
 
     # ── 工具 ──
+    def _guard_one_time_bind(self, identity: Identity) -> None:
+        """一次性绑定：已绑定好友码/平台池码则拒绝覆盖（T1.4）。"""
+        if identity.invite_code is not None or identity.inviter_id is not None:
+            raise ConflictError("已绑定邀请码，不可重复绑定")
+
+    async def _is_ancestor_of(self, ancestor_id: int, descendant_id: int) -> bool:
+        """沿 inviter 祖先链回溯，判断 ancestor_id 是否为 descendant_id 的祖先（防循环）。"""
+        cursor = descendant_id
+        visited: set[int] = set()
+        while cursor is not None:
+            if cursor == ancestor_id:
+                return True
+            if cursor in visited:
+                break
+            visited.add(cursor)
+            parent = await self.db.get(Identity, cursor)
+            cursor = parent.inviter_id if parent else None
+        return False
+
     async def _get_or_create(self, user_id: int) -> Identity:
         identity = await self.db.get(Identity, user_id)
         if identity is None:

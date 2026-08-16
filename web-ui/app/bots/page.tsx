@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 import { useWsChannel } from "@/components/WsProvider";
+import { Sparkline } from "@/components/Sparkline";
 
 type Bot = {
   id: number;
@@ -26,7 +27,19 @@ type Bot = {
 type Position = { symbol: string; side: string; qty: number; entry_price: number; mark_price: number; unrealized_pnl: number };
 type Order = { id: number; action: string; qty: number; status: string; failure_category: string | null; latency_ms: number };
 
-/** M3 T3.9 我的跟单：机器人卡片（状态/盈亏/参数）+ 暂停恢复 + 持仓 + 最近订单。 */
+const STATUS_META: Record<string, { label: string; color: string }> = {
+  active: { label: "运行中", color: "#28c464" },
+  paused: { label: "已暂停", color: "#eab308" },
+  stopped: { label: "已停止", color: "#ef4444" },
+};
+
+function fmtNum(n: number, digits = 2) {
+  return n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+/** M3 T3.9 我的跟单（对齐设计稿）：页头「查看策略+新增跟单」+ 指标条 + 订阅过期横幅 +
+ *  机器人卡片（编号/状态呼吸圆点/2×2 参数网格/spark+操作按钮组）+ 暂停/恢复确认弹窗 +
+ *  空态引导卡。保留展开详情、WS 实时、删除需输名称、修改配置（含固定金额/比例）等增强。 */
 export default function MyBotsPage() {
   const router = useRouter();
   const [bots, setBots] = useState<Bot[]>([]);
@@ -36,11 +49,24 @@ export default function MyBotsPage() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  // ★ M6 删除机器人（双重确认）+ 修改配置
+  const [orderFills, setOrderFills] = useState<Record<number, number>>({});
+  // 订阅状态（G10 过期横幅）
+  const [sub, setSub] = useState<{ active: boolean; expires_at?: string } | null>(null);
+  // ★ 暂停 / 恢复确认弹窗
+  const [pauseTarget, setPauseTarget] = useState<Bot | null>(null);
+  const [resumeTarget, setResumeTarget] = useState<Bot | null>(null);
+  // ★ M6 删除机器人（双重确认，需输入机器人名称）+ 修改配置
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [configTarget, setConfigTarget] = useState<Bot | null>(null);
-  const [cfgForm, setCfgForm] = useState({ percent: 20, leverage: 10, margin_mode: "isolated", max_total_position_usdt: 10000 });
+  const [cfgForm, setCfgForm] = useState({
+    amount_mode: "percent" as "fixed" | "percent",
+    percent: 20,
+    fixed_amount_usdt: 500,
+    leverage: 10,
+    margin_mode: "isolated",
+    max_total_position_usdt: 10000,
+  });
   const [cfgMsg, setCfgMsg] = useState("");
 
   const load = useCallback(async () => {
@@ -58,6 +84,9 @@ export default function MyBotsPage() {
       return;
     }
     load();
+    apiFetch<{ active: boolean; expires_at?: string }>("/v1/subscriptions/me", {}, tokenStore.access)
+      .then((d) => setSub(d))
+      .catch(() => setSub(null));
   }, [load, router]);
 
   // ── WS 实时：bot.position 仓位变化（更新保证金占用）──
@@ -82,6 +111,8 @@ export default function MyBotsPage() {
     try {
       await apiFetch(`/v1/bots/${bot.id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }, tokenStore.access);
       setMsg(`「${bot.strategy_name}」已${status === "paused" ? "暂停" : "恢复"}`);
+      setPauseTarget(null);
+      setResumeTarget(null);
       load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "操作失败");
@@ -103,7 +134,9 @@ export default function MyBotsPage() {
 
   function openConfig(bot: Bot) {
     setCfgForm({
+      amount_mode: bot.amount_mode === "fixed" ? "fixed" : "percent",
       percent: bot.percent ?? 20,
+      fixed_amount_usdt: bot.fixed_amount_usdt ?? 500,
       leverage: bot.leverage,
       margin_mode: bot.margin_mode,
       max_total_position_usdt: bot.max_total_position_usdt,
@@ -121,7 +154,9 @@ export default function MyBotsPage() {
         {
           method: "PATCH",
           body: JSON.stringify({
-            percent: cfgForm.percent,
+            amount_mode: cfgForm.amount_mode,
+            percent: cfgForm.amount_mode === "percent" ? cfgForm.percent : null,
+            fixed_amount_usdt: cfgForm.amount_mode === "fixed" ? cfgForm.fixed_amount_usdt : null,
             leverage: cfgForm.leverage,
             margin_mode: cfgForm.margin_mode,
             max_total_position_usdt: cfgForm.max_total_position_usdt,
@@ -140,6 +175,8 @@ export default function MyBotsPage() {
   async function onExpand(bot: Bot) {
     if (expanded === bot.id) {
       setExpanded(null);
+      setPositions([]);
+      setOrders([]);
       return;
     }
     setExpanded(bot.id);
@@ -151,6 +188,7 @@ export default function MyBotsPage() {
       ]);
       setPositions(p.items);
       setOrders(o.items);
+      setOrderFills((prev) => ({ ...prev, [bot.id]: o.items.filter((x) => x.status === "filled").length }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "详情加载失败");
     } finally {
@@ -158,215 +196,415 @@ export default function MyBotsPage() {
     }
   }
 
-  // ★ 顶部统计条：聚合所有机器人的 pnl
+  /** 方向：展开且已加载持仓时按净持仓推断，否则显示「跟随信号」。 */
+  function botDirection(bot: Bot): { text: string; color: string } {
+    if (expanded === bot.id && positions.length > 0) {
+      const long = positions.filter((p) => p.side === "long").reduce((s, p) => s + p.qty, 0);
+      const short = positions.filter((p) => p.side === "short").reduce((s, p) => s + p.qty, 0);
+      if (long > short) return { text: "做多", color: "var(--success)" };
+      if (short > long) return { text: "做空", color: "var(--danger)" };
+    }
+    return { text: "跟随信号", color: "var(--muted)" };
+  }
+
+  // ★ 顶部指标条：聚合所有机器人的 pnl
   const stats = bots.reduce(
     (acc, b) => {
       acc.running += b.status === "active" ? 1 : 0;
+      acc.paused += b.status === "paused" ? 1 : 0;
       acc.positions += b.pnl.open_positions;
       acc.unrealized += b.pnl.unrealized_pnl_usdt;
       acc.realized += b.pnl.realized_pnl_usdt;
+      acc.locked += b.virtual_locked_usdt;
       return acc;
     },
-    { running: 0, positions: 0, unrealized: 0, realized: 0 }
+    { running: 0, paused: 0, positions: 0, unrealized: 0, realized: 0, locked: 0 }
   );
 
   return (
     <main style={{ minHeight: "100vh", position: "relative" }}>
       <div className="aurora" />
       <div className="grid-bg" />
-      <div style={{ maxWidth: 980, margin: "0 auto", padding: "48px 24px", position: "relative", zIndex: 1 }}>
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>我的跟单</div>
-          <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>跟单机器人管理 · 独立虚拟账本</div>
+      <style>{`
+        @keyframes saasPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+        .saas-bcard { transition: box-shadow .2s, border-color .2s; }
+        .saas-bcard:hover { border-color: rgba(100,116,139,.55); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+      `}</style>
+
+      <div className="page-wrap">
+        {/* 页头（设计稿：eyebrow + 标题 + 查看策略/新增跟单） */}
+        <div className="page-hdr">
+          <div>
+            <div className="page-eyebrow">MY COPY BOTS · 我的跟单</div>
+            <h1 className="page-title">
+              我的跟单管理<small>独立机器人 · 实时同步交易所</small>
+            </h1>
+          </div>
+          <div className="page-actions">
+            <Link href="/strategies" className="btn btn-secondary">查看策略</Link>
+            <Link href="/strategies" className="btn btn-primary">＋ 新增跟单</Link>
+          </div>
         </div>
 
-        {/* ★ 统计条 */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-          <div className="card" style={{ padding: 14 }}>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>运行中机器人</div>
-            <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>{stats.running}<span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)" }}> / {bots.length}</span></div>
+        {/* 指标条 */}
+        <div className="kpi-grid" style={{ marginBottom: 16 }}>
+          <div className="kpi-card">
+            <div className="kpi-l">运行中机器人</div>
+            <div className="kpi-v">{stats.running}<span style={{ fontSize: 13, fontWeight: 400, color: "var(--muted)" }}> / {bots.length}</span></div>
+            <div className="kpi-s">{stats.paused} 个已暂停</div>
           </div>
-          <div className="card" style={{ padding: 14 }}>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>当前持仓</div>
-            <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>{stats.positions}</div>
+          <div className="kpi-card">
+            <div className="kpi-l">当前持仓</div>
+            <div className="kpi-v">{stats.positions}</div>
+            <div className="kpi-s">全部机器人持仓</div>
           </div>
-          <div className="card" style={{ padding: 14 }}>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>未实现盈亏</div>
-            <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4, color: stats.unrealized >= 0 ? "var(--success)" : "var(--danger)" }}>
-              {stats.unrealized >= 0 ? "+" : ""}{stats.unrealized.toFixed(2)} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)" }}>USDT</span>
+          <div className="kpi-card">
+            <div className="kpi-l">已实现盈亏</div>
+            <div className="kpi-v" style={{ color: stats.realized >= 0 ? "var(--success)" : "var(--danger)" }}>
+              {stats.realized >= 0 ? "+" : ""}{fmtNum(stats.realized)}
             </div>
+            <div className="kpi-s">USDT · 含手续费</div>
           </div>
-          <div className="card" style={{ padding: 14 }}>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>已实现盈亏</div>
-            <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4, color: stats.realized >= 0 ? "var(--success)" : "var(--danger)" }}>
-              {stats.realized >= 0 ? "+" : ""}{stats.realized.toFixed(2)} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)" }}>USDT</span>
+          <div className="kpi-card">
+            <div className="kpi-l">未实现盈亏</div>
+            <div className="kpi-v" style={{ color: stats.unrealized >= 0 ? "var(--success)" : "var(--danger)" }}>
+              {stats.unrealized >= 0 ? "+" : ""}{fmtNum(stats.unrealized)}
             </div>
+            <div className="kpi-s">USDT · WS 实时推送</div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-l">占用保证金</div>
+            <div className="kpi-v">{fmtNum(stats.locked)}</div>
+            <div className="kpi-s">USDT · 全部机器人</div>
           </div>
         </div>
+
+        {/* 订阅过期横幅（G10：已过期可平仓不可开仓 + 续费链接） */}
+        {sub && !sub.active && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 8, border: "1px solid rgba(234,179,8,0.35)", background: "rgba(234,179,8,0.07)", fontSize: 12, color: "var(--warning)", marginBottom: 16, flexWrap: "wrap" }}>
+            <span>⚠</span>
+            <span>
+              订阅未开通或已过期{sub.expires_at ? `（${sub.expires_at.slice(0, 10)}）` : ""} · <strong style={{ color: "var(--warning)" }}>跟单已暂停开仓，已有持仓可正常平仓</strong>。请尽快{" "}
+              <Link href="/subscriptions" style={{ color: "var(--warning)", textDecoration: "underline" }}>续费</Link> 恢复跟单。
+            </span>
+          </div>
+        )}
 
         {msg && <div style={{ background: "rgba(22,163,74,0.1)", border: "1px solid rgba(22,163,74,0.4)", color: "#4ade80", borderRadius: 6, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>{msg}</div>}
         {err && <div className="error-box">{err}</div>}
 
         {bots.length === 0 ? (
-          <div className="card" style={{ textAlign: "center", padding: 48, color: "var(--muted)" }}>
-            还没有跟单机器人，去<Link href="/strategies" style={{ color: "var(--accent)", margin: "0 4px" }}>策略广场</Link>选择一个策略开始跟单
+          /* 空态引导卡 */
+          <div className="empty-state" style={{ marginTop: 8 }}>
+            <div className="es-ic">＋</div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>开启新的跟单</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", maxWidth: 260, margin: "0 auto" }}>从策略广场挑选策略，配置方向与杠杆，一键跟单</div>
+            </div>
+            <Link href="/strategies" className="btn btn-primary">去策略广场</Link>
           </div>
         ) : (
-          bots.map((bot) => (
-            <div key={bot.id} className="card" style={{ marginBottom: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 16 }}>
-                    {bot.strategy_name}
-                    {bot.paper && (
-                      <span style={{ fontSize: 11, color: "var(--accent)", background: "var(--accent-soft)", padding: "2px 8px", borderRadius: 12, marginLeft: 8, verticalAlign: "middle" }}>
-                        模拟盘
-                      </span>
-                    )}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 16, alignItems: "stretch" }}>
+            {bots.map((bot) => {
+              const sm = STATUS_META[bot.status] ?? STATUS_META.stopped;
+              const dir = botDirection(bot);
+              return (
+                <div
+                  key={bot.id}
+                  className="card saas-bcard"
+                  style={{
+                    padding: 20, display: "flex", flexDirection: "column", gap: 16, position: "relative", overflow: "hidden",
+                    opacity: bot.status === "stopped" ? 0.72 : 1,
+                  }}
+                >
+                  {/* 卡头：名称 + 机器人编号 + 状态呼吸圆点 */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontWeight: 600, fontSize: 15, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      {bot.strategy_name}
+                      {bot.paper && (
+                        <span style={{ fontSize: 11, color: "var(--accent)", background: "var(--accent-soft)", padding: "2px 8px", borderRadius: 12 }}>模拟盘</span>
+                      )}
+                      <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 10, color: "var(--tertiary)", fontWeight: 400 }}>#{String(bot.id).padStart(4, "0")}</span>
+                    </span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+                      <span
+                        style={{
+                          width: 8, height: 8, borderRadius: "50%", background: sm.color, boxShadow: `0 0 8px ${sm.color}`,
+                          animation: bot.status === "active" ? "saasPulse 2s infinite" : "none",
+                        }}
+                      />
+                      {sm.label}
+                    </span>
                   </div>
-                  <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
-                    {bot.exchange} · {bot.margin_mode === "isolated" ? "逐仓" : "全仓"} {bot.leverage}x ·{" "}
-                    {bot.amount_mode === "fixed" ? `固定 ${bot.fixed_amount_usdt} USDT` : `比例 ${bot.percent}%`}
+
+                  {/* 2×2 参数网格：方向/杠杆/保证金模式/跟单比例/名义价值/已实现盈亏/未实现盈亏/今日成交 */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px" }}>
+                    {[
+                      ["方向", dir.text, dir.color],
+                      ["杠杆", `${bot.leverage}×`, undefined],
+                      ["保证金模式", bot.margin_mode === "isolated" ? "逐仓" : "全仓", undefined],
+                      ["跟单比例", bot.amount_mode === "fixed" ? `${fmtNum(bot.fixed_amount_usdt ?? 0)} USDT` : `${bot.percent ?? 0}%`, undefined],
+                      ["名义价值", `${fmtNum(bot.pnl.total_notional_usdt)} USDT`, undefined],
+                      ["已实现盈亏", `${bot.pnl.realized_pnl_usdt >= 0 ? "+" : ""}${fmtNum(bot.pnl.realized_pnl_usdt)}`, bot.pnl.realized_pnl_usdt >= 0 ? "var(--success)" : "var(--danger)"],
+                      ["未实现盈亏", `${bot.pnl.unrealized_pnl_usdt >= 0 ? "+" : ""}${fmtNum(bot.pnl.unrealized_pnl_usdt)}`, bot.pnl.unrealized_pnl_usdt >= 0 ? "var(--success)" : "var(--danger)"],
+                      ["今日成交", orderFills[bot.id] != null ? `${orderFills[bot.id]} 笔` : "—", undefined],
+                    ].map(([k, v, c]) => (
+                      <div key={k as string}>
+                        <div style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{k}</div>
+                        <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, fontWeight: 600, marginTop: 2, color: (c as string) ?? "var(--fg)" }}>{v}</div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <span
-                    style={{
-                      fontSize: 12, padding: "4px 12px", borderRadius: 20,
-                      background: bot.status === "active" ? "rgba(40,196,100,.15)" : "rgba(234,179,8,.12)",
-                      color: bot.status === "active" ? "var(--success)" : "var(--warning)",
-                    }}
-                  >
-                    {bot.status === "active" ? "运行中" : bot.status === "paused" ? "已暂停" : "已停止"}
-                  </span>
-                  {bot.status === "active" ? (
-                    <button className="btn btn-secondary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={() => onStatus(bot, "paused")}>暂停</button>
-                  ) : (
-                    <button className="btn btn-primary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={() => onStatus(bot, "active")}>恢复</button>
-                  )}
-                  <button className="btn btn-secondary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={() => onExpand(bot)}>
-                    {expanded === bot.id ? "收起" : "详情"}
-                  </button>
-                  <button className="btn btn-secondary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={() => openConfig(bot)}>配置</button>
-                  <button className="btn btn-secondary" style={{ padding: "6px 14px", fontSize: 12, color: "var(--danger)", borderColor: "rgba(239,68,68,0.4)" }} onClick={() => { setConfirmText(""); setDeleteTarget(bot); }}>删除</button>
-                </div>
-              </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, fontSize: 13 }}>
-                <div><span style={{ color: "var(--muted)" }}>持仓数</span><br /><strong>{bot.pnl.open_positions}</strong></div>
-                <div><span style={{ color: "var(--muted)" }}>名义价值</span><br /><strong>{bot.pnl.total_notional_usdt.toFixed(2)} USDT</strong></div>
-                <div><span style={{ color: "var(--muted)" }}>未实现盈亏</span><br /><strong style={{ color: bot.pnl.unrealized_pnl_usdt >= 0 ? "var(--success)" : "var(--danger)" }}>{bot.pnl.unrealized_pnl_usdt.toFixed(2)} USDT</strong></div>
-                <div><span style={{ color: "var(--muted)" }}>已用保证金</span><br /><strong>{bot.virtual_locked_usdt.toFixed(2)} USDT</strong></div>
-              </div>
+                  {/* 底部：spark + 操作按钮组 */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, paddingTop: 12, borderTop: "1px solid rgba(51,65,85,0.4)", flexWrap: "wrap" }}>
+                    <div style={{ height: 30, flex: 1, minWidth: 90, maxWidth: 150 }}>
+                      <Sparkline
+                        id={`bot-${bot.id}`}
+                        color={sm.color}
+                        w={100}
+                        h={30}
+                        values={[bot.pnl.realized_pnl_usdt, bot.pnl.unrealized_pnl_usdt, bot.pnl.total_notional_usdt / 100, bot.virtual_locked_usdt / 20]}
+                      />
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {bot.status === "active" && (
+                        <button className="btn btn-secondary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={() => setPauseTarget(bot)}>暂停</button>
+                      )}
+                      {bot.status === "paused" && (
+                        <button className="btn btn-primary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={() => setResumeTarget(bot)}>恢复</button>
+                      )}
+                      {bot.status === "stopped" && (
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: "6px 14px", fontSize: 12 }}
+                          onClick={() => {
+                            if (sub && !sub.active) {
+                              setErr("订阅未开通或已过期，无法重新开启（G10）");
+                            } else {
+                              onStatus(bot, "active");
+                            }
+                          }}
+                        >
+                          重新开启
+                        </button>
+                      )}
+                      <button className="btn btn-secondary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={() => openConfig(bot)}>修改配置</button>
+                      <button className="btn btn-secondary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={() => onExpand(bot)}>
+                        {expanded === bot.id ? "收起" : "详情"}
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ padding: "6px 14px", fontSize: 12, color: "var(--danger)", borderColor: "rgba(239,68,68,0.4)" }}
+                        onClick={() => { setConfirmText(""); setDeleteTarget(bot); }}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </div>
 
-              {expanded === bot.id && (
-                <div style={{ marginTop: 16, borderTop: "1px solid var(--rule)", paddingTop: 16 }}>
-                  {loadingDetail ? (
-                    <div style={{ color: "var(--muted)", fontSize: 13 }}>加载中…</div>
-                  ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>当前持仓</div>
-                        {positions.length === 0 ? (
-                          <div style={{ color: "var(--muted)", fontSize: 12 }}>暂无持仓</div>
-                        ) : (
-                          positions.map((p) => (
-                            <div key={p.symbol} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--rule)" }}>
-                              <span>{p.symbol} <span style={{ color: p.side === "long" ? "var(--success)" : "var(--danger)" }}>{p.side === "long" ? "多" : "空"}</span></span>
-                              <span>{p.qty} @ {p.entry_price}</span>
-                              <span style={{ color: p.unrealized_pnl >= 0 ? "var(--success)" : "var(--danger)" }}>{p.unrealized_pnl.toFixed(2)}</span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>最近订单</div>
-                        {orders.length === 0 ? (
-                          <div style={{ color: "var(--muted)", fontSize: 12 }}>暂无订单</div>
-                        ) : (
-                          orders.map((o) => (
-                            <div key={o.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--rule)" }}>
-                              <span>{o.action.toUpperCase()} {o.qty}</span>
-                              <span>{o.status === "filled" ? `成交 (${o.latency_ms}ms)` : `失败: ${o.failure_category || "?"}`}</span>
-                            </div>
-                          ))
-                        )}
-                      </div>
+                  {/* 展开详情：持仓 + 最近订单（保留增强） */}
+                  {expanded === bot.id && (
+                    <div style={{ marginTop: 4, borderTop: "1px solid var(--rule)", paddingTop: 16 }}>
+                      {loadingDetail ? (
+                        <div style={{ color: "var(--muted)", fontSize: 13 }}>加载中…</div>
+                      ) : (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>当前持仓</div>
+                            {positions.length === 0 ? (
+                              <div style={{ color: "var(--muted)", fontSize: 12 }}>暂无持仓</div>
+                            ) : (
+                              positions.map((p) => (
+                                <div key={p.symbol} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--rule)" }}>
+                                  <span>{p.symbol} <span style={{ color: p.side === "long" ? "var(--success)" : "var(--danger)" }}>{p.side === "long" ? "多" : "空"}</span></span>
+                                  <span>{p.qty} @ {p.entry_price}</span>
+                                  <span style={{ color: p.unrealized_pnl >= 0 ? "var(--success)" : "var(--danger)" }}>{p.unrealized_pnl.toFixed(2)}</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>最近订单</div>
+                            {orders.length === 0 ? (
+                              <div style={{ color: "var(--muted)", fontSize: 12 }}>暂无订单</div>
+                            ) : (
+                              orders.map((o) => (
+                                <div key={o.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--rule)" }}>
+                                  <span>{o.action.toUpperCase()} {o.qty}</span>
+                                  <span>{o.status === "filled" ? `成交 (${o.latency_ms}ms)` : `失败: ${o.failure_category || "?"}`}</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          ))
+              );
+            })}
+
+            {/* 空态引导卡（网格尾部） */}
+            <Link
+              href="/strategies"
+              style={{
+                border: "1px dashed var(--rule)", borderRadius: 10, minHeight: 180, display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center", gap: 10, textDecoration: "none", color: "var(--muted)",
+              }}
+            >
+              <div style={{ width: 48, height: 48, borderRadius: "50%", border: "1px dashed var(--tertiary)", display: "grid", placeItems: "center", fontSize: 20 }}>＋</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>开启新的跟单</div>
+              <div style={{ fontSize: 11 }}>从策略广场挑选策略，一键跟单</div>
+            </Link>
+          </div>
         )}
       </div>
 
-      {/* ★ M6 删除机器人：双重确认（需输入机器人名称） */}
-      {deleteTarget && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(7,14,26,0.85)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ width: 400, maxWidth: "92vw", background: "var(--surface-overlay)", border: "1px solid var(--rule)", borderRadius: 10, padding: 24 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--danger)", marginBottom: 8 }}>删除跟单机器人</div>
-            <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 6 }}>
-              即将删除「{deleteTarget.strategy_name}」。删除后该策略的跟单将立即停止，持仓与历史订单记录将被移除，此操作不可恢复。
+      {/* 暂停确认弹窗（非破坏性说明） */}
+      {pauseTarget && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(7,14,26,0.8)", backdropFilter: "blur(4px)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setPauseTarget(null); }}
+        >
+          <div style={{ width: 480, maxWidth: "92vw", background: "var(--surface-overlay)", border: "1px solid var(--rule)", borderRadius: 10, boxShadow: "0 16px 48px rgba(0,0,0,0.45)", padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>暂停跟单机器人？</div>
+              <button className="btn btn-secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setPauseTarget(null)}>✕</button>
             </div>
-            <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 12 }}>
-              请输入机器人名称 <strong style={{ color: "var(--fg)" }}>{deleteTarget.strategy_name}</strong> 以确认：
+            <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.8 }}>
+              <strong style={{ color: "var(--fg)" }}>{pauseTarget.strategy_name}</strong> 暂停后不再开新仓，<strong style={{ color: "var(--fg)" }}>已有持仓不受影响，仍可平仓</strong>。可随时恢复。
             </div>
-            <input
-              className="input"
-              style={{ width: "100%", marginBottom: 16 }}
-              placeholder={deleteTarget.strategy_name}
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value)}
-            />
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-              <button className="btn btn-secondary" onClick={() => { setDeleteTarget(null); setConfirmText(""); }}>取消</button>
-              <button
-                className="btn btn-primary"
-                style={{ background: "var(--danger)", color: "#fff", opacity: confirmText === deleteTarget.strategy_name ? 1 : 0.5, cursor: confirmText === deleteTarget.strategy_name ? "pointer" : "not-allowed" }}
-                disabled={confirmText !== deleteTarget.strategy_name}
-                onClick={onDelete}
-              >
-                确认删除
-              </button>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: 12, borderRadius: 6, background: "rgba(40,196,100,0.08)", border: "1px solid rgba(40,196,100,0.3)", fontSize: 12, color: "var(--success)" }}>
+              <span>✓</span>
+              <span>暂停为非破坏性操作，持仓与收益均保留</span>
+            </div>
+            <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setPauseTarget(null)}>取消</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => onStatus(pauseTarget, "paused")}>确认暂停</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ★ M6 修改机器人配置 */}
-      {configTarget && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(7,14,26,0.85)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ width: 420, maxWidth: "92vw", background: "var(--surface-overlay)", border: "1px solid var(--rule)", borderRadius: 10, padding: 24 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>修改「{configTarget.strategy_name}」配置</div>
-            <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 16 }}>修改后立即生效，适用于后续新开仓位</div>
-            <label className="label">跟单比例（%）</label>
-            <input className="input" style={{ width: "100%", marginBottom: 12 }} type="number" min={1} max={100} value={cfgForm.percent} onChange={(e) => setCfgForm({ ...cfgForm, percent: Number(e.target.value) })} />
-            <label className="label">杠杆（1-125x）</label>
-            <input className="input" style={{ width: "100%", marginBottom: 12 }} type="number" min={1} max={125} value={cfgForm.leverage} onChange={(e) => setCfgForm({ ...cfgForm, leverage: Number(e.target.value) })} />
-            <label className="label">保证金模式</label>
-            <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
-              {(["isolated", "cross"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setCfgForm({ ...cfgForm, margin_mode: m })}
-                  style={{
-                    flex: 1, padding: "8px 0", borderRadius: 6, fontSize: 13, cursor: "pointer",
-                    border: cfgForm.margin_mode === m ? "1px solid var(--accent)" : "1px solid var(--rule)",
-                    background: cfgForm.margin_mode === m ? "var(--accent-soft)" : "transparent",
-                    color: cfgForm.margin_mode === m ? "var(--accent)" : "var(--muted)",
-                  }}
-                >
-                  {m === "isolated" ? "逐仓" : "全仓"}
-                </button>
-              ))}
+      {/* 恢复确认弹窗（校验订阅/API/风控说明） */}
+      {resumeTarget && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(7,14,26,0.8)", backdropFilter: "blur(4px)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setResumeTarget(null); }}
+        >
+          <div style={{ width: 480, maxWidth: "92vw", background: "var(--surface-overlay)", border: "1px solid rgba(234,179,8,0.4)", borderRadius: 10, boxShadow: "0 16px 48px rgba(0,0,0,0.45)", padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>恢复跟单机器人？</div>
+              <button className="btn btn-secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setResumeTarget(null)}>✕</button>
             </div>
-            <label className="label">单笔最大名义价值（USDT）</label>
-            <input className="input" style={{ width: "100%", marginBottom: 12 }} type="number" min={1} value={cfgForm.max_total_position_usdt} onChange={(e) => setCfgForm({ ...cfgForm, max_total_position_usdt: Number(e.target.value) })} />
-            {cfgMsg && <div style={{ color: "var(--danger)", fontSize: 13, marginBottom: 8 }}>{cfgMsg}</div>}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
+            <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.8 }}>
+              <strong style={{ color: "var(--fg)" }}>{resumeTarget.strategy_name}</strong> 恢复后将立即重新同步信号并开始跟单。
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: 12, borderRadius: 6, background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.3)", fontSize: 12, color: "var(--warning)" }}>
+              <span>⚠</span>
+              <span>恢复前将校验：订阅状态 · API 权限 · 风控白名单</span>
+            </div>
+            <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setResumeTarget(null)}>取消</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => onStatus(resumeTarget, "active")}>确认恢复</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* M6 修改机器人配置（含固定金额/比例） */}
+      {configTarget && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(7,14,26,0.85)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setConfigTarget(null); }}
+        >
+          <div style={{ width: 460, maxWidth: "92vw", maxHeight: "88vh", overflowY: "auto", background: "var(--surface-overlay)", border: "1px solid var(--rule)", borderRadius: 10, boxShadow: "0 16px 48px rgba(0,0,0,0.45)", padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>修改「{configTarget.strategy_name}」配置</div>
+              <button className="btn btn-secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setConfigTarget(null)}>✕</button>
+            </div>
+            <div style={{ color: "var(--muted)", fontSize: 12 }}>修改后立即生效，适用于后续新开仓位</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label className="label">杠杆（1-125x）</label>
+                <input className="input" type="number" min={1} max={125} value={cfgForm.leverage} onChange={(e) => setCfgForm({ ...cfgForm, leverage: Number(e.target.value) })} />
+              </div>
+              <div>
+                <label className="label">保证金模式</label>
+                <select className="input" value={cfgForm.margin_mode} onChange={(e) => setCfgForm({ ...cfgForm, margin_mode: e.target.value })}>
+                  <option value="isolated">逐仓</option>
+                  <option value="cross">全仓</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label className="label">跟单比例方式</label>
+                <select className="input" value={cfgForm.amount_mode} onChange={(e) => setCfgForm({ ...cfgForm, amount_mode: e.target.value as "fixed" | "percent" })}>
+                  <option value="percent">按比例</option>
+                  <option value="fixed">固定金额</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">{cfgForm.amount_mode === "fixed" ? "固定金额（USDT）" : "跟单比例（%）"}</label>
+                {cfgForm.amount_mode === "fixed" ? (
+                  <input className="input" type="number" min={1} value={cfgForm.fixed_amount_usdt} onChange={(e) => setCfgForm({ ...cfgForm, fixed_amount_usdt: Number(e.target.value) })} />
+                ) : (
+                  <input className="input" type="number" min={1} max={100} value={cfgForm.percent} onChange={(e) => setCfgForm({ ...cfgForm, percent: Number(e.target.value) })} />
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="label">单笔最大名义价值（USDT）</label>
+              <input className="input" type="number" min={1} value={cfgForm.max_total_position_usdt} onChange={(e) => setCfgForm({ ...cfgForm, max_total_position_usdt: Number(e.target.value) })} />
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: 12, borderRadius: 6, background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.3)", fontSize: 12, color: "var(--warning)" }}>
+              <span>⚠</span>
+              <span>修改杠杆/保证金模式将同步至交易所，已有持仓不追溯</span>
+            </div>
+            {cfgMsg && <div style={{ color: "var(--danger)", fontSize: 13 }}>{cfgMsg}</div>}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
               <button className="btn btn-secondary" onClick={() => setConfigTarget(null)}>取消</button>
               <button className="btn btn-primary" onClick={onSaveConfig}>保存配置</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* M6 删除机器人：双重确认（需输入机器人名称） */}
+      {deleteTarget && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(7,14,26,0.85)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setDeleteTarget(null); setConfirmText(""); } }}
+        >
+          <div style={{ width: 440, maxWidth: "92vw", background: "var(--surface-overlay)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 10, boxShadow: "0 16px 48px rgba(0,0,0,0.45)", padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "var(--danger)" }}>删除跟单机器人？</div>
+              <button className="btn btn-secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => { setDeleteTarget(null); setConfirmText(""); }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.8 }}>
+              即将删除「<strong style={{ color: "var(--danger)" }}>{deleteTarget.strategy_name}</strong>」。删除后该策略的跟单将立即停止，持仓与历史订单记录将被移除，此操作<strong style={{ color: "var(--danger)" }}>不可恢复</strong>。
+            </div>
+            <div>
+              <label className="label">请输入机器人名称确认：<strong style={{ color: "var(--fg)" }}>{deleteTarget.strategy_name}</strong></label>
+              <input
+                className="input"
+                placeholder={deleteTarget.strategy_name}
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setDeleteTarget(null); setConfirmText(""); }}>取消</button>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1, background: "var(--danger)", color: "#fff", opacity: confirmText === deleteTarget.strategy_name ? 1 : 0.5, cursor: confirmText === deleteTarget.strategy_name ? "pointer" : "not-allowed" }}
+                disabled={confirmText !== deleteTarget.strategy_name}
+                onClick={onDelete}
+              >
+                确认删除
+              </button>
             </div>
           </div>
         </div>

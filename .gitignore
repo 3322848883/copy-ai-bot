@@ -14,6 +14,13 @@ venv/
 *.pem
 .env.local
 .env.*.local
+.env.prod-local
+compose_up.log
+
+# 本地生产测试脚本（含测试凭据，不入库）
+scripts/set-prod-local-env.ps1
+scripts/seed_prod_admin.py
+scripts/e2e_prod_local.py
 
 # Node（前端）
 node_modules/

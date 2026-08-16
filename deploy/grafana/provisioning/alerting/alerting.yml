@@ -1,0 +1,219 @@
+# signal-saas 告警规则（M6 T6.2，计划 §7.3 六指标）
+# 进入 Grafana > Alerting > Contact points 配置通知渠道（邮箱/飞书/钉钉）后生效。
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: signal-saas-alerts
+    folder: signal-saas
+    interval: 1m
+    rules:
+      # 1. 信号源中断：5min 接收速率归零
+      - uid: signal-source-down
+        title: 信号源中断（signal_received_total=0）
+        condition: C
+        for: 5m
+        execErrState: Error
+        noDataState: NoData
+        labels:
+          severity: critical
+        annotations:
+          summary: 信号源已 ${A} min 无新增，疑似断流
+        data:
+          - refId: A
+            datasourceUid: prometheus-ds
+            queryType: ""
+            model:
+              refId: A
+              expr: sum(rate(signal_received_total[5m])) by (source)
+              instant: true
+              range: false
+              datasource: { type: prometheus, uid: prometheus-ds }
+          - refId: C
+            datasourceUid: __expr__
+            type: threshold
+            expression: A
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+                  operator: and
+
+      # 2. 风控拒绝占比 >30%
+      - uid: risk-reject-ratio
+        title: 风控拒绝占比过高（>30%）
+        condition: C
+        for: 10m
+        execErrState: Error
+        noDataState: NoData
+        labels:
+          severity: warning
+        annotations:
+          summary: 风控拒绝占比 ${C}%，超过 30%
+        data:
+          - refId: A
+            datasourceUid: prometheus-ds
+            queryType: ""
+            model:
+              refId: A
+              expr: sum(rate(risk_decisions_total{decision="rejected"}[5m]))
+              instant: true
+              range: false
+              datasource: { type: prometheus, uid: prometheus-ds }
+          - refId: B
+            datasourceUid: prometheus-ds
+            queryType: ""
+            model:
+              refId: B
+              expr: sum(rate(risk_decisions_total[5m]))
+              instant: true
+              range: false
+              datasource: { type: prometheus, uid: prometheus-ds }
+          - refId: C
+            datasourceUid: __expr__
+            type: math
+            expression: A
+            model:
+              refId: C
+              type: math
+              expression: if($B == 0, 0, $A / $B) > 0.3
+
+      # 3. 跟单失败率 >10%
+      - uid: copy-fail-ratio
+        title: 跟单失败率过高（>10%）
+        condition: C
+        for: 5m
+        execErrState: Error
+        noDataState: NoData
+        labels:
+          severity: critical
+        annotations:
+          summary: 跟单失败率 ${C}%，超过 10%
+        data:
+          - refId: A
+            datasourceUid: prometheus-ds
+            queryType: ""
+            model:
+              refId: A
+              expr: app_copy_orders_failed_total
+              instant: true
+              range: false
+              datasource: { type: prometheus, uid: prometheus-ds }
+          - refId: B
+            datasourceUid: prometheus-ds
+            queryType: ""
+            model:
+              refId: B
+              expr: app_copy_orders_filled_total
+              instant: true
+              range: false
+              datasource: { type: prometheus, uid: prometheus-ds }
+          - refId: C
+            datasourceUid: __expr__
+            type: math
+            expression: A
+            model:
+              refId: C
+              type: math
+              expression: if(($A + $B) == 0, 0, $A / ($A + $B)) > 0.1
+
+      # 4. 支付轮询异常：单链 >5/min（RPC 异常）
+      - uid: payment-poll-high
+        title: 支付链轮询异常（>5/min）
+        condition: C
+        for: 5m
+        execErrState: Error
+        noDataState: NoData
+        labels:
+          severity: warning
+        annotations:
+          summary: 链 {{$labels.network}} 轮询 ${C}/min，疑似 RPC 异常
+        data:
+          - refId: A
+            datasourceUid: prometheus-ds
+            queryType: ""
+            model:
+              refId: A
+              expr: sum(rate(payment_poll_attempts_total[1m])) by (network) * 60
+              instant: true
+              range: false
+              datasource: { type: prometheus, uid: prometheus-ds }
+          - refId: C
+            datasourceUid: __expr__
+            type: threshold
+            expression: A
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+                  operator: and
+
+      # 5. 待处理提现积压：>100 持续 1h
+      - uid: withdrawal-backlog
+        title: 待处理提现积压（>100 达 1h）
+        condition: C
+        for: 1h
+        execErrState: Error
+        noDataState: NoData
+        labels:
+          severity: warning
+        annotations:
+          summary: 待处理提现 ${A} 单，持续超过 1 小时
+        data:
+          - refId: A
+            datasourceUid: prometheus-ds
+            queryType: ""
+            model:
+              refId: A
+              expr: withdrawal_pending_total
+              instant: true
+              range: false
+              datasource: { type: prometheus, uid: prometheus-ds }
+          - refId: C
+            datasourceUid: __expr__
+            type: threshold
+            expression: A
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [100] }
+                  operator: and
+
+      # 6. HTTP 耗时 p95 >1s
+      - uid: http-p95-slow
+        title: HTTP 耗时 p95 超限（>1s）
+        condition: C
+        for: 10m
+        execErrState: Error
+        noDataState: NoData
+        labels:
+          severity: warning
+        annotations:
+          summary: HTTP p95 耗时 ${C}s，超过 1s
+        data:
+          - refId: A
+            datasourceUid: prometheus-ds
+            queryType: ""
+            model:
+              refId: A
+              expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
+              instant: true
+              range: false
+              datasource: { type: prometheus, uid: prometheus-ds }
+          - refId: C
+            datasourceUid: __expr__
+            type: threshold
+            expression: A
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+                  operator: and

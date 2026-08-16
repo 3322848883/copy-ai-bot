@@ -24,14 +24,6 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}, token
   let res = await doFetch();
   // 401 自动续期：非登录/刷新接口失败 → 尝试 refresh（cookie/body）→ 重试一次
   if (res.status === 401 && !path.startsWith("/v1/auth/")) {
-    if (path.startsWith("/admin/")) {
-      // ★ M2 修复：admin token 过期 → 清会话并回后台登录页（此前静默空白）
-      tokenStore.clearAdmin();
-      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/admin/login")) {
-        window.location.href = "/admin/login";
-      }
-      throw new ApiError(401, "unauthorized", "登录已过期，请重新登录");
-    }
     const ok = await tryRefresh();
     if (ok) res = await doFetch();
   }
@@ -81,19 +73,6 @@ export const tokenStore = {
   get access() {
     if (typeof window === "undefined") return undefined;
     return localStorage.getItem("ss_access") || undefined;
-  },
-  // M5 T5.1：后台独立 token（aud=admin）
-  get adminAccess() {
-    if (typeof window === "undefined") return undefined;
-    return localStorage.getItem("ss_admin_access") || undefined;
-  },
-  setAdmin(token: string) {
-    if (typeof window === "undefined") return;
-    localStorage.setItem("ss_admin_access", token);
-  },
-  clearAdmin() {
-    if (typeof window === "undefined") return;
-    localStorage.removeItem("ss_admin_access");
   },
   get refresh() {
     if (typeof window === "undefined") return undefined;

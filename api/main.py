@@ -43,7 +43,16 @@ app = FastAPI(
     redoc_url="/redoc" if settings.app_env != "prod" else None,
 )
 
-# ── M6 T6.3 安全：CORS 白名单收紧（默认本地前端，生产经 CORS_ORIGINS 配置）──
+# ── M6 T6.3 安全：Redis 限流中间件（登录/支付/提现分级）──
+from api.core.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
+
+app.add_middleware(RateLimitMiddleware)
+# ★ M6 T6.4 安全：CSP + 点击劫持 + MIME 嗅探等安全响应头
+app.add_middleware(SecurityHeadersMiddleware)
+
+# ── M6 T6.3 安全：CORS 白名单收紧（默认本地前端，生产经 CORS_ORIGINS 配置）
+# ★ 修复：CORS 必须注册在限流中间件外层，否则 429 限流响应绕过 CORSMiddleware
+#   导致浏览器报 "No 'Access-Control-Allow-Origin' header"，限流错误无法被前端读取。
 _origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
@@ -52,11 +61,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ── M6 T6.3 安全：Redis 限流中间件（登录/支付/提现分级）──
-from api.core.middleware import RateLimitMiddleware
-
-app.add_middleware(RateLimitMiddleware)
 
 
 # ── M6 T6.2 监控：HTTP 指标中间件（请求计数 + 耗时直方图）──

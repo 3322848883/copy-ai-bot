@@ -4,8 +4,12 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  # 多实例部署：在 targets 列出全部 API 副本（e.g. api:8000, api2:8000, api3:8000）。
+  # 实例级 Counter(Gauge) 由 Prometheus 按 instance 标签区分，聚合时用 sum()：
+  #   sum(rate(signal_received_total[5m])) by (exchange)
+  # 派生 gauge（app_copy_orders_filled_total 等）各副本抓取共享 DB 得到相同值，sum() 无叠加问题。
   - job_name: signal-saas-api
     static_configs:
-      - targets: ["api:8000"]
+      - targets: ["api:8000"]                # 扩容时追加副本，如 ["api:8000", "api2:8000", "api3:8000"]
         labels:
           service: api

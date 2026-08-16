@@ -56,12 +56,18 @@ class GateAdapter(ExchangeAdapter):
             await self._signed_post(f"/futures/usdt/positions/{symbol}/leverage", api_key, api_secret, query=f"leverage={leverage}")
         logger.info("set_leverage(%s, %s)", symbol, leverage)
 
-    async def set_margin_mode(self, symbol: str, mode: str, api_key: str, api_secret: str) -> None:
-        """★ G07：下单前必须调用（isolated / cross）。"""
+    async def set_margin_mode(self, symbol: str, mode: str, leverage: int, api_key: str, api_secret: str) -> None:
+        """★ G07：下单前必须调用（isolated / cross）。
+        Gate.io 期货以杠杆值区分保证金模式：leverage=0 → 全仓(cross)，>0 → 逐仓(isolated)。
+        """
         if not self.mock:
-            # 切换全仓：POST /futures/{settle}/positions/cross_mode（旧 /orders/{symbol}/dual_mode 404）
-            await self._signed_post("/futures/usdt/positions/cross_mode", api_key, api_secret, query="leverage=0")
-        logger.info("set_margin_mode(%s, %s)", symbol, mode)
+            lev = 0 if mode == "cross" else (leverage if leverage and leverage > 0 else 1)
+            await self._signed_post(
+                f"/futures/usdt/positions/{symbol}/leverage",
+                api_key, api_secret,
+                payload={"leverage": lev},
+            )
+        logger.info("set_margin_mode(%s, %s, lev=%s)", symbol, mode, leverage)
 
     async def place_order(
         self,
