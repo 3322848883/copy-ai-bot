@@ -46,7 +46,8 @@ async def session_start(_: Any = Depends(get_current_admin)) -> dict:
     if not settings.signal_session_enabled:
         raise AuthError("signal_session 功能未启用")
     st = await get_signal_session().start_login()
-    return st.__dict__
+    # ★ enabled 必须随响应返回：前端以 status.enabled 控制核心 UI 渲染，缺省会误判为"功能未启用"整块塌陷
+    return {"enabled": True, **st.__dict__}
 
 
 @router.get("/screenshot")
@@ -72,7 +73,19 @@ async def session_complete(_: Any = Depends(get_current_admin)) -> dict:
     if not settings.signal_session_enabled:
         raise AuthError("signal_session 功能未启用")
     st = await get_signal_session().complete_login()
-    return st.__dict__
+    # ★ 完全自动：登录后立即把「我账户跟单的交易员」同步为策略广场展示项
+    if st.logged_in:
+        try:
+            from api.workers.tasks_signal import sync_followed_leaders
+
+            await sync_followed_leaders()
+        except Exception as exc:  # noqa: BLE001 同步失败不阻断登录确认
+            import logging
+
+            logging.getLogger("signal-saas.admin.signal_session").warning(
+                "登录后同步已跟单交易员失败: %s", exc
+            )
+    return {"enabled": True, **st.__dict__}
 
 
 @router.post("/close")

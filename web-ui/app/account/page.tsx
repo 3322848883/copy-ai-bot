@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
@@ -42,7 +43,7 @@ export default function AccountPage() {
   // ★ Tab + 绑定弹窗 + Toast
   const [tab, setTab] = useState("overview");
   const [bindOpen, setBindOpen] = useState(false);
-  const [bindExchange, setBindExchange] = useState("binance");
+  const [bindExchange, setBindExchange] = useState("gate");
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -190,6 +191,19 @@ export default function AccountPage() {
       : <span className="badge badge-ok">正式版</span>
     : <span className="badge badge-warn">未开通</span>;
 
+  // ★ 跟单接入引导状态
+  const totalBind = apiKeys.length;
+  const NEXT_SOURCE =
+    ["binance", "okx", "bybit", "bitget", "gate"].find((e) => !apiKeys.some((k) => k.exchange === e)) ?? "gate";
+
+  function openBind(ex: string) {
+    setBindExchange(ex);
+    setBindOpen(true);
+  }
+
+  const boundLabel = (ex: string) => EXCHANGE_LABEL[ex] || ex;
+  const boundLabels = () => apiKeys.map((k) => boundLabel(k.exchange));
+
   return (
     <main style={{ minHeight: "100vh", position: "relative" }}>
       <div className="aurora" />
@@ -232,7 +246,70 @@ export default function AccountPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 24, minWidth: 0 }}>
             {/* ── 账户概览 ── */}
             {tab === "overview" && (
-              <div className="panel">
+              <>
+                {/* ★ 接入指引：跟单接入（解决"登录后怎么添加数据源/第二个第三个"，对齐跨所·不限·用户端不显露所） */}
+                <div className="panel">
+                  <div className="panel-hdr">
+                    <div className="panel-title"><span className="sec-dot"></span>接入指引 · 跟单接入</div>
+                    <span className="panel-sub">已绑定 <strong style={{ color: "var(--accent)" }}>{totalBind}</strong> 个 API Key</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.7, marginBottom: 18 }}>
+                    开启跟单前，需在平台授权你的交易所 API Key（即你的「数据源」）。支持 Gate / Binance / OKX / Bybit / Bitget，
+                    数量不限、可随时添加；绑定任意交易所后即可在「策略广场」<strong>跨所</strong>跟单任意信号源。
+                    交易所归属仅用于后台管理，策略广场向您隐藏该信息。
+                  </div>
+
+                  {/* 步骤 ① 绑定 API Key（任意所 · 不限数量） */}
+                  <div style={{ display: "flex", gap: 14, alignItems: "center", padding: "14px 0", borderTop: "1px solid var(--rule)" }}>
+                    <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700,
+                      border: totalBind > 0 ? "2px solid var(--success)" : "2px solid var(--accent)", background: totalBind > 0 ? "rgba(22,163,74,0.15)" : "rgba(0,212,170,0.12)",
+                      color: totalBind > 0 ? "var(--success)" : "var(--accent)" }}>
+                      {totalBind > 0 ? "✓" : "1"}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14 }}>
+                        绑定交易所 API Key
+                        <span className="badge badge-muted" style={{ fontSize: 10 }}>Step 1</span>
+                        {totalBind > 0 ? boundLabels().map((l) => (
+                          <span key={l} className="badge badge-ok" style={{ fontSize: 10 }}>{l}</span>
+                        )) : <span className="badge badge-warn" style={{ fontSize: 10 }}>未绑定 · 任意交易所均可</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                        授权「读取 + 合约交易」权限（严禁提现）。可绑定多个不同交易所，数量不限，跨所跟单任意信号源。
+                      </div>
+                    </div>
+                    <button className="btn btn-primary" style={{ padding: "6px 14px", fontSize: 12, flexShrink: 0 }} onClick={() => openBind(NEXT_SOURCE)}>
+                      {totalBind > 0 ? "再添加" : "绑定 API Key"}
+                    </button>
+                  </div>
+
+                  {/* 步骤 ② 前往策略广场开启跟单 */}
+                  <div style={{ display: "flex", gap: 14, alignItems: "center", padding: "14px 0", borderTop: "1px solid var(--rule)" }}>
+                    <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700,
+                      border: "2px solid var(--accent)", background: "rgba(0,212,170,0.12)", color: "var(--accent)" }}>
+                      2
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14 }}>
+                        前往策略广场开启跟单
+                        <span className="badge badge-muted" style={{ fontSize: 10 }}>Step 2</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                        挑选带单员一键跟单（跨所，无需与信号源同所），机器人运行状态在「我的跟单」查看。
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                      <Link href="/bots" className="btn btn-secondary" style={{ padding: "6px 14px", fontSize: 12 }}>我的跟单</Link>
+                      <Link href="/strategies" className="btn btn-primary" style={{ padding: "6px 14px", fontSize: 12 }}>去跟单 →</Link>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 10, padding: 12, borderRadius: 6, border: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.05)", fontSize: 12, color: "var(--danger)", lineHeight: 1.6 }}>
+                    ⚠ 安全要求：仅授权「读取 + 合约交易」，<strong>严禁绑定带提现权限的 Key</strong>，密钥将以 AES-256-GCM 加密存储。
+                  </div>
+                </div>
+
+                <div className="panel">
                 <div className="panel-hdr">
                   <div className="panel-title"><span className="sec-dot"></span>账户概览</div>
                   <span className="panel-sub">/v1/subscriptions/me</span>
@@ -264,6 +341,7 @@ export default function AccountPage() {
                   </div>
                 </div>
               </div>
+              </>
             )}
 
             {/* ── API 密钥管理 ── */}
@@ -327,15 +405,29 @@ export default function AccountPage() {
                     <div style={{ color: "var(--muted)", fontSize: 12, textAlign: "center" }}>
                       绑定其他交易所 API（Binance/OKX/Bybit/Bitget）
                     </div>
-                    <button className="btn btn-primary" style={{ padding: "6px 16px", fontSize: 12, height: 32 }} onClick={() => { setBindOpen(true); }}>
+                    <button className="btn btn-primary" style={{ padding: "6px 16px", fontSize: 12, height: 32 }} onClick={() => openBind(NEXT_SOURCE)}>
                       绑定 API
                     </button>
                   </div>
                 </div>
 
-                {apiKeys.length === 0 && (
-                  <div style={{ fontSize: 11, color: "var(--tertiary)", marginTop: 12 }}>
-                    尚未绑定 API，点击上方「绑定 API」完成交易所密钥接入
+                {apiKeys.length === 0 ? (
+                  <div style={{ marginTop: 16, padding: 20, borderRadius: 8, border: "1px dashed rgba(0,212,170,0.4)", background: "rgba(0,212,170,0.04)", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 30, lineHeight: 1 }}>🔑</div>
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>你还没有绑定任何 API Key</div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2, lineHeight: 1.6 }}>
+                        绑定交易所 API Key 后即可在「策略广场」跨所跟单任意信号源。支持 Gate / Binance / OKX / Bybit / Bitget，
+                        数量不限，可绑定任意一个或多个交易所。
+                      </div>
+                    </div>
+                    <button className="btn btn-primary" style={{ padding: "8px 18px", fontSize: 13 }} onClick={() => openBind(NEXT_SOURCE)}>
+                      立即绑定 API Key
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: "var(--tertiary)", marginTop: 12 }}>
+                    已绑定 {totalBind} 个 API Key，数量不限，可继续通过上方「绑定 API」添加更多交易所。
                   </div>
                 )}
               </div>
@@ -473,11 +565,11 @@ export default function AccountPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <label className="label">交易所</label>
                 <select className="input" value={bindExchange} onChange={(e) => setBindExchange(e.target.value)}>
+                  <option value="gate">Gate（支持 USDT 合约）</option>
                   <option value="binance">Binance</option>
                   <option value="okx">OKX</option>
                   <option value="bybit">Bybit</option>
                   <option value="bitget">Bitget</option>
-                  <option value="gate">Gate</option>
                 </select>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>

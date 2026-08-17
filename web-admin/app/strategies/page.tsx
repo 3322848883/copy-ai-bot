@@ -9,11 +9,12 @@ import { useToast } from "@/components/Toast";
 type Strategy = {
   id: number; trader_id: number; exchange: string; display_name: string; style: string; risk_rating: string;
   status: string; followers: number; roi_30d: number; roi_all: number; win_rate_30d: number; win_rate_all: number;
-  max_drawdown: number; trading_days: number;
+  max_drawdown: number; trading_days: number; collector_ready?: boolean;
+  is_follow?: boolean; created_at?: string;
 };
 type Trader = {
   id: number; exchange: string; trader_id: string; name: string; roi_7d: number; roi_30d: number; roi_all: number;
-  win_rate_all: number; max_drawdown: number; trading_days: number; followers: number;
+  win_rate_all: number; max_drawdown: number; trading_days: number; followers: number; collector_ready?: boolean;
 };
 type SearchResult = {
   leader_id: number | string; nick: string; roi_30d: number; win_rate_all: number; max_drawdown: number;
@@ -57,7 +58,6 @@ export default function AdminStrategiesPage() {
 
   // 上架弹窗状态
   const [listTarget, setListTarget] = useState<Trader | null>(null);
-  const [displayName, setDisplayName] = useState("");
   const [style, setStyle] = useState("trend");
   const [riskRating, setRiskRating] = useState("mid");
   const [forceReason, setForceReason] = useState("");
@@ -68,6 +68,38 @@ export default function AdminStrategiesPage() {
   const [searchMsg, setSearchMsg] = useState("");
   const [searching, setSearching] = useState(false);
   const [syncing, setSyncing] = useState(false);
+
+  // ★ M6 T8 设为数据源（进入审核流水线）：手动新增待选带单员 + 搜索结果导入
+  const [impEx, setImpEx] = useState("gate");
+  const [impId, setImpId] = useState("");
+  const [impName, setImpName] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  async function importSource(exchange: string, traderId: string, name?: string) {
+    if (!traderId) return;
+    setImporting(true);
+    try {
+      const r = await apiFetch<{ ok: boolean; message?: string; already_listed?: boolean; collector_ready?: boolean }>(
+        "/admin/v1/signals/import",
+        { method: "POST", body: JSON.stringify({ exchange, trader_id: traderId, name: name || "", followers: 0 }) },
+        tokenStore.adminAccess,
+      );
+      toast(r.ok ? "success" : "warn", r.message || (r.ok ? "已加入待选池，请在待选池完成审核上架" : "导入失败"));
+      setImpId("");
+      setImpName("");
+      load();
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "导入失败");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  const importFromSearch = (r: SearchResult) =>
+    importSource("gate", String(r.leader_id), r.nick);
+
+  const collectorTag = (t: { exchange?: string; collector_ready?: boolean }) =>
+    t.collector_ready === false ? <span className="badge badge-warn">待接入采集</span> : null;
 
   async function syncProfiles() {
     setSyncing(true);
@@ -145,7 +177,7 @@ export default function AdminStrategiesPage() {
         method: "POST",
         body: JSON.stringify({
           trader_id: listTarget.id,
-          display_name: displayName || listTarget.trader_id,
+          exchange: (ex === "全部" ? "gate" : ex.toLowerCase()),
           style,
           risk_rating: riskRating,
           force: !passed,
@@ -256,7 +288,13 @@ export default function AdminStrategiesPage() {
                 const fails = gateFailures(t);
                 return (
                   <tr key={t.id}>
-                    <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{t.trader_id}</td>
+                    <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+                      {t.name}
+                      <span style={{ marginLeft: 8, color: "var(--muted)", fontFamily: "inherit", fontSize: 11 }}>
+                        · {t.exchange.toUpperCase()}
+                      </span>
+                      {collectorTag(t)}
+                    </td>
                     <td className="num" style={{ color: t.win_rate_all >= 55 ? "var(--success)" : "#f87171" }}>{t.win_rate_all.toFixed(1)}%</td>
                     <td className="num" style={{ color: t.max_drawdown > 30 ? "#f87171" : undefined }}>{t.max_drawdown.toFixed(1)}%</td>
                     <td className="num" style={{ color: t.trading_days < 30 ? "#f87171" : undefined }}>{t.trading_days}</td>
@@ -269,7 +307,7 @@ export default function AdminStrategiesPage() {
                     <td>
                       <button
                         className={`action-link${passed ? "" : " danger"}`}
-                        onClick={() => { setListTarget(t); setDisplayName(""); setStyle("trend"); setRiskRating("mid"); setForceReason(""); }}
+                        onClick={() => { setListTarget(t); setStyle("trend"); setRiskRating("mid"); setForceReason(""); }}
                       >
                         {passed ? "上架" : "强制上架"}
                       </button>
@@ -279,6 +317,29 @@ export default function AdminStrategiesPage() {
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* 新增待选带单员（★ M6 T8 设为数据源 · 进入审核流水线 · 对应5家交易所） */}
+      <div className="panel">
+        <div className="panel-hdr">
+          <div className="panel-title"><span className="sec-dot"></span>新增待选带单员（设为数据源）</div>
+          <span className="panel-sub">/admin/v1/signals/import · 写入该交易所待选池 → 审核上架 → 用户建机器人</span>
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <select className="select" style={{ width: 150 }} value={impEx} onChange={(e) => setImpEx(e.target.value.toLowerCase())}>
+            {EXCHANGES.filter((e) => e !== "全部").map((e) => (
+              <option key={e} value={e.toLowerCase()}>{e} {e === "GATE" ? "" : "(待接入采集)"}</option>
+            ))}
+          </select>
+          <input className="input" style={{ flex: 1, maxWidth: 220 }} placeholder="带单员 ID（如 Gate leader_id）" value={impId} onChange={(e) => setImpId(e.target.value)} />
+          <input className="input" style={{ flex: 1, maxWidth: 260 }} placeholder="昵称（可选）" value={impName} onChange={(e) => setImpName(e.target.value)} />
+          <button className="btn btn-primary" onClick={() => importSource(impEx, impId.trim(), impName.trim())} disabled={importing || !impId.trim()}>
+            {importing ? "导入中…" : "加入待选池"}
+          </button>
+        </div>
+        <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>
+          提示：仅 GATE 已接入信号源采集（搜索结果「设为数据源」也可直接导入）；其余交易所为人工录入待选池，上架后进入该所策略，采集待接入。
         </div>
       </div>
 
@@ -299,7 +360,11 @@ export default function AdminStrategiesPage() {
               )}
               {listedFiltered.map((s) => (
                 <tr key={s.id}>
-                  <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{s.display_name}</td>
+                  <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
+                    {s.display_name}
+                    {s.is_follow && <span className="badge badge-ok" style={{ marginLeft: 8, fontSize: 10 }}>已跟单</span>}
+                    {collectorTag(s)}
+                  </td>
                   <td>{STYLE_OPTIONS.find((o) => o.v === s.style)?.label || s.style}</td>
                   <td>{riskBadge(s.risk_rating)}</td>
                   <td className="num" style={{ color: s.roi_30d >= 0 ? "var(--success)" : "#f87171" }}>{s.roi_30d >= 0 ? "+" : ""}{s.roi_30d.toFixed(1)}%</td>
@@ -383,7 +448,7 @@ export default function AdminStrategiesPage() {
           <div style={{ overflowX: "auto" }}>
             <table className="ftx-table">
               <thead>
-                <tr><th>leader_id</th><th>昵称</th><th className="num">30日收益</th><th className="num">胜率</th><th className="num">回撤</th><th className="num">跟单人数</th><th>状态</th></tr>
+                <tr><th>leader_id</th><th>昵称</th><th className="num">30日收益</th><th className="num">胜率</th><th className="num">回撤</th><th className="num">跟单人数</th><th>状态</th><th>操作</th></tr>
               </thead>
               <tbody>
                 {searchResults.map((r) => (
@@ -398,10 +463,15 @@ export default function AdminStrategiesPage() {
                       <td>
                         {r.is_follow ? <span style={{ color: "var(--success)" }}>已跟单</span> : r.is_full ? <span style={{ color: "var(--warning)" }}>已满员</span> : <span style={{ color: "var(--muted)" }}>未跟单</span>}
                       </td>
+                      <td>
+                        <button className="action-link" disabled={importing} onClick={() => importFromSearch(r)}>
+                          设为数据源
+                        </button>
+                      </td>
                     </tr>
                     {r.style && (
                       <tr style={{ background: "rgba(255,255,255,0.015)" }}>
-                        <td colSpan={7} style={{ color: "var(--muted)", paddingTop: 6, paddingBottom: 6 }}>
+                        <td colSpan={8} style={{ color: "var(--muted)", paddingTop: 6, paddingBottom: 6 }}>
                           <div style={{ lineHeight: 1.7 }}>
                             <div><b style={{ color: "var(--fg)" }}>风格</b>：{r.style.replace(/\|/g, " / ")}　<b style={{ color: "var(--fg)" }}>跟单区间</b>：{r.min_follow_amount || "-"} ~ {r.max_follow_amount || "-"} USDT</div>
                             {r.abstract && <div style={{ marginTop: 2 }}><b style={{ color: "var(--fg)" }}>简介</b>：{r.abstract}</div>}
@@ -430,17 +500,17 @@ export default function AdminStrategiesPage() {
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>
               {gatePassed(listTarget) ? (
-                <><strong style={{ color: "var(--fg)" }}>{listTarget.trader_id}</strong> 已通过 G04 门槛校验，上架后将出现在用户端策略广场</>
+                <><strong style={{ color: "var(--fg)" }}>{listTarget.name}</strong> 已通过 G04 门槛校验，上架后将出现在用户端策略广场</>
               ) : (
-                <><strong style={{ color: "#f87171" }}>{listTarget.trader_id}</strong> 未通过门槛校验（{gateFailures(listTarget).join(" / ")}）。强制上架必须填写原因，并将写入审计日志。</>
+                <><strong style={{ color: "#f87171" }}>{listTarget.name}</strong> 未通过门槛校验（{gateFailures(listTarget).join(" / ")}）。强制上架必须填写原因，并将写入审计日志。</>
               )}
             </div>
             {!gatePassed(listTarget) && (
               <div className="warn-note"><span>⚠</span><span>强制上架绕过 G04 门槛，将承担额外的信号质量风险，请审慎操作</span></div>
             )}
             <div className="field">
-              <label className="field-label">策略显示名</label>
-              <input className="input" placeholder="如：BTC 趋势突破" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+              <label className="field-label">策略名称（统一标准：昵称（id））</label>
+              <div className="input" style={{ opacity: 0.75 }}>{listTarget.name}</div>
             </div>
             <div className="field" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>

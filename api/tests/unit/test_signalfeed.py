@@ -317,7 +317,8 @@ def test_search_leaders_by_nick_parses_profile():
         }
 
     scraper._api = fake_api
-    items = asyncio.run(scraper.search_leaders("风懃"))
+    # ★ 方案B：私有接口默认走登录会话；这里显式传 self._api 走公开解析路径（单测）
+    items = asyncio.run(scraper.search_leaders("风懃", fetcher=scraper._api))
     assert items is not None and len(items) == 1
     it = items[0]
     assert it["leader_id"] == 24264
@@ -353,16 +354,24 @@ def test_get_leader_by_id_detail_parses_profile():
                            "abstract": "顺势而为", "min_follow_amount": "10",
                            "max_follow_amount": "50000",
                            "markets": [{"market": "BTC_USDT"}, {"market": "ETH_USDT"}]},
-                "profit": {"profit_rate": "-0.6442", "win_num": 174, "loss_num": 260,
-                           "curr_follow_num": 1, "max_drawdown": "0.3477", "is_full": 0},
+                "profit": {"profit_rate": "-0.6442", "month_profit_rate": "-0.1268",
+                           "seven_profit_rate": "0.02", "three_month_profit_rate": "-0.8366",
+                           "win_num": 174, "loss_num": 260, "month_win_rate": "0.9514",
+                           "curr_follow_num": 1, "max_drawdown": "0.3477",
+                           "duration_day": "120", "is_full": 0},
             },
         }
 
     scraper._api = fake_api
-    it = asyncio.run(scraper.get_leader_by_id("24264"))
+    # ★ 方案B：私有接口默认走登录会话；这里显式传 self._api 走公开解析路径（单测）
+    it = asyncio.run(scraper.get_leader_by_id("24264", fetcher=scraper._api))
     assert it is not None
     assert it["leader_id"] == "24264"
-    assert it["roi_30d"] == -64.42
+    assert it["roi_7d"] == 2.0             # seven_profit_rate 0.02 → 2
+    assert it["roi_30d"] == -12.68          # month_profit_rate -0.1268 → -12.68
+    assert it["roi_90d"] == -83.66          # three_month_profit_rate -0.8366 → -83.66
+    assert it["roi_all"] == -64.42          # profit_rate -0.6442 → -64.42
+    assert it["win_rate_30d"] == 95.14      # month_win_rate 0.9514 → 95.14
     assert it["win_rate_all"] == 40.1          # 174/434
     assert it["max_drawdown"] == 34.77
     assert it["followers"] == 1

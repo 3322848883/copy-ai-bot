@@ -21,6 +21,14 @@ G04_MAX_DRAWDOWN = 30.0   # 回撤 ≤ 30%
 G04_MIN_TRADING_DAYS = 30  # 天数 ≥ 30
 
 
+def format_display_name(nick: str | None, trader_id: str) -> str:
+    """★ 统一信号源策略名称标准：昵称（id），如「复利如慢牛（32801）」。"""
+    nick = (nick or "").strip()
+    if not nick:
+        return trader_id
+    return f"{nick}（{trader_id}）"
+
+
 class TraderSelectionPolicy:
     """★ G04 带单员门槛校验：不达标禁止上架；force=true 可跳过但需理由 + audit-log。"""
 
@@ -154,7 +162,8 @@ class StrategyService:
         strategy = Strategy(
             trader_id=trader_id,
             source_exchange=exchange,
-            display_name=display_name or trader.trader_id,
+            # ★ 统一命名标准：昵称（id），忽略前端自定义名
+            display_name=format_display_name(trader.name, trader.trader_id),
             style=style,
             risk_rating=risk_rating,
             status="listed",
@@ -201,6 +210,48 @@ class StrategyService:
         await self.db.commit()
         await self.db.refresh(strategy)
         return strategy
+
+    # ── ★ 完全自动：我账户跟单的交易员 → 策略广场展示项 ──
+    async def ensure_followed_strategy(self, trader_id: int, display_name: str, exchange: str = "gate") -> Strategy:
+        """确保「我账户跟单的交易员」有 listed 策略（完全自动，跳过 G04 门槛）。
+
+        策略广场只展示我账户跟单的交易员：跟单了谁就展示谁，无需后台审核。
+        """
+        trader = await self.db.get(Trader, trader_id)
+        std_name = format_display_name(trader.name if trader else None, trader.trader_id if trader else str(trader_id))
+        existing = await self.db.scalar(select(Strategy).where(Strategy.trader_id == trader_id))
+        if existing:
+            if existing.display_name != std_name:
+                existing.display_name = std_name
+            if existing.status != "listed":
+                existing.status = "listed"
+                await self.db.flush()
+            return existing
+        strategy = Strategy(
+            trader_id=trader_id,
+            source_exchange=exchange,
+            display_name=std_name,
+            style="trend",
+            risk_rating="mid",
+            status="listed",
+        )
+        self.db.add(strategy)
+        await self.db.flush()
+        return strategy
+
+    async def delist_unfollowed(self, followed_trader_ids: set[int]) -> int:
+        """把不再跟单的交易员策略自动下架（策略广场只保留我账户跟单的交易员）。"""
+        strategies = (
+            await self.db.execute(select(Strategy).where(Strategy.status == "listed"))
+        ).scalars().all()
+        count = 0
+        for s in strategies:
+            if s.trader_id not in followed_trader_ids:
+                s.status = "delisted"
+                count += 1
+        if count:
+            await self.db.flush()
+        return count
 
     # ── 策略详情（T2.10/T2.11 ★ G21 缓存兜底）──
     async def get_strategy_detail(self, strategy_id: int) -> dict:
@@ -276,7 +327,7 @@ class StrategyService:
             "id": t.id,
             "exchange": t.exchange,
             "trader_id": t.trader_id,
-            "name": t.trader_id,
+            "name": format_display_name(t.name, t.trader_id),
             "roi_7d": p.roi_7d if p else 0,
             "roi_30d": p.roi_30d if p else 0,
             "roi_90d": p.roi_90d if p else 0,

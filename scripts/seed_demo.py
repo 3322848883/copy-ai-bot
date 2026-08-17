@@ -45,22 +45,29 @@ async def main():
     async with Session() as db:
         today = date.today()
 
-        # ── 1. 带单员 + 策略（3 个）──
+        # ── 1. 带单员 + 策略（不限个数；跨交易所：signal_source 按所区分，目前 Gate 有真实采集适配器）──
         specs = [
-            # (trader_id, name, followers, display, style, risk, win_rate, drawdown, days, roi_all, roi_30d)
-            ("slow_bull_32801", "慢牛信号", 328, "趋势猎手·慢牛", "trend", "mid", 62.5, 18.2, 120, 86.4, 21.3),
-            ("wind_keys_24264", "风控大师", 214, "风控稳健·波段", "range", "low", 70.1, 12.4, 200, 54.2, 9.8),
-            ("alpha_engine_9", "Alpha引擎", 501, "Alpha动量·进攻", "momentum", "high", 58.9, 27.6, 90, 132.5, 35.7),
+            # (exchange, trader_id, name, followers, display, style, risk, win_rate, drawdown, days, roi_all, roi_30d)
+            ("gate", "slow_bull_32801", "慢牛信号", 328, "趋势猎手·慢牛", "trend", "mid", 62.5, 18.2, 120, 86.4, 21.3),
+            ("gate", "wind_keys_24264", "风控大师", 214, "风控稳健·波段", "range", "low", 70.1, 12.4, 200, 54.2, 9.8),
+            ("gate", "alpha_engine_9", "Alpha引擎", 501, "Alpha动量·进攻", "momentum", "high", 58.9, 27.6, 90, 132.5, 35.7),
+            ("gate", "scalper_x7", "短线快手", 187, "Gate闪电·高频", "range", "high", 56.3, 22.1, 75, 48.3, 7.6),
+            ("gate", "gate_rv_6", "RV波动猎人", 146, "Gate波动·反转", "range", "mid", 60.4, 15.7, 140, 67.8, 11.2),
+            ("binance", "bn_grid_88", "网格大师", 442, "币安稳健·网格", "range", "mid", 66.3, 14.0, 160, 73.9, 12.4),
+            ("binance", "bn_btc_fut", "BTC狙手", 330, "币安BTC·趋势", "trend", "mid", 60.7, 16.8, 130, 91.2, 18.6),
+            ("binance", "bn_algo_77", "量化猎手", 258, "币安量化·动量", "momentum", "high", 57.4, 25.9, 85, 118.7, 29.4),
+            ("okx", "okx_macd_5", "OKX波段", 196, "OKX波段·MACD", "trend", "low", 68.2, 11.3, 180, 61.5, 8.9),
+            ("okx", "okx_hyper_3", "OKX激进", 152, "OKX动量·进攻", "momentum", "high", 55.9, 28.7, 70, 143.8, 38.5),
         ]
         traders = {}
         strategies = {}
-        for i, (tid, name, followers, display, style, risk, wr, dd, days, roi_all, roi_30d) in enumerate(specs, start=1):
-            t = Trader(id=i, exchange="gate", trader_id=tid, name=name, followers=followers)
+        for i, (ex, tid, name, followers, display, style, risk, wr, dd, days, roi_all, roi_30d) in enumerate(specs, start=1):
+            t = Trader(id=i, exchange=ex, trader_id=tid, name=name, followers=followers)
             db.add(t)
             await db.flush()
             traders[tid] = t
             s = Strategy(
-                trader_id=t.id, source_exchange="gate", display_name=display,
+                trader_id=t.id, source_exchange=ex, display_name=display,
                 style=style, risk_rating=risk, gray_pct=100, status="listed",
             )
             db.add(s)

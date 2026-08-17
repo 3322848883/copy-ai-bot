@@ -15,8 +15,11 @@
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from api.core.config import get_settings
@@ -42,6 +45,13 @@ class SessionStatus:
     source_mode: str = "follower"               # 固定：模式2 跟单账户
 
 
+# 登录态跨进程标记：uvicorn(admin) 与 celery worker 是独立进程、各自持有独立单例，
+# 但共享同一 user_data_dir。浏览器由"最后使用它的进程"持有（profile 锁互斥），
+# 因此本进程未必持有浏览器。__loginstate.json 用于把"已确认登录"持久化，
+# 供无浏览器的进程（如 admin /status）据此展示 logged_in（绿点），避免一直"连接中"。
+_LOGIN_MARKER = ".loginstate.json"
+
+
 class SignalSession:
     """单例：模式2 持久化浏览器会话。
 
@@ -58,11 +68,58 @@ class SignalSession:
         self._state = "idle"
         self._data_dir: str | None = None
 
+    # ── 登录态跨进程标记 ──
+    @staticmethod
+    def _marker_path() -> str:
+        return os.path.join(get_settings().signal_session_data_dir, _LOGIN_MARKER)
+
+    def _write_marker(self, logged_in: bool, trader_count: int = 0, message: str = "") -> None:
+        """把登录态确认结果落盘，供其它进程（uvicorn admin）展示绿点。"""
+        try:
+            data = {
+                "logged_in": bool(logged_in),
+                "trader_count": int(trader_count),
+                "message": message,
+                "ts": datetime.now(timezone.utc).isoformat(),
+            }
+            os.makedirs(os.path.dirname(self._marker_path()), exist_ok=True)
+            with open(self._marker_path(), "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+        except Exception:  # noqa: BLE001 标记写入失败不阻断主流程
+            logger.warning("signal session: 写登录态标记失败")
+
+    @staticmethod
+    def _read_marker() -> dict:
+        try:
+            with open(SignalSession._marker_path()) as f:
+                return json.load(f)
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def _has_persisted_dir(self) -> bool:
+        return os.path.isdir(get_settings().signal_session_data_dir)
+
     # ── 生命周期 ──
-    async def start_login(self) -> SessionStatus:
-        """启动持久化浏览器并打开 Gate 登录页（后台管理远程操作起点）。"""
+    async def start_login(self, force_launch: bool = False) -> SessionStatus:
+        """启动持久化浏览器并打开 Gate 登录页（后台管理远程操作起点）。
+
+        force_launch=True：fetch_api 需要真实可用的浏览器来调 follow/order 接口，
+        必须真正拉起，不能仅因标记存在而短路（否则 worker 每次 close 后无法复用，
+        导致 mode2 监控永久失效）。仅 admin 显式 /start 时走标记短路避免争抢锁。
+        """
         if self._page is not None:
             return self.status()
+        # ★ 已有跨进程确认的有效登录时，直接复用标记（仅 admin 显式启动，避免与 worker 争抢 profile 锁）
+        marker = self._read_marker()
+        if not force_launch and marker.get("logged_in"):
+            return SessionStatus(
+                "logged_in",
+                logged_in=True,
+                trader_count=int(marker.get("trader_count") or 0),
+                message=marker.get("message") or "已复用持久化登录态（其他进程正在使用该会话）",
+                has_persisted=True,
+                source_mode="follower",
+            )
         settings = get_settings()
         self._data_dir = settings.signal_session_data_dir
         self._state = "launching"
@@ -95,6 +152,14 @@ class SignalSession:
             # 若已有登录态(user_data_dir 非空)，直接进已登录; 否则进登录页
             await self._page.goto(GATE_COPY_MINE_URL, wait_until="domcontentloaded", timeout=60_000)
             self._state = "active"
+            # ★ 自动识别登录态：持久化 cookie 仍有效时直接置 logged_in，无需人工点「完成登录」
+            try:
+                ok, count = await self._check_logged_in()
+            except Exception:  # noqa: BLE001
+                ok, count = False, 0
+            if ok:
+                self._state = "logged_in"
+                self._write_marker(True, count, "自动识别：复用已持久化登录态")
             return self.status()
         except Exception as exc:  # noqa: BLE001
             logger.exception("signal session start_login failed")
@@ -153,6 +218,8 @@ class SignalSession:
             return self.status()
         ok, count = await self._check_logged_in()
         self._state = "logged_in" if ok else "active"
+        # ★ 登录态标记落盘：供 uvicorn 看板据此显示绿点（跨进程）
+        self._write_marker(ok, count, "登录成功，会话已持久化" if ok else "尚未检测到有效登录")
         return SessionStatus(
             self._state,
             logged_in=ok,
@@ -188,12 +255,19 @@ class SignalSession:
         - 返回 JSON dict；未登录/失败返回 None。
         """
         if self._page is None:
-            # ★ 会话未启动时自动拉起持久化会话（复用已落盘登录态），避免要求手动先启动
-            logger.info("gate signal session: fetch_api 会话未启动，自动拉起持久化会话")
-            await self.start_login()
-            if self._page is None:
-                logger.warning("gate signal session: fetch_api 无可用页面（自动启动失败，请先启动登录会话）")
-                return None
+            # ★ 会话未启动时自动拉起持久化会话（复用已落盘登录态），避免要求手动先启动。
+            #   force_launch=True：即使标记已确认登录也必须真正拉起浏览器，
+            #   否则 fetch 需要真实页面会永远失败（worker close 后标记仍为 logged_in）。
+            logger.info("gate signal session: fetch_api 会话未启动，强制拉起持久化会话")
+            await self.start_login(force_launch=True)
+        if self._page is None:
+            logger.warning("gate signal session: fetch_api 无可用页面（强制拉起失败，请检查浏览器/登录态）")
+            return None
+        # ★ 页面就绪等待：避免页面仍在导航/加载时 evaluate 报 NoneType（高频轮询下必现）
+        try:
+            await self._page.wait_for_load_state("domcontentloaded", timeout=15_000)
+        except Exception:  # noqa: BLE001 页面加载超时/异常不阻断，交给 evaluate 兜底
+            pass
         qs = "&".join(f"{k}={v}" for k, v in (params or {}).items())
         url = f"{GATE_BASE}{path}?{qs}" if qs else f"{GATE_BASE}{path}"
         js = (
@@ -207,9 +281,10 @@ class SignalSession:
             if s != 200:
                 logger.warning("gate signal session: fetch_api %s -> %s", path, s)
                 return None
-            import json as _json
-
-            return _json.loads(t)
+            # ★ 接口 200 即证明登录态有效：置 logged_in 并落盘标记，供 uvicorn 看板显示绿点
+            self._state = "logged_in"
+            self._write_marker(True, 0, "会话有效（fetch_api 200）")
+            return json.loads(t)
         except Exception as exc:  # noqa: BLE001
             logger.warning("gate signal session: fetch_api fail %s: %s", path, exc)
             return None
@@ -232,9 +307,20 @@ class SignalSession:
     def status(self) -> SessionStatus:
         """当前会话状态。"""
         if self._page is None:
+            # ★ 本进程未持有浏览器时，读取跨进程登录态标记（worker 可能在别处持有浏览器）
+            marker = self._read_marker()
+            if marker.get("logged_in"):
+                return SessionStatus(
+                    "logged_in",
+                    logged_in=True,
+                    trader_count=int(marker.get("trader_count") or 0),
+                    message=marker.get("message") or "已登录（复用持久化登录态）",
+                    has_persisted=True,
+                    source_mode="follower",
+                )
             return SessionStatus(
                 "idle",
-                has_persisted=self._data_dir is not None,
+                has_persisted=self._has_persisted_dir(),
                 source_mode="follower",
             )
         url = ""

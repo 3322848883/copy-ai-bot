@@ -52,12 +52,21 @@ export default function AdminSignalSessionPage() {
   const [polling, setPolling] = useState(false);
   const viewRef = useRef<HTMLDivElement>(null);
   const lastMouse = useRef<{ x: number; y: number } | null>(null);
+  // 鼠标交互期间暂停截图刷帧，避免画面抖动干扰精确定位（交互结束约 0.8s 后恢复）
+  const interactingUntil = useRef(0);
+  const PAUSE_AFTER_MS = 800;
+  const markInteracting = useCallback(() => {
+    interactingUntil.current = Date.now() + PAUSE_AFTER_MS;
+  }, []);
 
   // 搜索带单员
   const [kw, setKw] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<Leader[] | null>(null);
   const [searchMsg, setSearchMsg] = useState("");
+  // ★ 搜索带单员 → 设为数据源（进入「信号源审核」流水线）
+  const [importingIds, setImportingIds] = useState<Set<string>>(new Set());
+  const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
 
   const loadStatus = useCallback(async () => {
     try {
@@ -81,6 +90,8 @@ export default function AdminSignalSessionPage() {
     let alive = true;
     const tick = async () => {
       try {
+        // 鼠标交互期间暂停刷帧，画面保持稳定便于精确定位
+        if (Date.now() < interactingUntil.current) return;
         const r = await fetch(`${API_BASE}/admin/v1/signal-session/screenshot`, {
           headers: { Authorization: `Bearer ${tokenStore.adminAccess}` },
         });
@@ -185,6 +196,26 @@ export default function AdminSignalSessionPage() {
       toast("error", e instanceof Error ? e.message : "搜索失败");
     } finally {
       setSearching(false);
+    }
+  }
+
+  // ★ 设为数据源：把搜索结果导入「信号源审核」待选池（POST /admin/v1/signals/import）
+  async function setAsSource(r: Leader) {
+    const id = String(r.leader_id);
+    if (importingIds.has(id) || importedIds.has(id)) return;
+    setImportingIds((s) => new Set(s).add(id));
+    try {
+      const res = await apiFetch<{ ok: boolean; message?: string; already_listed?: boolean; collector_ready?: boolean }>(
+        "/admin/v1/signals/import",
+        { method: "POST", body: JSON.stringify({ exchange: "gate", trader_id: id, name: r.nick || "", followers: 0 }) },
+        tokenStore.adminAccess,
+      );
+      toast(res.ok ? "success" : "warn", res.message || (res.ok ? "已加入待选池，请在「信号源审核」完成上架" : "导入失败"));
+      if (res.ok || res.already_listed) setImportedIds((s) => new Set(s).add(id));
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "导入失败");
+    } finally {
+      setImportingIds((s) => { const n = new Set(s); n.delete(id); return n; });
     }
   }
 
@@ -317,9 +348,10 @@ export default function AdminSignalSessionPage() {
             <div
               ref={viewRef}
               style={{ position: "relative", width: "100%", border: "1px solid var(--rule)", borderRadius: 8, overflow: "hidden", cursor: "crosshair", aspectRatio: `${REMOTE_W}/${REMOTE_H}`, background: "#0b0e14" }}
-              onMouseMove={(e) => { const p = toRemote(e); sendEvent({ type: "mousemove", x: p.x, y: p.y }); }}
-              onClick={(e) => { const p = toRemote(e); sendEvent({ type: "click", x: p.x, y: p.y, button: "left" }); }}
-              onWheel={(e) => sendEvent({ type: "wheel", deltaX: e.deltaX, deltaY: e.deltaY })}
+              onMouseMove={(e) => { markInteracting(); const p = toRemote(e); sendEvent({ type: "mousemove", x: p.x, y: p.y }); }}
+              onMouseDown={(e) => { markInteracting(); }}
+              onClick={(e) => { markInteracting(); const p = toRemote(e); sendEvent({ type: "click", x: p.x, y: p.y, button: "left" }); }}
+              onWheel={(e) => { markInteracting(); sendEvent({ type: "wheel", deltaX: e.deltaX, deltaY: e.deltaY }); }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={imgSrc} alt="远程浏览器" style={{ width: "100%", height: "100%", objectFit: "fill", imageRendering: "auto" }} draggable={false} />
@@ -355,7 +387,7 @@ export default function AdminSignalSessionPage() {
         <div className="panel">
           <div className="panel-hdr">
             <div className="panel-title"><span className="sec-dot"></span>搜索带单员</div>
-            <span className="panel-sub">/admin/v1/signal-session/search · 只展示不跟单</span>
+            <span className="panel-sub">/admin/v1/signal-session/search · 搜索后可「设为数据源」进入审核流水线</span>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
             <input
@@ -375,7 +407,7 @@ export default function AdminSignalSessionPage() {
             <div style={{ overflowX: "auto" }}>
               <table className="ftx-table">
                 <thead>
-                  <tr><th>带单员 ID</th><th>昵称</th><th className="num">30日收益</th><th className="num">总胜率</th><th className="num">最大回撤</th><th className="num">跟单人数</th><th>状态</th></tr>
+                  <tr><th>带单员 ID</th><th>昵称</th><th className="num">30日收益</th><th className="num">总胜率</th><th className="num">最大回撤</th><th className="num">跟单人数</th><th>状态</th><th>操作</th></tr>
                 </thead>
                 <tbody>
                   {results.map((r) => (
@@ -388,6 +420,20 @@ export default function AdminSignalSessionPage() {
                       <td className="num">{r.followers.toLocaleString()}</td>
                       <td>
                         {r.is_follow ? <span className="badge badge-info">已跟单</span> : r.is_full ? <span className="badge badge-warn">已满员</span> : <span className="badge badge-muted">可跟单</span>}
+                      </td>
+                      <td>
+                        {importedIds.has(String(r.leader_id)) ? (
+                          <span className="badge badge-ok">已导入</span>
+                        ) : (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: "4px 10px", fontSize: 12 }}
+                            disabled={importingIds.has(String(r.leader_id))}
+                            onClick={() => setAsSource(r)}
+                          >
+                            {importingIds.has(String(r.leader_id)) ? "导入中…" : "设为数据源"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

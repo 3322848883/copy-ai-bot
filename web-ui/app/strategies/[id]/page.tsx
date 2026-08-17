@@ -240,9 +240,11 @@ export default function StrategyDetailPage() {
         }
       }
       const keys = await apiFetch<{ items: Array<{ exchange: string; id: number }> }>("/v1/apikeys", {}, tokenStore.access);
-      const gateKey = keys.items?.find((k) => k.exchange === "gate");
-      if (!gateKey) {
-        setFormMsg("请先到「我的账户」绑定 Gate API Key");
+      // 跨所跟单：绑定任意交易所 API 即可跟单任意信号源，优选 Gate
+      const bound = keys.items ?? [];
+      const key = bound.find((k) => k.exchange === "gate") ?? bound[0];
+      if (!key) {
+        setFormMsg("请先到「我的账户」绑定任一交易所 API Key 后再开启跟单");
         return;
       }
       // 方向（跟随/仅多/仅空）为界面高级配置，API 侧按跟随信号执行
@@ -252,7 +254,7 @@ export default function StrategyDetailPage() {
         {
           method: "POST",
           body: JSON.stringify({
-            strategy_id: detail.id, exchange: "gate", api_key_id: gateKey.id,
+            strategy_id: detail.id, exchange: key.exchange, api_key_id: key.id,
             amount_mode: ratio.mode,
             percent: ratio.mode === "percent" ? ratio.value : null,
             fixed_amount_usdt: ratio.mode === "fixed" ? 500 : null,
@@ -373,7 +375,7 @@ export default function StrategyDetailPage() {
               </button>
             )}
             <span style={{ fontSize: 10, color: "var(--tertiary)", textAlign: "center" }}>
-              已绑定交易所：{(detail.exchange ?? "gate").toUpperCase()} · 聚合 5 所信号源
+              信号源由平台审核上架，开启跟单即代表已通过风控预检
             </span>
           </div>
         </div>

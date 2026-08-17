@@ -2,15 +2,20 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# ★ 项目根目录 = config.py 的上一级(api/core -> api -> 根)。用绝对路径加载 .env，
+#   避免进程启动目录不在项目根时读不到配置（表现为功能开关全部落回默认值）。
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
     """全局配置，集中读取环境变量（.env 支持）。"""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(PROJECT_ROOT / ".env"), env_file_encoding="utf-8", extra="ignore")
 
     # ── 应用 ──
     app_name: str = "signal-saas"
@@ -81,6 +86,9 @@ class Settings(BaseSettings):
     #   1 个浏览器 = 1 套指纹/cookie 身份，页面数决定并发上限（每页独立 fetch 互不阻塞）。
     #   默认 4：单个交易所几十个带单员时，单轮耗时 ≈ 交易员数/池大小 × 单次往返。
     scraper_page_pool_size: int = 4
+    # ★ 方案B：公开爬虫独立 user_data_dir（与登录会话 signal_session_data_dir 彻底隔离）。
+    #   公开接口(模式A)走此目录的浏览器；私有接口(模式B)走登录会话，互不争抢 Chrome profile 锁。
+    scraper_data_dir: str = "data/scraper"
 
     # ── 实时信号轮询（★实测 2026-08：1 秒轮询公开接口 2000+ 请求 0 次 403）──
     signal_poll_interval: int = 1      # 轮询间隔(秒)；带单员分钟级交易，1 秒不丢单
@@ -92,6 +100,9 @@ class Settings(BaseSettings):
     # ★ 模式2 信号源：通过这些「跟单账户 leader_id」监控（JSON 数组格式，如 ["32801","24264"]）。
     #   模式2 只监控「自己已跟单」的镜像仓位，按 leader_id 精确对应；未跟单的带单员无法监控。
     signal_follower_leader_ids: tuple[str, ...] = ()
+    # ★ 需求补充：信号源详情(画像)定时刷新间隔(秒)。无论模式一/模式二，已上架(listed)
+    #   策略的带单员画像都要定期刷新，保证策略广场数据新鲜（不只依赖每日快照）。
+    signal_profile_refresh_interval: int = 1800
 
     # ── 模式2 信号源·持久化浏览器会话（后台管理「登录 Gate」）──
     #   服务器端维护一个持久化 Chrome(user_data_dir)，登录态自动落盘，

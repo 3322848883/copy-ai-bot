@@ -26,6 +26,16 @@ scripts/e2e_prod_local.py
 node_modules/
 .next/
 dist/
+*.tsbuildinfo
+
+# e2e 测试运行的临时产物（截图/报告/results，不入库）
+tests/e2e/**/test-results/
+tests/e2e/reports/playwright-report/
+tests/e2e/reports/closed-loop-screenshots/
+tests/e2e/reports/closed-loop.json
+
+# 信号源采集调试探针（一次性脚本，不入库）
+signals_test/
 
 # 数据与日志
 *.db

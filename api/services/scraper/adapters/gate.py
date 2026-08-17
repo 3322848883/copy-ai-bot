@@ -123,24 +123,15 @@ class GateScraper:
         mode = self.headless_mode or "new"
         args = self._headless_args(headless, mode)
         settings = get_settings()
-        # ★ 模式2：复用后台「登录 Gate」持久化会话（同一 user_data_dir），信号源直接拿到登录态
-        persistent = settings.signal_session_enabled and settings.signal_session_data_dir
-        # 若后台登录会话浏览器仍开着，直接复用其上下文（user_data_dir 被锁，不能开第二个）
-        if persistent:
-            try:
-                from api.services.signal_session.service import get_signal_session
-
-                ss = get_signal_session()
-                if ss._context is not None:
-                    self._context = ss._context
-                    self._browser = ss._context.browser
-                    logger.info("gate scraper: reuse active signal-session context")
-            except Exception:  # noqa: BLE001
-                pass
+        # ★ 方案B：公开爬虫用独立 user_data_dir（scraper_data_dir），与登录会话
+        #   (signal_session_data_dir) 彻底隔离，互不争抢 Chrome profile 锁。
+        #   公开接口(模式A)走此浏览器；私有接口(模式B)走 signal_session 登录会话。
+        persistent = bool(settings.scraper_data_dir)
+        data_dir = settings.scraper_data_dir
         try:
             if persistent and self._context is None:
                 self._context = await self._playwright.chromium.launch_persistent_context(
-                    user_data_dir=settings.signal_session_data_dir,
+                    user_data_dir=data_dir,
                     channel="chrome",
                     headless=headless,
                     viewport={"width": 1440, "height": 900},
@@ -148,7 +139,7 @@ class GateScraper:
                     extra_http_headers={"Accept-Language": "zh-CN,zh;q=0.9"},
                 )
                 self._browser = self._context.browser
-                logger.info("gate scraper: launch persistent chrome (data_dir=%s)", settings.signal_session_data_dir)
+                logger.info("gate scraper: launch persistent chrome (data_dir=%s)", data_dir)
             else:
                 browser = await self._playwright.chromium.launch(
                     channel="chrome", headless=headless, args=args
@@ -164,7 +155,7 @@ class GateScraper:
             logger.warning("gate scraper: chrome channel fail (%s), fallback chromium", exc)
             if persistent:
                 self._context = await self._playwright.chromium.launch_persistent_context(
-                    user_data_dir=settings.signal_session_data_dir,
+                    user_data_dir=data_dir,
                     headless=headless,
                     viewport={"width": 1440, "height": 900},
                     locale="zh-CN",
@@ -248,6 +239,23 @@ class GateScraper:
         up = symbol.upper()
         return any(mark in up for mark in settings.signal_test_symbols)
 
+    @staticmethod
+    def _session_fetcher():
+        """返回已登录会话的 fetch_api（模式2 私有接口必需）；未启用/异常返回 None。
+
+        ★ 方案B：私有接口(模式2)一律走 signal_session 登录会话，公开爬虫浏览器
+           (scraper_data_dir) 不持有登录态，二者彻底隔离。
+        """
+        settings = get_settings()
+        if not settings.signal_session_enabled:
+            return None
+        try:
+            from api.services.signal_session.service import get_signal_session
+
+            return get_signal_session().fetch_api
+        except Exception:  # noqa: BLE001
+            return None
+
     async def fetch_top_traders(self, limit: int = 100) -> list[RawTrader]:
         """获取公开带单排行榜（真实：leader/list 分页；dev：mock）。"""
         if self.mock:
@@ -283,6 +291,23 @@ class GateScraper:
                     t.roi_7d = week_map.get(t.trader_id, t.roi_7d)
         except Exception:  # noqa: BLE001
             logger.warning("gate week roi fetch fail")
+        # ★ 补全周期画像（detail 接口：累计收益/累计胜率/真实跟单人数/带单天数）
+        if not self.mock:
+            for t in traders:
+                try:
+                    detail = await self.get_leader_by_id(t.trader_id)
+                    if detail:
+                        t.roi_7d = detail.get("roi_7d") or t.roi_7d
+                        t.roi_90d = detail.get("roi_90d") or 0
+                        t.roi_all = detail.get("roi_all") or 0
+                        t.win_rate_30d = detail.get("win_rate_30d") or t.win_rate_30d
+                        t.win_rate_all = detail.get("win_rate_all") or 0
+                        t.max_drawdown = detail.get("max_drawdown") or t.max_drawdown
+                        t.followers = detail.get("followers") or t.followers
+                        t.trading_days = detail.get("trading_days") or t.trading_days
+                except Exception:  # noqa: BLE001 单个失败不阻断
+                    logger.warning("gate detail fetch fail: %s", t.trader_id)
+                await asyncio.sleep(random.uniform(SCRAPE_MIN_INTERVAL_S, SCRAPE_MAX_INTERVAL_S))
         return traders[:limit]
 
     async def fetch_trader_positions(self, trader_id: str) -> list[RawPosition]:
@@ -438,18 +463,25 @@ class GateScraper:
     #   ★ 必须按 leader_id 精确归属，绝不能用 trader_name 覆盖——否则会把跟单账户里其他带单员的
     #     仓位误标为主体带单员（带单员隐藏仓位时尤为致命）。差分引擎据此按 leader_id 隔离。
     async def fetch_followed_leaders(
-        self, status: str = "running"
+        self, status: str = "running", fetcher=None
     ) -> list[tuple[str, str]] | None:
         """自动发现「已跟单」的交易员列表（★ 2026-08 实测 /api/copytrade/copy_trading/follow/order）。
 
         - 返回 [(leader_id, nick), ...]：全部已跟单交易员，**含当前空仓的**（position 接口不返回空仓行）。
         - 返回 None：接口失败/未登录（调用方跳过本轮）。
+        - fetcher：可选。传 signal_session.fetch_api 时复用持久化登录会话（★ 推荐，避免
+          与登录会话争抢同一 user_data_dir 导致 profile 锁冲突）；None 走自身 _api。
         - ★ 用途：空仓交易员在 follower/position 不可见，必须靠此接口自动发现其 leader_id，
           避免手动维护 signal_follower_leader_ids 配置漏掉新跟单交易员。
         """
         if self.mock:
             return [("32801", "复利如慢牛"), ("24264", "风懃")]
-        resp = await self._api(
+        # ★ 方案B：私有接口默认走登录会话（未显式传 fetcher 时）
+        fetcher = fetcher or self._session_fetcher()
+        resp = await fetcher(
+            FOLLOW_ORDER_PATH,
+            {"page": 1, "page_size": 50, "status": status, "asset": "", "market": ""},
+        ) if fetcher is not None else await self._api(
             FOLLOW_ORDER_PATH,
             {"page": 1, "page_size": 50, "status": status, "asset": "", "market": ""},
         )
@@ -482,6 +514,8 @@ class GateScraper:
             return []
         if self.mock:
             return [{"leader_id": "24264", "nick": "风懃", "roi_30d": 3.2, "win_rate_all": 61.0}]
+        # ★ 方案B：私有接口默认走登录会话（未显式传 fetcher 时）
+        fetcher = fetcher or self._session_fetcher()
         resp = await fetcher(
             LEADER_SEARCH_PATH,
             {"name": keyword.strip(), "page": page, "page_size": page_size},
@@ -522,7 +556,8 @@ class GateScraper:
         走 /api/copytrade/copy_trading/trader/detail/{id}（★ 2026-08 实测返回完整画像）。
         - fetcher：可选。传 signal_session.fetch_api 时复用持久化登录会话（★ 推荐，避免
           与登录会话争抢同一 user_data_dir 导致 profile 锁冲突）；None 走自身 _api。
-        - 返回 dict：{leader_id, nick, roi_30d, win_rate_all, max_drawdown, followers,
+        - 返回 dict：{leader_id, nick, roi_7d, roi_30d, roi_90d, roi_all,
+          win_rate_30d, win_rate_all, max_drawdown, followers, trading_days,
           is_follow, is_full, style, abstract, markets, min_follow_amount, max_follow_amount}
         - 返回 None：接口失败/未登录。
         - 注意：detail 接口不返回昵称字段，nick 用 "Leader{id}" 占位，前端可自行补全。
@@ -530,8 +565,10 @@ class GateScraper:
         if not str(leader_id).strip().isdigit():
             return None
         if self.mock:
-            return {"leader_id": "24264", "nick": "Leader24264", "roi_30d": -64.42,
-                    "win_rate_all": 40.1, "max_drawdown": 34.77, "followers": 1,
+            return {"leader_id": "24264", "nick": "Leader24264",
+                    "roi_7d": 1.2, "roi_30d": -64.42, "roi_90d": -30.5, "roi_all": -80.0,
+                    "win_rate_30d": 38.0, "win_rate_all": 40.1,
+                    "max_drawdown": 34.77, "followers": 1, "trading_days": 120,
                     "is_follow": False, "is_full": False, "style": "high-frequence|short-line",
                     "abstract": "市场永远是对的，做市场的朋友，顺势而为！",
                     "min_follow_amount": "10", "max_follow_amount": "50000"}
@@ -551,10 +588,16 @@ class GateScraper:
         return {
             "leader_id": str(config.get("leader_id") or leader_id),
             "nick": f"Leader{leader_id}",
-            "roi_30d": self._to_pct(profit.get("profit_rate")),
+            # ★ 详情接口多周期字段：7d/30d/90d/all 均为小数比例(×100 转百分数)
+            "roi_7d": self._to_pct(profit.get("seven_profit_rate")),
+            "roi_30d": self._to_pct(profit.get("month_profit_rate")),
+            "roi_90d": self._to_pct(profit.get("three_month_profit_rate")),
+            "roi_all": self._to_pct(profit.get("profit_rate")),  # 全周期累计收益率（接口返回比例值，×100）
+            "win_rate_30d": self._to_pct(profit.get("month_win_rate")),
             "win_rate_all": round(win_num / total * 100, 1) if total else 0.0,
-            "max_drawdown": self._to_pct(profit.get("max_drawdown")),
-            "followers": profit.get("curr_follow_num") or 0,
+            "max_drawdown": self._to_pct(profit.get("max_drawdown")),  # 全周期回撤
+            "followers": profit.get("curr_follow_num") or 0,  # 真实当前跟单人数
+            "trading_days": int(profit.get("duration_day") or 0),  # 带单天数
             "is_follow": bool(config.get("is_self")) or False,
             "is_full": bool(profit.get("is_full")) or False,
             "style": config.get("style") or "",
@@ -573,7 +616,12 @@ class GateScraper:
         """
         if self.mock:
             return self._mock_follower_positions()
-        resp = await self._api(
+        # ★ 方案B：私有接口默认走登录会话（未显式传 fetcher 时）
+        fetcher = self._session_fetcher()
+        resp = await fetcher(
+            FOLLOWER_POSITION_PATH,
+            {"trader_name": "", "market": "", "page": 1, "page_size": 100, "sub_website_id": 0},
+        ) if fetcher is not None else await self._api(
             FOLLOWER_POSITION_PATH,
             {"trader_name": "", "market": "", "page": 1, "page_size": 100, "sub_website_id": 0},
         )
@@ -697,19 +745,16 @@ class GateScraper:
     @staticmethod
     def _to_raw_trader(it: dict) -> RawTrader:
         user = it.get("user_info") or {}
-        # ★ 统一为百分数（如 41.73 = 41.73%），与 mock 数据及前端展示一致
-        cycle_roi = float(it.get("profit_rate") or 0) * 100
+        # ★ 排行榜接口 cycle=month 只返回「月周期」数据：只填 30d 字段，
+        #   7d/90d/all 由 fetch_top_traders 补拉 week 周期与 detail 接口填充，避免字段复制失真
+        month_roi = float(it.get("profit_rate") or 0) * 100
         return RawTrader(
             trader_id=str(it["leader_id"]),
             name=user.get("nick") or user.get("nickname") or f"Leader{it['leader_id']}",
             followers=int(it.get("curr_follow_num") or 0),
-            roi_7d=cycle_roi,          # Gate 周期收益（cycle=month 时为月）
-            roi_30d=cycle_roi,
-            roi_90d=cycle_roi,
-            roi_all=cycle_roi,
-            win_rate_30d=float(it.get("win_rate") or 0) * 100,
-            win_rate_all=float(it.get("win_rate") or 0) * 100,
-            max_drawdown=float(it.get("max_drawdown") or 0) * 100,
+            roi_30d=month_roi,          # 月收益（cycle=month）
+            win_rate_30d=float(it.get("win_rate") or 0) * 100,  # 月胜率
+            max_drawdown=float(it.get("max_drawdown") or 0) * 100,  # 月回撤
             trading_days=int(it.get("leading_days") or 0),
             raw=it,
         )

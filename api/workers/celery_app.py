@@ -43,6 +43,12 @@ celery_app.conf.update(
             "schedule": 30 * 60,
             "options": {"expires": 60 * 10},
         },
+        # ★ 需求补充：信号源详情(画像)定时刷新——所有已上架策略画像按日 upsert，保证策略广场数据新鲜
+        "signal-refresh-listed-profiles": {
+            "task": "signal.refresh_listed_profiles",
+            "schedule": settings.signal_profile_refresh_interval,
+            "options": {"expires": max(settings.signal_profile_refresh_interval, 60)},
+        },
         # ★ 实时信号轮询（任务内按 signal_poll_interval 连续轮询，beat 每 loop_seconds 重踢一次）
         "signal-poll-live": {
             "task": "signal.poll_live",

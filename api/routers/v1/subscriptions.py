@@ -18,6 +18,8 @@ async def list_plans(db: DbDep = None) -> dict:
 
 @router.get("/me")
 async def my_subscription(db: DbDep = None, user_id: int = Depends(get_current_user)) -> dict:
+    from api.services.billing.service import BillingService
+
     svc = BillingService(db)
     sub = await svc.get_active_subscription(user_id)
     if sub is None:

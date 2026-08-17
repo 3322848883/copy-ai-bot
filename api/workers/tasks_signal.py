@@ -87,6 +87,9 @@ async def _poll_live_loop() -> str:
     deadline = time.time() + loop_seconds
     rounds = 0
     events_total = 0
+    # ★ 完全自动：每 60s 把「我账户跟单的交易员」同步为策略广场展示项
+    last_sync = 0.0
+    SYNC_INTERVAL = 60.0
     try:
         while time.time() < deadline:
             try:
@@ -94,9 +97,24 @@ async def _poll_live_loop() -> str:
             except Exception as exc:  # noqa: BLE001 单轮失败不中断循环
                 logger.error("signal.poll_live 单轮失败: %s", exc)
             rounds += 1
+            if time.time() - last_sync >= SYNC_INTERVAL:
+                try:
+                    await sync_followed_leaders(scraper=scraper)
+                    last_sync = time.time()
+                except Exception as exc:  # noqa: BLE001 同步失败不中断轮询
+                    logger.warning("sync_followed_leaders 失败: %s", exc)
             await asyncio.sleep(interval)
     finally:
-        await scraper.close()  # 释放浏览器会话
+        await scraper.close()  # 释放公开爬虫浏览器
+        # ★ 释放登录会话浏览器：signal_session 全局单例，_page 绑定首次 asyncio.run 的事件循环；
+        #   跨任务用新 loop 复用旧 _page 会报 'NoneType' object has no attribute 'send'。
+        #   本任务内关闭，登录态落盘 user_data_dir，下个任务自动重新拉起。
+        try:
+            from api.services.signal_session.service import get_signal_session
+
+            await get_signal_session().close()
+        except Exception as exc:  # noqa: BLE001 关闭失败不阻断
+            logger.warning("signal_session close fail: %s", exc)
         # ★ 释放异步引擎连接池：asyncio.run 每次新建事件循环，跨循环复用连接会 Event loop is closed
         from api.db.session import get_engine
 
@@ -136,13 +154,16 @@ async def _poll_live_round(feed) -> int:
         if not leader_ids:
             return 0
         follower_ids = set(get_settings().signal_follower_leader_ids)
-        # ★ 模式2 自动发现：合并运行中已跟单交易员（含空仓），确保不漏跟单
-        try:
-            discovered = await feed.scraper.fetch_followed_leaders()
-            if discovered:
-                follower_ids |= {lid for lid, _nick in discovered}
-        except Exception as exc:  # noqa: BLE001 自动发现失败不阻断轮询
-            logger.warning("mode2 自动发现已跟单交易员失败: %s", exc)
+        # ★ 模式2 自动发现：合并运行中已跟单交易员（含空仓），确保不漏跟单。
+        #   ★ 仅当配置为空时才每轮尝试（避免每秒调用登录会话接口）；配置非空时由
+        #     sync_followed_leaders(60s) 负责动态发现，这里不再重复高频调用。
+        if not follower_ids:
+            try:
+                discovered = await feed.scraper.fetch_followed_leaders()
+                if discovered:
+                    follower_ids |= {lid for lid, _nick in discovered}
+            except Exception as exc:  # noqa: BLE001 自动发现失败不阻断轮询
+                logger.warning("mode2 自动发现已跟单交易员失败: %s", exc)
         mode_a = [lid for lid in leader_ids if lid not in follower_ids]
         mode_f = [lid for lid in leader_ids if lid in follower_ids]
         # ★ 页面池并发：一次并发拉取全部带单员持仓并差分，避免串行 N×往返
@@ -251,7 +272,14 @@ async def _reconcile_once() -> str:
             total = await _handle_events(db, events_map)
             await db.commit()
     finally:
-        await scraper.close()  # 释放浏览器会话
+        await scraper.close()  # 释放公开爬虫浏览器
+        # ★ 释放登录会话浏览器：避免跨 asyncio.run 事件循环复用旧 _page（NoneType 报错）
+        try:
+            from api.services.signal_session.service import get_signal_session
+
+            await get_signal_session().close()
+        except Exception as exc:  # noqa: BLE001 关闭失败不阻断
+            logger.warning("signal_session close fail: %s", exc)
         # ★ 释放异步引擎连接池：asyncio.run 每次新建事件循环，跨循环复用连接会 Event loop is closed
         from api.db.session import get_engine
 
@@ -260,30 +288,177 @@ async def _reconcile_once() -> str:
 
 
 async def _save_profile(store, trader) -> None:
-    """★ G05：按日快照（roi_7d/30d/90d/all + win_rate_all + trading_days）。"""
+    """★ G05：画像快照按日 upsert（当日已存在则更新为最新值，保证广场数据新鲜）。"""
     from sqlalchemy import select
 
-    from api.models.signal import Trader, TraderProfile
+    from api.models.signal import TraderProfile
 
-    t = await store.db.scalar(select(Trader).where(Trader.exchange == "gate", Trader.trader_id == trader.trader_id))
-    if t is None:
-        return
+    # trader 可能是 ORM Trader(带 .id) 或 RawTrader(仅外部 trader_id)，统一解析为 DB 主键
+    trader_id = getattr(trader, "id", None)
+    if trader_id is None:
+        from api.models.signal import Trader
+
+        t = await store.db.scalar(
+            select(Trader).where(Trader.exchange == "gate", Trader.trader_id == trader.trader_id)
+        )
+        if t is None:
+            return
+        trader_id = t.id
+    await _upsert_profile(
+        store,
+        trader_id,
+        roi_7d=float(getattr(trader, "roi_7d", 0) or 0),
+        roi_30d=float(getattr(trader, "roi_30d", 0) or 0),
+        roi_90d=float(getattr(trader, "roi_90d", 0) or 0),
+        roi_all=float(getattr(trader, "roi_all", 0) or 0),
+        win_rate_30d=float(getattr(trader, "win_rate_30d", 0) or 0),
+        win_rate_all=float(getattr(trader, "win_rate_all", 0) or 0),
+        max_drawdown=float(getattr(trader, "max_drawdown", 0) or 0),
+        trading_days=int(getattr(trader, "trading_days", 0) or 0),
+    )
+
+
+async def _save_followed_profile(store, trader, leader: dict) -> None:
+    """为「我账户跟单的交易员」写画像快照（get_leader_by_id 完整多周期字段，按日 upsert）。"""
+    await _upsert_profile(
+        store,
+        trader.id,
+        roi_7d=float(leader.get("roi_7d") or 0),
+        roi_30d=float(leader.get("roi_30d") or 0),
+        roi_90d=float(leader.get("roi_90d") or 0),
+        roi_all=float(leader.get("roi_all") or 0),
+        win_rate_30d=float(leader.get("win_rate_30d") or 0),
+        win_rate_all=float(leader.get("win_rate_all") or 0),
+        max_drawdown=float(leader.get("max_drawdown") or 0),
+        trading_days=int(leader.get("trading_days") or 0),
+    )
+
+
+async def _upsert_profile(store, trader_id: int, **fields) -> None:
+    """★ 画像按日 upsert：当日存在则更新最新值，否则新增。保持广场数据新鲜、无重复行。"""
+    from sqlalchemy import select
+
+    from api.models.signal import TraderProfile
+
     existing = await store.db.scalar(
-        select(TraderProfile).where(TraderProfile.trader_id == t.id, TraderProfile.snapshot_date == date.today())
+        select(TraderProfile).where(TraderProfile.trader_id == trader_id, TraderProfile.snapshot_date == date.today())
     )
     if existing:
-        return  # 今日已快照
-    store.db.add(
-        TraderProfile(
-            trader_id=t.id,
-            snapshot_date=date.today(),
-            roi_7d=trader.roi_7d,
-            roi_30d=trader.roi_30d,
-            roi_90d=trader.roi_90d,
-            roi_all=trader.roi_all,
-            win_rate_30d=trader.win_rate_30d,
-            win_rate_all=trader.win_rate_all,
-            max_drawdown=trader.max_drawdown,
-            trading_days=trader.trading_days,
-        )
-    )
+        for key, value in fields.items():
+            setattr(existing, key, value)
+        return
+    store.db.add(TraderProfile(trader_id=trader_id, snapshot_date=date.today(), **fields))
+
+
+async def sync_followed_leaders(scraper=None) -> dict:
+    """★ 完全自动：把「我账户跟单的交易员」同步为策略广场展示项。
+
+    - fetch_followed_leaders() 获取已跟单交易员 [(leader_id, nick)]（含空仓）
+    - 逐个 upsert Trader → 拉画像 → 确保 listed Strategy（跳过 G04）
+    - 不再跟单的 listed 策略 → 自动下架（delisted），从策略广场消失
+    """
+    from api.db.session import get_session_factory
+    from api.services.scraper.adapters.gate import GateScraper
+    from api.services.signalstore.service import SignalStore
+    from api.services.strategies.service import StrategyService
+
+    factory = get_session_factory()
+    async with factory() as db:
+        store = SignalStore(db)
+        svc = StrategyService(db)
+        scraper = scraper or GateScraper()
+        # ★ 复用已登录的持久化会话发现「我账户跟单的交易员」（未登录则退回 scraper 自身 _api）
+        from api.services.signal_session.service import get_signal_session
+
+        fetcher = get_signal_session().fetch_api
+        followed = await scraper.fetch_followed_leaders(fetcher=fetcher)
+        if not followed:
+            return {"synced": 0, "listed": 0, "delisted": 0, "reason": "no followed leaders or not logged in"}
+        followed_trader_ids: set[int] = set()
+        synced = 0
+        for lid, nick in followed:
+            trader = await store.upsert_trader("gate", str(lid), name=nick)
+            try:
+                leader = await scraper.get_leader_by_id(str(lid), fetcher=fetcher)
+                if leader:
+                    await _save_followed_profile(store, trader, leader)
+            except Exception as exc:  # noqa: BLE001 画像失败不阻断同步
+                logger.warning("sync_followed_leaders 画像同步失败 %s: %s", lid, exc)
+            await svc.ensure_followed_strategy(trader.id, nick or str(lid))
+            followed_trader_ids.add(trader.id)
+            synced += 1
+        delisted = await svc.delist_unfollowed(followed_trader_ids)
+        await db.commit()
+        return {"synced": synced, "listed": len(followed_trader_ids), "delisted": delisted}
+
+
+# ── ★ 需求补充：定时刷新所有已上架(listed)策略画像，保证策略广场数据新鲜 ──
+async def _refresh_listed_profiles() -> dict[str, int]:
+    """遍历 status='listed' 的策略，逐一带单员拉最新详情并 upsert 当日画像。
+
+    与每日快照(profile.sync_daily，top50)互补：这里按「实际已上架」精确刷新，
+    即便带单员不在排行榜前列也能保持广场数据新鲜。仅刷新画像，不触碰持仓监控。
+    """
+    from sqlalchemy import select
+
+    from api.db.session import get_session_factory
+    from api.models.signal import Strategy, Trader
+    from api.services.scraper.adapters.gate import GateScraper
+    from api.services.signalstore.service import SignalStore
+
+    factory = get_session_factory()
+    stats = {"updated": 0, "missing": 0, "failed": 0}
+    scraper = GateScraper()
+    try:
+        async with factory() as db:
+            store = SignalStore(db)
+            rows = (
+                (await db.execute(
+                    select(Trader, Strategy)
+                    .join(Strategy, Strategy.trader_id == Trader.id)
+                    .where(Strategy.status == "listed")
+                ))
+                .all()
+            )
+            seen: set[int] = set()
+            for trader, _strat in rows:
+                if trader.id in seen:
+                    continue
+                seen.add(trader.id)
+                try:
+                    leader = await scraper.get_leader_by_id(trader.trader_id)
+                    if leader is None:
+                        stats["missing"] += 1
+                        continue
+                    await store.upsert_trader("gate", trader.trader_id, name=leader.get("nick") or trader.name,
+                                              followers=int(leader.get("followers") or 0))
+                    await _save_profile(store, trader)
+                    stats["updated"] += 1
+                except Exception as exc:  # noqa: BLE001 单个失败不阻断
+                    stats["failed"] += 1
+                    logger.warning("refresh listed profile %s 失败: %s", trader.trader_id, exc)
+            await db.commit()
+    finally:
+        await scraper.close()
+        try:
+            from api.services.signal_session.service import get_signal_session
+
+            await get_signal_session().close()
+        except Exception as exc:  # noqa: BLE001 关闭失败不阻断
+            logger.warning("signal_session close fail: %s", exc)
+        from api.db.session import get_engine
+
+        await get_engine().dispose()
+    return stats
+
+
+@celery_app.task(name="signal.refresh_listed_profiles")
+def refresh_listed_profiles() -> str:
+    """信号源详情定时刷新：所有已上架策略画像按日 upsert，保持策略广场新鲜。"""
+    import asyncio
+
+    try:
+        return f"listed profiles refreshed: {asyncio.run(_refresh_listed_profiles())}"
+    except Exception as exc:  # noqa: BLE001 任务失败不导致 beat 崩溃
+        logger.exception("refresh_listed_profiles failed: %s", exc)
+        raise

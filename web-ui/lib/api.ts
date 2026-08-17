@@ -69,6 +69,16 @@ async function tryRefresh(): Promise<boolean> {
 }
 
 /** Token 存取（localStorage，生产换 httpOnly cookie） */
+/** 写非 HttpOnly 的 ss_access cookie：让 production `next start` 的 middleware 能识别已登录（本地无后台 httpOnly cookie 时兜底）。 */
+function writeAuthCookie(token: string | null) {
+  if (typeof window === "undefined") return;
+  if (token) {
+    document.cookie = `ss_access=${encodeURIComponent(token)}; path=/; max-age=86400; samesite=lax`;
+  } else {
+    document.cookie = "ss_access=; path=/; max-age=0; samesite=lax";
+  }
+}
+
 export const tokenStore = {
   get access() {
     if (typeof window === "undefined") return undefined;
@@ -81,6 +91,7 @@ export const tokenStore = {
   set(tokens: { access_token: string; refresh_token?: string; risk_disclosure_accepted?: boolean }) {
     if (typeof window === "undefined") return;
     localStorage.setItem("ss_access", tokens.access_token);
+    writeAuthCookie(tokens.access_token);
     if (tokens.refresh_token) localStorage.setItem("ss_refresh", tokens.refresh_token);
     if (tokens.risk_disclosure_accepted !== undefined) {
       localStorage.setItem("ss_risk", String(tokens.risk_disclosure_accepted));
@@ -101,6 +112,7 @@ export const tokenStore = {
     localStorage.removeItem("ss_access");
     localStorage.removeItem("ss_refresh");
     localStorage.removeItem("ss_risk");
+    writeAuthCookie(null);
     // ★ M1 修复：通知 WsProvider 断开
     window.dispatchEvent(new Event("ss:token-change"));
   },
