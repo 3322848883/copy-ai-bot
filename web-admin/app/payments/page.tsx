@@ -204,10 +204,12 @@ export default function AdminPaymentsPage() {
                   <td>{statusBadge(o.status)}</td>
                   <td className="num">{o.confirmations}/{o.required} <span className="sub-ref">（{o.poll_attempts} 次）</span></td>
                   <td>
-                    {o.status === "manual" || o.status === "timeout" ? (
+                    {["manual", "verifying", "polling", "timeout", "failed", "expired"].includes(o.status) ? (
                       <div style={{ display: "flex", gap: 6 }}>
                         <button className="btn btn-danger btn-sm" onClick={() => manual(o, "confirmed")}>强制确认</button>
-                        <button className="btn btn-secondary btn-sm" onClick={() => manual(o, "failed")}>标记失败</button>
+                        {["manual", "verifying", "polling", "timeout"].includes(o.status) && (
+                          <button className="btn btn-secondary btn-sm" onClick={() => manual(o, "failed")}>标记失败</button>
+                        )}
                       </div>
                     ) : (
                       <span style={{ color: "var(--tertiary)", fontSize: 10 }}>—</span>

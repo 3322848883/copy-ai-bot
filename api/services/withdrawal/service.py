@@ -146,7 +146,11 @@ class WithdrawalService:
             from api.services.payment.chain_client import get_chain_client
 
             client = get_chain_client(wd.network)
-            ok, reason, _received = await client.validate_tx(tx_hash, wd.address, wd.amount_usdt)
+            # ★ P0 修复：手续费语义对齐——前端向用户承诺"实际到账 = 金额 − 手续费"，
+            #   链上校验下限改为净额；管理员按净额打款（用户到手净额）或全额打款均可通过。
+            #   此前校验全额，按净额打款必失败转 paid_failed。
+            payout_floor = round(max(wd.amount_usdt - wd.fee_usdt, 0), 2)
+            ok, reason, _received = await client.validate_tx(tx_hash, wd.address, payout_floor)
             if not ok:
                 wd.tx_hash = tx_hash
                 wd.status = "paid_failed"

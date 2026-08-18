@@ -43,60 +43,69 @@ class ReferralService:
         return "".join(secrets.choice(alphabet) for _ in range(6))
 
     async def list_invites(self, user_id: int) -> list[dict]:
-        """邀请列表（含核实倒计时信息）。"""
+        """邀请列表（含核实倒计时信息）。
+
+        ★ P1 修复：reward_status/verifying_ends_at 取该下级**最新一笔**奖励（原取最早一笔，
+        多次订阅时金额与状态错配）；奖励查询同时限定 owner_id，避免异常数据串户。
+        """
         invites = (
-            await self.db.execute(
-                select(Invite).where(Invite.inviter_id == user_id).order_by(Invite.id.desc())
-            )
+            await self.db.execute(select(Invite).where(Invite.inviter_id == user_id).order_by(Invite.id.desc()))
         ).scalars().all()
         out = []
         for inv in invites:
             user = await self.db.get(User, inv.invitee_id)
             rewards = (
-                await self.db.execute(select(Reward).where(Reward.source_user_id == inv.invitee_id))
+                await self.db.execute(
+                    select(Reward)
+                    .where(Reward.source_user_id == inv.invitee_id, Reward.owner_id == user_id)
+                    .order_by(Reward.id.desc())
+                )
             ).scalars().all()
             total_reward = sum(r.amount_usdt for r in rewards)
+            latest_reward = rewards[0] if rewards else None
             out.append(
                 {
                     "invitee_email": user.email if user else str(inv.invitee_id),
                     "code": inv.code,
                     "bound_at": inv.bound_at.isoformat(),
                     "reward_usdt": round(total_reward, 2),
-                    "reward_status": rewards[0].status if rewards else "none",
-                    "verifying_ends_at": rewards[0].verifying_ends_at.isoformat() if rewards and rewards[0].verifying_ends_at else None,
+                    "reward_status": latest_reward.status if latest_reward else "none",
+                    "verifying_ends_at": latest_reward.verifying_ends_at.isoformat() if latest_reward and latest_reward.verifying_ends_at else None,
                 }
             )
         return out
 
     async def get_stats(self, user_id: int) -> dict:
-        """M6 前端补全：邀请中心统计卡（累计邀请/累计奖励/待核实/可提现）。"""
+        """邀请中心统计卡（★ P1 修复：按 Reward 状态精确聚合，口径与奖励账本页一致）。
+
+        此前前端按每个下级"最早一笔奖励的状态 × 全部金额"推导统计，
+        同一下级多次订阅时"已提现/待核实/冻结"互相错配。
+        """
         invites = (
-            await self.db.execute(
-                select(Invite).where(Invite.inviter_id == user_id)
-            )
+            await self.db.execute(select(Invite.id).where(Invite.inviter_id == user_id))
         ).scalars().all()
-        invitee_ids = [inv.invitee_id for inv in invites]
-        total_invitees = len(invitee_ids)
-        total_reward = 0.0
-        verifying_reward = 0.0
-        available_reward = 0.0
-        if invitee_ids:
-            rewards = (
-                await self.db.execute(
-                    select(Reward).where(Reward.source_user_id.in_(invitee_ids))
-                )
-            ).scalars().all()
-            for r in rewards:
-                total_reward += r.amount_usdt
-                if r.status == "verifying":
-                    verifying_reward += r.amount_usdt
-                elif r.status == "available":
-                    available_reward += r.amount_usdt
+        total_invitees = len(invites)
+        total_reward = verifying_reward = frozen_reward = available_reward = withdrawn_reward = 0.0
+        rewards = (
+            await self.db.execute(select(Reward).where(Reward.owner_id == user_id))
+        ).scalars().all()
+        for r in rewards:
+            total_reward += r.amount_usdt
+            if r.status == "verifying":
+                verifying_reward += r.amount_usdt
+            elif r.status == "frozen":
+                frozen_reward += r.amount_usdt
+            elif r.status == "available":
+                available_reward += r.amount_usdt
+            elif r.status in ("withdrawing", "paid"):
+                withdrawn_reward += r.amount_usdt
         return {
             "total_invitees": total_invitees,
             "total_reward": round(total_reward, 2),
             "verifying_reward": round(verifying_reward, 2),
+            "frozen_reward": round(frozen_reward, 2),
             "available_reward": round(available_reward, 2),
+            "withdrawn_reward": round(withdrawn_reward, 2),
         }
 
     async def detect_batch_abuse(self, inviter_id: int) -> bool:

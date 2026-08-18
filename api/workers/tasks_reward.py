@@ -26,7 +26,7 @@ def _run_scan() -> int:
 
 
 async def scan_verifying_rewards_async() -> int:
-    """async 核心：扫描 verifying 到期奖励 → available。"""
+    """async 核心：扫描核实期到期奖励 → available（verifying 正常核实 / frozen 风控延长核实）。"""
     from sqlalchemy import select
 
     from api.db.session import get_session_factory
@@ -38,7 +38,7 @@ async def scan_verifying_rewards_async() -> int:
         rows = (
             await db.execute(
                 select(Reward).where(
-                    Reward.status == "verifying",
+                    Reward.status.in_(["verifying", "frozen"]),
                     Reward.verifying_ends_at <= now,
                 )
             )

@@ -8,7 +8,7 @@ import { usePlatformConfig, type PlatformConfig } from "@/lib/config";
 
 type InviteItem = { invitee_email: string; bound_at: string; reward_usdt: number; reward_status: string; verifying_ends_at: string | null };
 type Risk = { risk_flag: boolean };
-type Stats = { total_invitees: number; total_reward: number; verifying_reward: number; available_reward: number };
+type Stats = { total_invitees: number; total_reward: number; verifying_reward: number; frozen_reward: number; available_reward: number; withdrawn_reward: number };
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   verifying: { label: "核实中", cls: "badge-warn" },
@@ -154,17 +154,15 @@ export default function InvitePage() {
     showToast("success", "海报已保存");
   }
 
-  /* ── 统计推导 ── */
-  const frozenTotal = invites.filter((i) => i.reward_status === "frozen").reduce((s, i) => s + i.reward_usdt, 0);
-  const withdrawnTotal = invites.filter((i) => i.reward_status === "withdrawing" || i.reward_status === "paid").reduce((s, i) => s + i.reward_usdt, 0);
-  const withdrawnCount = invites.filter((i) => i.reward_status === "withdrawing" || i.reward_status === "paid").length;
+  /* ── 统计卡直接使用后端按 Reward 状态聚合的口径（与奖励账本页一致）── */
+  const frozenTotal = stats?.frozen_reward ?? 0;
 
   const statCards: Array<{ label: string; val: string; sub: string; color?: string }> = [
     { label: "已邀请", val: `${stats?.total_invitees ?? 0}`, sub: "人 · 好友注册绑定" },
     { label: "累计奖励", val: (stats?.total_reward ?? 0).toFixed(2), sub: "USDT · 全部邀请奖励合计", color: "var(--success)" },
     { label: "待核实", val: (stats?.verifying_reward ?? 0).toFixed(2), sub: `USDT · ${cfg.referral.verify_hours}h 核实倒计时`, color: "var(--warning)" },
     { label: "冻结奖励", val: frozenTotal.toFixed(2), sub: `USDT · ${cfg.referral.abuse_verify_hours}h 风控核实`, color: "var(--danger)" },
-    { label: "已提现奖励", val: withdrawnTotal.toFixed(2), sub: `USDT · ${withdrawnCount} 笔提现` },
+    { label: "已提现奖励", val: (stats?.withdrawn_reward ?? 0).toFixed(2), sub: "USDT · 提现中 + 已打款" },
   ];
 
   /* ── 核实时间轴（取最新一条邀请的真实状态）── */

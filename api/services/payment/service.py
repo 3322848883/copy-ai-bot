@@ -23,9 +23,10 @@ logger = logging.getLogger("signal-saas.payment")
 POLL_INTERVALS_MIN = [1, 5, 10, 20]
 MAX_POLL_ATTEMPTS = 6  # 超过 6 次 → manual
 
-# TxHash 格式：TRON = 64 hex；EVM = 0x + 64 hex
+# TxHash 格式：TRON = 64 hex；EVM = 0x + 64 hex；Aptos = 64 hex（0x 前缀可选）
 _TRON_TX_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 _EVM_TX_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
+_APTOS_TX_RE = re.compile(r"^(0x)?[0-9a-fA-F]{64}$")
 
 
 class PaymentService:
@@ -92,6 +93,18 @@ class PaymentService:
         if used is not None:
             raise PaymentError("该 TxHash 已被其他订单使用")
 
+        # ★ P1 修复：TTL 内联校验——expire_sweep 间隔最长 2 分钟，归零后提交仍会被接受；
+        #   仅拦 pending 态（已提交进入轮询的订单不受 TTL 限制，否则已付款资金会变死单）
+        ttl_min = int(settings_svc.get_rule("payment_order_ttl_min") or 30)
+        if (
+            order.status == "pending"
+            and order.created_at
+            and (datetime.now(timezone.utc) - order.created_at).total_seconds() > ttl_min * 60
+        ):
+            order.status = "expired"
+            await self.db.commit()
+            raise PaymentError("订单已超时关闭，请重新下单")
+
         order.tx_hash = tx_hash
         client = get_chain_client(order.network)
 
@@ -106,7 +119,26 @@ class PaymentService:
             if tx_ts > time.time() + 300:
                 raise PaymentError("交易时间异常，请稍后重试")
 
-        # ★ G09 即时校验：to/value/status 三校验（任一失败拒绝）
+        # ★ P0 修复：先取链上状态三态分流——未上链 / RPC 故障一律转 verifying 轮询，
+        #   绝不在"链上还看不到交易"时做金额判定。此前 _verify_value 在此处把
+        #   "已广播未打包"（ETH/BSC 打包需数秒~分钟，用户转账后立即提交是常见时序）
+        #   和 RPC 抖动误判为 failed，且 failed 无任何恢复路径（用户不能重提交、
+        #   管理员 manual_set 不收 failed），真实到账资金变死单。
+        exists, confirmations, meta = await client.get_confirmations(tx_hash)
+        order.confirmations = confirmations
+        if meta.get("error") == "failed":
+            order.status = "failed"
+            await self.db.commit()
+            raise PaymentError("链上交易回执失败")
+
+        if not exists:
+            # 未上链 / RPC 故障 → 转轮询；to/value 待上链后由 poll_order 补校验
+            order.status = "verifying"
+            await self.db.commit()
+            await self.db.refresh(order)
+            return order
+
+        # ★ G09 即时校验（交易已上链，结论确定）：to/value 三校验
         to_ok, to_reason = await self._verify_to(order)
         if not to_ok:
             order.status = "failed"
@@ -121,17 +153,10 @@ class PaymentService:
             await self.db.commit()
             raise PaymentError("到账金额不足")
 
-        # ★ H2 修复：一次 RPC 取状态，按错误三态分流（仅明确失败判死）
-        exists, confirmations, meta = await client.get_confirmations(tx_hash)
-        order.confirmations = confirmations
-        if meta.get("error") == "failed":
-            order.status = "failed"
-            await self.db.commit()
-            raise PaymentError("链上交易回执失败")
-        if exists and confirmations >= order.required_confirmations:
+        if confirmations >= order.required_confirmations:
             await self._confirm(order)
         else:
-            # 未上链 / RPC 故障 / 确认数不足 → 转轮询（不判死）
+            # 确认数不足 → 转轮询
             order.status = "verifying"
             await self.db.commit()
         await self.db.refresh(order)
@@ -174,6 +199,21 @@ class PaymentService:
             await self.db.commit()
             return order
         if confirmations >= order.required_confirmations:
+            # ★ P0 配套：提交时未上链而跳过 to/value 校验的订单，确认前补校验
+            #   （paid_amount_usdt 为空 ⟺ 金额校验尚未完成），防止绕过金额校验直接确认
+            if order.paid_amount_usdt is None:
+                to_ok, to_reason = await self._verify_to(order)
+                if not to_ok:
+                    order.status = "failed"
+                    await self.db.commit()
+                    return order
+                value_ok, value_received = await self._verify_value(order, get_chain_client(order.network))
+                if value_ok and value_received is not None:
+                    order.paid_amount_usdt = value_received
+                if not value_ok:
+                    order.status = "failed"
+                    await self.db.commit()
+                    return order
             await self._confirm(order)
         else:
             order.status = "polling"
@@ -219,7 +259,8 @@ class PaymentService:
         if existing_reward is not None:
             return
         # ★ G11：风控延长核实期（referral_verify_hours 默认 24h / 风控 referral_abuse_verify_hours 默认 48h）
-        verifying_hours = await self._check_risk_extension(invite.inviter_id)
+        # ★ P1 修复：命中风控时以 frozen 状态落库——此前恒写 verifying，前台"冻结奖励"卡永远为 0
+        verifying_hours, risk_hit = await self._check_risk_extension(invite.inviter_id)
         from datetime import timedelta
 
         now = datetime.now(timezone.utc)
@@ -229,7 +270,7 @@ class PaymentService:
             source_user_id=order.user_id,
             source_payment_order_id=order.id,
             amount_usdt=round(order.amount_usdt * reward_pct / 100.0, 2),
-            status="verifying",
+            status="frozen" if risk_hit else "verifying",
             verifying_started_at=now,
             verifying_ends_at=now + timedelta(hours=verifying_hours),
         )
@@ -254,8 +295,11 @@ class PaymentService:
         except Exception:  # noqa: BLE001
             pass
 
-    async def _check_risk_extension(self, inviter_id: int) -> int:
-        """★ G11：1h 内 ≥阈值 个下级只买试用 → 风控延长核实期；否则正常核实期。参数后台可配置。"""
+    async def _check_risk_extension(self, inviter_id: int) -> tuple[int, bool]:
+        """★ G11：1h 内 ≥阈值 个下级只买试用 → 风控延长核实期；否则正常核实期。
+
+        返回 (核实小时数, 是否命中风控)——命中时奖励以 frozen 状态落库（前台冻结卡真实展示）。
+        """
         from datetime import timedelta
 
         threshold = int(settings_svc.get_rule("referral_abuse_trial_threshold") or 3)
@@ -264,7 +308,7 @@ class PaymentService:
         # 动态获取所有试用套餐 plan_id（后台可增删套餐）
         trial_plans = [p["plan_id"] for p in settings_svc.get_plans() if p.get("trial")]
         if not trial_plans:
-            return normal_hours
+            return normal_hours, False
 
         one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
         rows = await self.db.execute(
@@ -278,14 +322,18 @@ class PaymentService:
             .distinct()
         )
         trial_count = len(rows.scalars().all())
-        return abuse_hours if trial_count >= threshold else normal_hours
+        if trial_count >= threshold:
+            return abuse_hours, True
+        return normal_hours, False
 
     # ── ★ G09 三校验 ──
     @staticmethod
     def _valid_tx_format(network: str, tx_hash: str) -> bool:
-        """TxHash 格式校验：TRON=64 hex；EVM=0x+64 hex。"""
+        """TxHash 格式校验：TRON=64 hex；EVM=0x+64 hex；Aptos=64 hex（0x 可选）。"""
         if network == "trc20":
             return bool(_TRON_TX_RE.match(tx_hash))
+        if network == "aptos":
+            return bool(_APTOS_TX_RE.match(tx_hash))
         return bool(_EVM_TX_RE.match(tx_hash))
 
     async def _verify_to(self, order: PaymentOrder) -> tuple[bool, str]:

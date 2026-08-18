@@ -205,7 +205,9 @@ async def manual_set(order_id: int, body: ManualIn, db: DbDep = None, admin=Depe
     order = await db.get(PaymentOrder, order_id)
     if order is None:
         raise NotFoundError("订单不存在")
-    if order.status not in ("manual", "verifying", "polling", "timeout"):
+    # ★ P1 修复：放开 failed/expired——超时 sweep 先行关闭但用户已实际付款的订单，
+    #   以及历史误判 failed 的订单，需保留人工确认恢复路径（否则真实到账资金死单）
+    if order.status not in ("manual", "verifying", "polling", "timeout", "failed", "expired"):
         raise PaymentError(f"订单状态 {order.status} 不可人工处理")
 
     before = order.status

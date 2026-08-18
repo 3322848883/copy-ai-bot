@@ -199,6 +199,7 @@ export default function StrategyDetailPage() {
     leverage: 10,
     margin_mode: "isolated",
     ratio: "比例 20%",
+    fixedAmount: 500,
     maxNotional: 10000,
     paper: false,
   });
@@ -247,6 +248,15 @@ export default function StrategyDetailPage() {
         return;
       }
       const ratio = RATIO_OPTIONS.find((o) => o.label === form.ratio) ?? RATIO_OPTIONS[2];
+      // ★ P1 修复：固定金额此前硬编码 500（无输入框）；maxNotional 清空后 Number("")=0 被 422 拒
+      if (ratio.mode === "fixed" && !(form.fixedAmount > 0)) {
+        setFormMsg("请输入大于 0 的固定跟单金额");
+        return;
+      }
+      if (!(form.maxNotional > 0)) {
+        setFormMsg("请输入大于 0 的单笔最大名义价值");
+        return;
+      }
       await apiFetch(
         "/v1/bots",
         {
@@ -255,7 +265,7 @@ export default function StrategyDetailPage() {
             strategy_id: detail.id, exchange: key.exchange, api_key_id: key.id,
             amount_mode: ratio.mode,
             percent: ratio.mode === "percent" ? ratio.value : null,
-            fixed_amount_usdt: ratio.mode === "fixed" ? 500 : null,
+            fixed_amount_usdt: ratio.mode === "fixed" ? form.fixedAmount : null,
             leverage: form.leverage,
             margin_mode: form.margin_mode,
             max_total_position_usdt: form.maxNotional,
@@ -541,16 +551,28 @@ export default function StrategyDetailPage() {
                   {RATIO_OPTIONS.map((o) => <option key={o.label} value={o.label}>{o.label}</option>)}
                 </select>
               </div>
-              <div>
-                <label className="label">单笔最大名义价值</label>
-                <input
-                  className="input"
-                  type="number" min={1}
-                  value={form.maxNotional}
-                  onChange={(e) => setForm({ ...form, maxNotional: Number(e.target.value) })}
-                  placeholder="例：500 USDT（留空用比例）"
-                />
-              </div>
+              {form.ratio === "固定金额" && (
+                <div>
+                  <label className="label">固定金额（USDT/笔）</label>
+                  <input
+                    className="input"
+                    type="number" min={1}
+                    value={form.fixedAmount}
+                    onChange={(e) => setForm({ ...form, fixedAmount: Number(e.target.value) })}
+                    placeholder="例：500"
+                  />
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="label">单笔最大名义价值（风控上限）</label>
+              <input
+                className="input"
+                type="number" min={1}
+                value={form.maxNotional}
+                onChange={(e) => setForm({ ...form, maxNotional: Number(e.target.value) })}
+                placeholder="例：10000（默认 10000 USDT）"
+              />
             </div>
             <label className="label" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 0 }}>
               <input type="checkbox" checked={form.paper} onChange={(e) => setForm({ ...form, paper: e.target.checked })} />

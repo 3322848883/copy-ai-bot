@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """排查：待选池当前状态。"""
+import os
 import sys
 from pathlib import Path
 
@@ -9,12 +10,18 @@ import httpx
 
 BASE = "http://localhost:8000"
 
+EMAIL = os.environ.get("SEED_ADMIN_EMAIL", "")
+PASSWORD = os.environ.get("SEED_ADMIN_PASSWORD", "")
+if not EMAIL or not PASSWORD:
+    print("ERROR: 请设置 SEED_ADMIN_EMAIL 与 SEED_ADMIN_PASSWORD 环境变量", file=sys.stderr)
+    sys.exit(1)
+
 
 def main():
     with httpx.Client(timeout=30) as c:
         r = c.post(
             f"{BASE}/admin/v1/auth/login",
-            json={"email": "648511672@qq.com", "password": "648511672"},
+            json={"email": EMAIL, "password": PASSWORD},
         )
         access = r.json().get("access_token")
         h = {"Authorization": f"Bearer {access}"}

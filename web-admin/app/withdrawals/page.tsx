@@ -429,7 +429,7 @@ export default function AdminWithdrawalsPage() {
                     <textarea className="input" placeholder="例：收款地址与实名不符，请重新提交" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
                   </div>
                 )}
-                <div style={{ fontSize: 10, color: "var(--tertiary)" }}>提示：通过后自动进入链上打款流程，请核对收款地址与金额</div>
+                <div style={{ fontSize: 10, color: "var(--tertiary)" }}>提示：请按「实际到账」净额打款（链上校验以净额为下限），并核对收款地址</div>
               </div>
             )}
             {(detail.status === "approved" || detail.status === "processing") && (
@@ -439,7 +439,7 @@ export default function AdminWithdrawalsPage() {
                   <label className="field-label">交易哈希 TxHash</label>
                   <input className="input" placeholder="9f 或 0x 开头的链上交易哈希" value={txHash} onChange={(e) => setTxHash(e.target.value)} />
                 </div>
-                <div style={{ fontSize: 10, color: "var(--tertiary)" }}>提示：已批准的单据需填写 TxHash 后确认发放</div>
+                <div style={{ fontSize: 10, color: "var(--tertiary)" }}>提示：填写打款 TxHash 后确认发放；校验到账 ≥ 实际到账净额即通过</div>
               </div>
             )}
 

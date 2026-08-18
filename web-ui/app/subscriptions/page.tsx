@@ -434,7 +434,13 @@ export default function SubscriptionsPage() {
               <input
                 className="input"
                 style={{ fontFamily: "var(--font-geist-mono), monospace" }}
-                placeholder={process.env.NODE_ENV === "development" ? "0x 或 9f 开头的交易哈希（dev 可输入 mock_confirm_xxx）" : "0x 或 9f 开头的交易哈希"}
+                placeholder={
+                  (order?.network || network) === "trc20"
+                    ? "9f 开头的 64 位交易哈希"
+                    : (order?.network || network) === "aptos"
+                      ? "64 位十六进制交易哈希（0x 可选）"
+                      : "0x 开头的 66 位交易哈希"
+                }
                 value={txHash}
                 onChange={(e) => setTxHash(e.target.value)}
               />
@@ -442,8 +448,8 @@ export default function SubscriptionsPage() {
                 <div style={{ fontSize: 12, color: "var(--success)" }}>✓ 即时校验通过，等待链上确认（1/5/10/20 分钟轮询）</div>
               )}
             </div>
-            <button className="btn btn-primary" style={{ width: "100%", height: 48, fontSize: 16, marginTop: 12 }} onClick={submitTx} disabled={busy || !txHash}>
-              {busy ? "校验中…" : "提交并验证"}
+            <button className="btn btn-primary" style={{ width: "100%", height: 48, fontSize: 16, marginTop: 12 }} onClick={submitTx} disabled={busy || !txHash || (order.status === "pending" && pendingLeft <= 0)}>
+              {busy ? "校验中…" : order.status === "pending" && pendingLeft <= 0 ? "订单已超时" : "提交并验证"}
             </button>
 
             {/* 支付状态机 UI */}
@@ -473,7 +479,7 @@ export default function SubscriptionsPage() {
             )}
             {order.status === "failed" && (
               <div style={{ marginTop: 12, padding: 12, borderRadius: 6, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.06)", fontSize: 12, color: "var(--danger)" }}>
-                支付校验失败（网络不符 / 金额不足 / Tx 失败）· 可重新提交
+                支付校验失败（网络不符 / 金额不足 / Tx 失败）· 请重新下单支付
               </div>
             )}
             {order.status === "timeout" && (
