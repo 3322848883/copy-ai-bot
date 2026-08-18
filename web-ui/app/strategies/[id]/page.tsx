@@ -196,7 +196,6 @@ export default function StrategyDetailPage() {
   // ★ 一键跟单（高级字段：方向跟随/保证金模式/跟单比例/单笔最大名义价值）
   const [followOpen, setFollowOpen] = useState(false);
   const [form, setForm] = useState({
-    direction: "follow",
     leverage: 10,
     margin_mode: "isolated",
     ratio: "比例 20%",
@@ -247,7 +246,6 @@ export default function StrategyDetailPage() {
         setFormMsg("请先到「我的账户」绑定任一交易所 API Key 后再开启跟单");
         return;
       }
-      // 方向（跟随/仅多/仅空）为界面高级配置，API 侧按跟随信号执行
       const ratio = RATIO_OPTIONS.find((o) => o.label === form.ratio) ?? RATIO_OPTIONS[2];
       await apiFetch(
         "/v1/bots",
@@ -292,9 +290,9 @@ export default function StrategyDetailPage() {
 
   const listed = detail.status === "listed";
   const desc =
-    `${STYLE_LABEL[detail.style] ?? detail.style}策略，聚合 5 大交易所信号源实时跟随。` +
+    `${STYLE_LABEL[detail.style] ?? detail.style}策略，全市场信号实时跟随、自动执行。` +
     `已运行 ${detail.trading_days} 天，累计胜率 ${detail.win_rate_all.toFixed(1)}%，` +
-    `历史最大回撤 ${detail.max_drawdown.toFixed(1)}%，跟随信号自动开平仓。`;
+    `历史最大回撤 ${detail.max_drawdown.toFixed(1)}%，开平仓秒级同步。`;
 
   return (
     <main style={{ minHeight: "100vh", position: "relative" }}>
@@ -375,7 +373,7 @@ export default function StrategyDetailPage() {
               </button>
             )}
             <span style={{ fontSize: 10, color: "var(--tertiary)", textAlign: "center" }}>
-              信号源由平台审核上架，开启跟单即代表已通过风控预检
+              信号源由平台审核上架 · 每笔跟单均实时执行风控检查
             </span>
           </div>
         </div>
@@ -523,21 +521,11 @@ export default function StrategyDetailPage() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
-                <label className="label">方向</label>
-                <select className="input" value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })}>
-                  <option value="follow">跟随信号（做多/做空）</option>
-                  <option value="long">仅做多</option>
-                  <option value="short">仅做空</option>
-                </select>
-              </div>
-              <div>
                 <label className="label">杠杆倍数</label>
                 <select className="input" value={form.leverage} onChange={(e) => setForm({ ...form, leverage: Number(e.target.value) })}>
                   {[10, 5, 3, 1].map((lv) => <option key={lv} value={lv}>{lv}×</option>)}
                 </select>
               </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
                 <label className="label">保证金模式</label>
                 <select className="input" value={form.margin_mode} onChange={(e) => setForm({ ...form, margin_mode: e.target.value })}>
@@ -545,23 +533,24 @@ export default function StrategyDetailPage() {
                   <option value="cross">全仓</option>
                 </select>
               </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
                 <label className="label">跟单比例</label>
                 <select className="input" value={form.ratio} onChange={(e) => setForm({ ...form, ratio: e.target.value })}>
                   {RATIO_OPTIONS.map((o) => <option key={o.label} value={o.label}>{o.label}</option>)}
                 </select>
               </div>
-            </div>
-            <div>
-              <label className="label">单笔最大名义价值</label>
-              <input
-                className="input"
-                type="number" min={1}
-                value={form.maxNotional}
-                onChange={(e) => setForm({ ...form, maxNotional: Number(e.target.value) })}
-                placeholder="例：500 USDT（留空用比例）"
-              />
-              <span style={{ fontSize: 10, color: "var(--success)", marginTop: 4, display: "block" }}>✓ 已通过风控预检：延迟红线 · 名义上限 · 白名单</span>
+              <div>
+                <label className="label">单笔最大名义价值</label>
+                <input
+                  className="input"
+                  type="number" min={1}
+                  value={form.maxNotional}
+                  onChange={(e) => setForm({ ...form, maxNotional: Number(e.target.value) })}
+                  placeholder="例：500 USDT（留空用比例）"
+                />
+              </div>
             </div>
             <label className="label" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 0 }}>
               <input type="checkbox" checked={form.paper} onChange={(e) => setForm({ ...form, paper: e.target.checked })} />

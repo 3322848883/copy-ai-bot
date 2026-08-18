@@ -85,6 +85,7 @@ async def list_orders(db: DbDep = None, user_id: int = Depends(get_current_user)
                 "order_id": o.id,
                 "plan_id": o.plan_id,
                 "amount_usdt": o.amount_usdt,
+                "paid_amount_usdt": o.paid_amount_usdt,
                 "network": o.network,
                 "status": o.status,
                 "confirmations": o.confirmations,

@@ -16,8 +16,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "signal·saas 运营后台",
-  description: "signal-saas 信号聚合跟单平台管理后台",
+  title: "OmniAlpha 运营后台",
+  description: "OmniAlpha 全维信号跟单平台 · 管理后台",
 };
 
 /** 独立后台 SPA 根布局：与前台 web-ui 完全隔离，无前台 Nav/Providers/WsProvider。 */

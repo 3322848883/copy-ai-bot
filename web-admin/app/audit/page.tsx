@@ -93,7 +93,7 @@ export default function AdminAuditPage() {
         <input className="input" style={{ width: 140, height: 32 }} placeholder="admin01 / reviewer02…" value={actor} onChange={(e) => setActor(e.target.value)} />
         <span style={{ fontSize: 12, color: "var(--muted)" }}>操作类型</span>
         <select className="select" style={{ width: 140, height: 32 }} value={type} onChange={(e) => setType(e.target.value)}>
-          <option>全部</option><option>创建</option><option>更新</option><option>高危操作</option><option>查询</option>
+          <option>全部</option><option>创建</option><option>更新</option><option>高危</option><option>查询</option>
         </select>
         <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace" }}>共 {total.toLocaleString()} 条</span>
       </div>

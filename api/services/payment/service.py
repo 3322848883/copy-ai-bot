@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -28,9 +29,10 @@ _EVM_TX_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 
 
 class PaymentService:
-    """支付订单状态机：pending → verifying → polling → confirmed/failed/manual/timeout。
+    """支付订单状态机：pending → verifying → polling → confirmed/failed/manual/expired。
 
     ★ G09：to/value/status 三校验 + 三链确认数轮询。
+    ★ H4：行锁 + 交易时间窗 + TxHash 重放 + 实际到账落库。
     """
 
     def __init__(self, db: AsyncSession) -> None:
@@ -58,8 +60,19 @@ class PaymentService:
         return order
 
     async def submit_tx(self, order_id: int, user_id: int, tx_hash: str) -> PaymentOrder:
-        """提交 TxHash → 即时校验（to/value/status 三校验）→ verifying。"""
-        order = await self.db.get(PaymentOrder, order_id)
+        """提交 TxHash → 即时校验（to/value/status 三校验）→ verifying。
+
+        ★ H4 加固：
+        - 行级锁（FOR UPDATE）串行化并发提交/轮询对同一订单的操作；
+        - 交易时间窗校验：tx 上链时间不得早于订单创建 15 分钟（先付后下单容忍），
+          拦截"拿链上历史他人付款激活新订单"（平台地址公开可查，纯哈希查重挡不住）。
+        """
+        # ★ H4-1 行锁：并发双提交 / 与 poll_sweep 竞争时串行化
+        order = (
+            await self.db.execute(
+                select(PaymentOrder).where(PaymentOrder.id == order_id).with_for_update()
+            )
+        ).scalars().first()
         if order is None or order.user_id != user_id:
             raise PaymentError("订单不存在")
         if order.status not in ("pending", "verifying", "polling"):
@@ -82,13 +95,27 @@ class PaymentService:
         order.tx_hash = tx_hash
         client = get_chain_client(order.network)
 
+        # ★ H4-2 时间窗：tx 上链时间 ≥ 订单创建时间 - 15min。
+        #   下单后任意晚支付不受限（订单 TTL 30min）；本窗只拦"先付后下单"超过 15 分钟
+        #   及链上历史他人付款（交易所提现到账常需数分钟，15min 覆盖先付款再建单的用户）。
+        tx_ts = await client.get_tx_timestamp(tx_hash)
+        if tx_ts is not None:
+            created_ts = order.created_at.timestamp() if order.created_at else 0
+            if tx_ts < created_ts - 900:
+                raise PaymentError("该交易早于订单创建时间超过 15 分钟，请重新下单")
+            if tx_ts > time.time() + 300:
+                raise PaymentError("交易时间异常，请稍后重试")
+
         # ★ G09 即时校验：to/value/status 三校验（任一失败拒绝）
         to_ok, to_reason = await self._verify_to(order)
         if not to_ok:
             order.status = "failed"
             await self.db.commit()
             raise PaymentError(f"收款地址校验失败: {to_reason}")
-        value_ok = await self._verify_value(order, client)
+        value_ok, value_received = await self._verify_value(order, client)
+        if value_ok and value_received is not None:
+            # 实际到账金额精确落库（超付可见/可对账；校验语义仍为足额即认）
+            order.paid_amount_usdt = value_received
         if not value_ok:
             order.status = "failed"
             await self.db.commit()
@@ -279,11 +306,20 @@ class PaymentService:
         self._platform_address = addr.address
         return True, ""
 
-    async def _verify_value(self, order: PaymentOrder, client) -> bool:
-        """校验到账金额 ≥ 订单金额（收款方为该链 active 平台地址）。"""
+    async def _verify_value(self, order: PaymentOrder, client) -> tuple[bool, float | None]:
+        """校验到账金额 ≥ 下限，返回 (ok, 实际到账USDT)。
+
+        下限 = max(订单金额 - 手续费容差, 订单金额 × 50%)：
+        - 容差覆盖交易所提现从本金扣费导致的短付（2026 实测：OKX TRC20 ~1.8U 最高、
+          币安 TRC20 ~1.0U、BEP20 ~0.3U、Aptos ~0.04U；默认 2U 全覆盖非 ERC20）；
+        - 50% 下限防小额订单被极低金额激活（1U 订单下限 0.5U）；
+        - 冷钱包直转 gas 用 TRX/BNB/ETH/APT 另付、USDT 全额到账，不依赖容差。
+        """
         try:
             expected_to = getattr(self, "_platform_address", "")
-            ok, reason = await client.validate_tx(order.tx_hash, expected_to, order.amount_usdt)
-            return ok
+            tol = float(settings_svc.get_rule("payment_fee_tolerance_usdt") or 2.0)
+            floor = max(order.amount_usdt - tol, order.amount_usdt * 0.5)
+            ok, reason, received = await client.validate_tx(order.tx_hash, expected_to, floor)
+            return ok, received
         except Exception:  # noqa: BLE001
-            return False
+            return False, None

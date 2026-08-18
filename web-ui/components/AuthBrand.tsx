@@ -1,4 +1,5 @@
 import * as S from "@/components/authStyles";
+import { BrandMark, BrandName } from "@/components/Brand";
 
 /** 认证页左侧品牌区（登录 / 注册共用）：logo + 大标题 + 4 条特性 + 信号波。
  *  对齐设计稿 .brand-panel；<900px 时由调用方控制隐藏（visible=false）。 */
@@ -6,24 +7,20 @@ export default function AuthBrand({ visible }: { visible: boolean }) {
   return (
     <div style={{ ...S.brandPanel, display: visible ? "flex" : "none" }}>
       <div style={S.brandLogo}>
-        <div style={S.brandMark}>
-          <svg viewBox="0 0 16 16" fill="none" width={22} height={22}>
-            <path d="M1 9h3l2-6 3 10 2-5h4" stroke="#06281f" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-        signal·saas
+        <BrandMark size={34} />
+        <BrandName size={20} />
       </div>
       <div style={S.brandHero}>
-        跨 5 大交易所
+        你睡觉时，
         <br />
-        <span style={{ color: "var(--accent)" }}>信号聚合</span>，一键跟单
+        <span style={{ color: "var(--accent)" }}>AI</span> 仍在为你捕获 Alpha
       </div>
       <div style={S.brandFeats}>
         {[
-          ["▤", "聚合 Binance · OKX · Bybit · Bitget · Gate 带单信号"],
-          ["▣", "独立跟单机器人 · 自动执行开仓/加仓/减仓/平仓"],
-          ["⇄", "邀请好友 · 订阅费 10% 现金奖励"],
-          ["◎", "资金 100% 在你自己的交易所账户"],
+          ["◈", "AI 智能引擎 7×24 扫描全市场，信号识别持续进化"],
+          ["▣", "全自动跟单执行，开仓 / 加仓 / 减仓 / 平仓秒级同步"],
+          ["⇄", "邀请好友即享订阅费 10% 现金奖励，无上限"],
+          ["◎", "资金 100% 留在你自己的账户，随时掌控"],
         ].map(([ic, txt]) => (
           <div key={txt} style={S.featRow}>
             <span style={S.featIc}>{ic}</span> {txt}

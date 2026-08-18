@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 
-type Balance = { available_usdt: number };
+type Balance = { available_usdt: number; withdraw_params?: { min_withdrawal_usdt: number; fee_usdt: number } };
 type WdResult = { id: number; amount_usdt: number; fee_usdt: number; status: string };
 type WdItem = {
   id: number;
@@ -48,6 +48,8 @@ const WD_MSG: Record<string, string> = {
 export default function WithdrawPage() {
   const router = useRouter();
   const [available, setAvailable] = useState(0);
+  const [feeUsdt, setFeeUsdt] = useState(1);
+  const [minUsdt, setMinUsdt] = useState(10);
   const [network, setNetwork] = useState("trc20");
   const [address, setAddress] = useState("");
   const [amount, setAmount] = useState("");
@@ -67,6 +69,10 @@ export default function WithdrawPage() {
         apiFetch<{ items: WdItem[] }>("/v1/withdrawals", {}, tokenStore.access),
       ]);
       setAvailable(b.available_usdt);
+      if (b.withdraw_params) {
+        setFeeUsdt(Number(b.withdraw_params.fee_usdt) || 0);
+        setMinUsdt(Number(b.withdraw_params.min_withdrawal_usdt) || 10);
+      }
       setRecords(w.items);
       setExpandedId((cur) => cur ?? (w.items[0]?.id ?? null));
     } catch {
@@ -85,7 +91,7 @@ export default function WithdrawPage() {
   const net = NETWORKS.find((n) => n.key === network)!;
   const amt = parseFloat(amount) || 0;
   const addrOk = net.regex.test(address.trim());
-  const amountOk = amt >= 10 && amt <= available;
+  const amountOk = amt >= minUsdt && amt <= available;
   const addrMasked = address.trim() ? `${address.trim().slice(0, 4)}…${address.trim().slice(-4)}` : "—";
 
   async function submit() {
@@ -139,7 +145,7 @@ export default function WithdrawPage() {
           <div className="panel">
             <div className="panel-hdr">
               <div className="panel-title"><span className="sec-dot"></span>申请提现</div>
-              <span className="panel-sub">最低 10 U（G13）· 手续费 1 U</span>
+              <span className="panel-sub">最低 {minUsdt} U · 手续费 {feeUsdt} U</span>
             </div>
 
             {/* 余额卡（30px 数字 + 全部提取） */}
@@ -163,7 +169,7 @@ export default function WithdrawPage() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 16 }}>
               <label className="label" style={{ display: "flex", justifyContent: "space-between" }}>
-                提现金额 <span style={{ color: "var(--tertiary)", fontWeight: 400 }}>最低 10 USDT</span>
+                提现金额 <span style={{ color: "var(--tertiary)", fontWeight: 400 }}>最低 {minUsdt} USDT</span>
               </label>
               <input
                 className="input"
@@ -175,7 +181,7 @@ export default function WithdrawPage() {
               />
               {amount && !amountOk && (
                 <div style={{ fontSize: 12, color: "var(--danger)" }}>
-                  {amt < 10 ? "最低提现 10 USDT，且不超过可提现余额" : "超过可提现余额"}
+                  {amt < minUsdt ? `最低提现 ${minUsdt} USDT，且不超过可提现余额` : "超过可提现余额"}
                 </div>
               )}
             </div>
@@ -223,12 +229,12 @@ export default function WithdrawPage() {
               <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontWeight: 600 }}>{amt.toFixed(2)} USDT</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0" }}>
-              <span style={{ color: "var(--muted)" }}>手续费（1 U）</span>
-              <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontWeight: 600, color: "var(--danger)" }}>1.00 USDT</span>
+              <span style={{ color: "var(--muted)" }}>手续费</span>
+              <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontWeight: 600, color: "var(--danger)" }}>{feeUsdt.toFixed(2)} USDT</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0" }}>
               <span style={{ color: "var(--muted)" }}>实际到账</span>
-              <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontWeight: 600, color: "var(--success)" }}>{Math.max(amt - 1, 0).toFixed(2)} USDT</span>
+              <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontWeight: 600, color: "var(--success)" }}>{Math.max(amt - feeUsdt, 0).toFixed(2)} USDT</span>
             </div>
             <div style={{ height: 1, background: "var(--rule)", margin: "8px 0 16px" }} />
 
@@ -358,7 +364,7 @@ export default function WithdrawPage() {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "6px 0" }}>
               <span style={{ color: "var(--muted)" }}>实际到账</span>
-              <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontWeight: 600, color: "var(--success)" }}>{Math.max(amt - 1, 0).toFixed(2)} USDT</span>
+              <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontWeight: 600, color: "var(--success)" }}>{Math.max(amt - feeUsdt, 0).toFixed(2)} USDT</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "6px 0" }}>
               <span style={{ color: "var(--muted)" }}>收款地址</span>

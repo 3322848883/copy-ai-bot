@@ -44,6 +44,39 @@ async def poll_payment_sweep_async() -> str:
         return " | ".join(results) or "no polling orders"
 
 
+@celery_app.task(name="payment.expire_sweep")
+def expire_payment_sweep() -> str:
+    """TTL 过期清理：pending 超过 payment_order_ttl_min 的订单 → expired。"""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(expire_payment_sweep_async())
+    raise RuntimeError("存在运行中的 loop，请 await expire_payment_sweep_async()")
+
+
+async def expire_payment_sweep_async() -> str:
+    """async 核心：批量将超时 pending 订单置为 expired。"""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import update
+
+    from api.db.session import get_session_factory
+    from api.models.billing import PaymentOrder
+    from api.services.settings import service as settings_svc
+
+    ttl_min = int(settings_svc.get_rule("payment_order_ttl_min") or 30)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=ttl_min)
+    factory = get_session_factory()
+    async with factory() as db:
+        result = await db.execute(
+            update(PaymentOrder)
+            .where(PaymentOrder.status == "pending", PaymentOrder.created_at < cutoff)
+            .values(status="expired")
+        )
+        await db.commit()
+        return f"expired {result.rowcount} orders (ttl={ttl_min}min)"
+
+
 @celery_app.task(name="payment.poll")
 def poll_payment(order_id: int) -> str:
     """轮询链上确认数；超限转 manual/timeout。"""

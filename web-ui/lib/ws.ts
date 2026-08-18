@@ -1,7 +1,9 @@
 "use client";
 
 /** WebSocket 客户端：连接 / 心跳 / 重连 / 频道分发（M6 P0）。 */
-const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE || "ws://127.0.0.1:8000";
+// 生产 nginx 同域反代 /v1 与 /ws/，故由 API 地址推导 WS（https→wss）；仅显式注入 WS_BASE 时覆盖
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE || API_BASE.replace(/^http/, "ws");
 
 export type WsHandler = (data: unknown) => void;
 

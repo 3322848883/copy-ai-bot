@@ -18,6 +18,7 @@ const MENU_GROUPS: { group: string; items: MenuItem[] }[] = [
       { href: "/strategies", label: "信号源审核", icon: "◈", badge: "signals" },
       { href: "/orders", label: "跟单订单", icon: "▤" },
       { href: "/payments", label: "支付记录", icon: "◎", badge: "payments" },
+      { href: "/announcements", label: "公告管理", icon: "📣" },
     ],
   },
   {
@@ -53,12 +54,13 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const loadBadges = useCallback(async () => {
     if (!tokenStore.adminAccess) return;
     try {
-      const [sig, pay, wd] = await Promise.all([
+      const [sig, pay, wd, risk] = await Promise.all([
         apiFetch<{ items: unknown[] }>("/admin/v1/signals/pending", {}, tokenStore.adminAccess).catch(() => ({ items: [] })),
         apiFetch<{ total: number }>("/admin/v1/payments?status=pending&size=1", {}, tokenStore.adminAccess).catch(() => ({ total: 0 })),
         apiFetch<{ items: unknown[] }>("/admin/v1/withdrawals?status=pending", {}, tokenStore.adminAccess).catch(() => ({ items: [] })),
+        apiFetch<{ items: unknown[] }>("/admin/v1/risk/high-risk", {}, tokenStore.adminAccess).catch(() => ({ items: [] })),
       ]);
-      setBadges({ signals: sig.items.length, payments: pay.total, withdrawals: wd.items.length });
+      setBadges({ signals: sig.items.length, payments: pay.total, withdrawals: wd.items.length, risk: risk.items.length });
     } catch {
       /* 徽标失败不阻塞 */
     }
@@ -89,9 +91,12 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       <header className="topbar">
         <Link href="/" className="brand">
           <div className="brand-mark">
-            <svg viewBox="0 0 16 16" fill="none"><path d="M1 9h3l2-6 3 10 2-5h4" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <svg viewBox="0 0 32 32" fill="none" width={22} height={22}>
+              <path d="M16 1.5 L29 9 V23 L16 30.5 L3 23 V9 Z" fill="#00d4aa" />
+              <path d="M11 19.5 v-6 a5 5 0 1 1 10 0 v6 M8.5 22 h5 M18.5 22 h5" stroke="#06281f" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </svg>
           </div>
-          signal·admin <span className="admin-badge">ADMIN</span>
+          Omni<span style={{ color: "var(--accent, #00d4aa)" }}>Alpha</span> <span className="admin-badge">ADMIN</span>
         </Link>
         <form className="top-search" onSubmit={onSearch}>
           <span className="s-ic">⌕</span>
@@ -126,7 +131,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
               })}
             </div>
           ))}
-          <div className="side-bottom">signal·admin v1.0<br />JWT aud=admin</div>
+          <div className="side-bottom">OmniAlpha Admin v1.0<br />JWT aud=admin</div>
           <button className="side-logout" onClick={() => { tokenStore.clearAdmin(); router.push("/login"); }}>
             退出登录
           </button>

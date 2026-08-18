@@ -398,7 +398,10 @@ function RegisterForm() {
                       />
                     </div>
                     <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                      验证码通过注册发送；未收到请联系管理员。开发环境固定验证码：<strong style={{ color: "var(--accent)" }}>123456</strong>
+                      验证码通过注册发送至您的邮箱；未收到请检查垃圾箱或稍后重试
+                      {process.env.NODE_ENV === "development" && (
+                        <>。开发环境固定验证码：<strong style={{ color: "var(--accent)" }}>123456</strong></>
+                      )}
                     </div>
                   </div>
                   <button className="btn btn-primary" type="submit" disabled={loading} style={S.btnPrimary48}>
@@ -413,7 +416,7 @@ function RegisterForm() {
                   <div style={{ textAlign: "center", padding: "8px 0" }}>
                     <div style={S.doneIcon}>✓</div>
                     <div style={{ ...S.subTitle, marginTop: 4 }}>注册成功</div>
-                    <div style={S.subDesc}>欢迎加入 signal·saas</div>
+                    <div style={S.subDesc}>欢迎加入 OmniAlpha</div>
                   </div>
                   <div style={S.riskBox}>
                     <span>⚠</span>
@@ -554,7 +557,7 @@ function RegisterForm() {
                       绑定好友邀请码 <span style={{ fontSize: 10, color: "var(--tertiary)" }}>可跳过</span>
                     </div>
                     <div style={{ ...S.subDesc, marginTop: 4 }}>
-                      绑定后享 10% 邀请奖励；命中平台池自动标记主号下级免订阅（G06）
+                      绑定后享 10% 邀请奖励；命中平台池自动标记主号下级免订阅
                     </div>
                   </div>
                   <div style={S.field}>
@@ -569,7 +572,7 @@ function RegisterForm() {
                           setFriendOk(false);
                           setFriendErr("");
                         }}
-                        placeholder="如：SIGNAL-8F3K2A"
+                        placeholder="6 位邀请码，如：8F3K2A"
                       />
                       <button className="btn btn-secondary" type="button" style={S.sendBtn} disabled={onbLoading} onClick={onVerifyFriendInvite}>
                         {onbLoading ? "校验中…" : "校验"}

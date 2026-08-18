@@ -2,16 +2,38 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { apiFetch, tokenStore } from "@/lib/api";
+import { BrandMark, BrandName } from "@/components/Brand";
+import { useWsChannel } from "@/components/WsProvider";
 
-/** M5 T5.10 前台闭环：全局导航（对齐设计稿：品牌 logo + 通知铃铛 + 用户 chip + 1240 容器）。 */
+type Notif = { id: number; type: string; title: string; body: string | null; is_read: boolean; created_at?: string | null };
+
+/** M5 T5.10 前台闭环：全局导航（品牌 logo + 真实通知铃铛 + 用户 chip + 1240 容器）。 */
 export default function Nav() {
   const pathname = usePathname();
   const [loggedIn, setLoggedIn] = useState(false);
   const [subActive, setSubActive] = useState(false);
   const [subLeft, setSubLeft] = useState<number | null>(null);
   const [bellOpen, setBellOpen] = useState(false);
+  const [notifs, setNotifs] = useState<Notif[]>([]);
+  const [unread, setUnread] = useState(0);
+
+  const loadNotifs = useCallback(async () => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("ss_access") : null;
+    if (!token) {
+      setNotifs([]);
+      setUnread(0);
+      return;
+    }
+    try {
+      const r = await apiFetch<{ items: Notif[]; unread_count: number }>("/v1/notifications?limit=20", {}, token);
+      setNotifs(r.items);
+      setUnread(r.unread_count);
+    } catch {
+      /* 未登录/接口失败时保持空态 */
+    }
+  }, []);
 
   useEffect(() => {
     const token = typeof window !== "undefined" ? localStorage.getItem("ss_access") : null;
@@ -23,8 +45,17 @@ export default function Nav() {
           setSubLeft(d.days_left ?? null);
         })
         .catch(() => setSubActive(false));
+      loadNotifs();
     }
-  }, [pathname]);
+  }, [pathname, loadNotifs]);
+
+  // WS 实时：新站内消息 → 前插列表 + 未读数 +1
+  useWsChannel("notification.new", useCallback((data: unknown) => {
+    const n = data as Notif;
+    if (!n || typeof n.id !== "number") return;
+    setNotifs((prev) => [n, ...prev.filter((x) => x.id !== n.id)].slice(0, 20));
+    setUnread((u) => u + 1);
+  }, []));
 
   if (pathname === "/login" || pathname === "/register") {
     return null;
@@ -38,11 +69,29 @@ export default function Nav() {
     { href: "/invite", label: "邀请中心" },
   ];
 
-  // 通知未读数：订阅将到期 / 未开通 提醒
-  const noticeCount = loggedIn ? (subActive ? 0 : 1) : 0;
+  async function markRead(id: number) {
+    const token = tokenStore.access;
+    if (!token) return;
+    try {
+      await apiFetch(`/v1/notifications/${id}/read`, { method: "PATCH" }, token);
+      setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+      setUnread((u) => Math.max(0, u - 1));
+    } catch { /* ignore */ }
+  }
+
+  async function markAllRead() {
+    const token = tokenStore.access;
+    if (!token) return;
+    try {
+      await apiFetch("/v1/notifications/read-all", { method: "POST" }, token);
+      setNotifs((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      setUnread(0);
+    } catch { /* ignore */ }
+  }
 
   return (
     <nav
+      className="topnav"
       style={{
         position: "sticky",
         top: 0,
@@ -54,18 +103,9 @@ export default function Nav() {
     >
       <div style={{ maxWidth: 1240, margin: "0 auto", padding: "0 24px", minHeight: 56, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         {/* 品牌 logo */}
-        <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 800, fontSize: 16, color: "var(--fg)", textDecoration: "none", whiteSpace: "nowrap" }}>
-          <span
-            style={{
-              width: 28, height: 28, borderRadius: 6, display: "grid", placeItems: "center",
-              background: "linear-gradient(135deg, var(--accent), #009a7a)", boxShadow: "0 0 18px rgba(0,212,170,0.3)",
-            }}
-          >
-            <svg viewBox="0 0 16 16" width="16" height="16" fill="none">
-              <path d="M1 9h3l2-6 3 10 2-5h4" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-          signal·saas
+        <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--fg)", textDecoration: "none", whiteSpace: "nowrap" }}>
+          <BrandMark />
+          <BrandName />
         </Link>
 
         <div style={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0 }}>
@@ -105,9 +145,9 @@ export default function Nav() {
                 aria-label="通知"
               >
                 🔔
-                {noticeCount > 0 && (
+                {unread > 0 && (
                   <span style={{ position: "absolute", top: 4, right: 4, minWidth: 15, height: 15, padding: "0 4px", borderRadius: 8, background: "var(--danger)", color: "#fff", fontSize: 9, display: "grid", placeItems: "center", fontFamily: "var(--font-geist-mono)" }}>
-                    {noticeCount}
+                    {unread > 99 ? "99+" : unread}
                   </span>
                 )}
               </button>
@@ -121,25 +161,64 @@ export default function Nav() {
                       padding: 16, display: "flex", flexDirection: "column", gap: 12,
                     }}
                   >
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>通知中心</div>
-                    {subActive ? (
-                      <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.7 }}>
-                        <span className="badge badge-ok" style={{ marginRight: 8 }}>订阅中</span>
-                        有效期剩余 <strong style={{ color: "var(--fg)" }}>{subLeft ?? "—"}</strong> 天
-                        {subLeft !== null && subLeft <= 3 && (
-                          <div style={{ marginTop: 6, color: "var(--warning)" }}>即将到期，请及时续费避免暂停开仓</div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>通知中心{unread > 0 && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--accent)" }}>{unread} 条未读</span>}</div>
+                          {notifs.some((n) => !n.is_read) && (
+                            <button onClick={markAllRead} style={{ fontSize: 10, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", padding: 0 }}>
+                              全部已读
+                            </button>
+                          )}
+                        </div>
+
+                        {/* 订阅状态提示行 */}
+                        {loggedIn && (
+                          <div style={{ fontSize: 11, color: "var(--muted)", paddingBottom: 10, borderBottom: "1px solid var(--rule)" }}>
+                            {subActive ? (
+                              <>
+                                <span className="badge badge-ok" style={{ marginRight: 6 }}>订阅中</span>
+                                剩余 <strong style={{ color: "var(--fg)" }}>{subLeft ?? "—"}</strong> 天
+                                {subLeft !== null && subLeft <= 3 && <span style={{ marginLeft: 6, color: "var(--warning)" }}>即将到期</span>}
+                              </>
+                            ) : (
+                              <>
+                                <span className="badge badge-warn" style={{ marginRight: 6 }}>未开通</span>
+                                <Link href="/subscriptions" style={{ color: "var(--accent)", textDecoration: "none" }}>开通订阅开启跟单 →</Link>
+                              </>
+                            )}
+                          </div>
                         )}
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.7 }}>
-                        <span className="badge badge-warn" style={{ marginRight: 8 }}>未开通</span>
-                        开通订阅后即可开启跟单
-                        <Link href="/subscriptions" style={{ display: "block", marginTop: 8, color: "var(--accent)", textDecoration: "none" }}>立即订阅 →</Link>
-                      </div>
-                    )}
-                    <div style={{ paddingTop: 10, borderTop: "1px solid var(--rule)", fontSize: 10, color: "var(--tertiary)" }}>
-                      奖励到账 / 新信号 / 提现状态等实时通知将在此汇聚
-                    </div>
+
+                        {/* 真实站内消息列表 */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 300, overflowY: "auto", margin: "0 -4px" }}>
+                          {notifs.length === 0 && (
+                            <div style={{ fontSize: 12, color: "var(--tertiary)", padding: "18px 0", textAlign: "center" }}>
+                              暂无消息 · 奖励到账 / 提现状态 / 公告将实时推送至此
+                            </div>
+                          )}
+                          {notifs.map((n) => (
+                            <button
+                              key={n.id}
+                              onClick={() => { if (!n.is_read) markRead(n.id); }}
+                              style={{
+                                textAlign: "left", background: n.is_read ? "transparent" : "var(--accent-soft)", border: "none",
+                                borderRadius: 6, padding: "8px 8px", cursor: n.is_read ? "default" : "pointer", display: "block", width: "100%",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                {!n.is_read && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />}
+                                <span style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 600, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.title}</span>
+                                <span style={{ marginLeft: "auto", fontSize: 9, color: "var(--tertiary)", flexShrink: 0, fontFamily: "var(--font-geist-mono)" }}>
+                                  {n.created_at ? new Date(n.created_at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : ""}
+                                </span>
+                              </div>
+                              {n.body && (
+                                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                                  {n.body}
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
                   </div>
                 </>
               )}

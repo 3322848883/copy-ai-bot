@@ -53,14 +53,22 @@ class LedgerService:
 
     async def list_ledger(self, user_id: int, limit: int = 50) -> list[dict]:
         rewards = (
-            await self.db.execute(
-                select(Reward).where(Reward.owner_id == user_id).order_by(Reward.id.desc()).limit(limit)
-            )
+            await self.db.execute(select(Reward).where(Reward.owner_id == user_id).order_by(Reward.id.desc()).limit(limit))
         ).scalars().all()
+        source_ids = {r.source_user_id for r in rewards if r.source_user_id}
+        source_emails: dict[int, str] = {}
+        if source_ids:
+            from api.models.user import User
+
+            rows = (
+                await self.db.execute(select(User.id, User.email).where(User.id.in_(source_ids)))
+            ).all()
+            source_emails = {uid: email for uid, email in rows}
         return [
             {
                 "id": r.id,
                 "source_user_id": r.source_user_id,
+                "source_email": source_emails.get(r.source_user_id) if r.source_user_id else None,
                 "amount_usdt": r.amount_usdt,
                 "status": r.status,
                 "verifying_ends_at": r.verifying_ends_at.isoformat() if r.verifying_ends_at else None,

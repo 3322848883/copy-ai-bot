@@ -20,7 +20,12 @@ class FakeClient:
         return self._exists, self._confirmations or 0, {}
 
     async def validate_tx(self, tx_hash, expected_to, expected_value_usdt):
-        return self._validate_ok, ""
+        return self._validate_ok, "", expected_value_usdt
+
+    async def get_tx_timestamp(self, tx_hash):
+        import time
+
+        return int(time.time())
 
 
 @pytest.fixture

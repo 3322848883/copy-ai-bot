@@ -85,6 +85,42 @@
 - `_sync_aptos_dev.py`：把真实 APTOS 收款地址同步到 dev 库。
 - `scripts/seed_demo.py`：演示数据补入 dev APTOS 收款地址。
 
+## 八、H4 支付入账加固（真金实测驱动，2026-08-18 下午）
+
+真金转账实测（交易所提现 2U → Aptos 到账 1.96U → 订单 1.0U）暴露的问题与修复：
+
+| # | 问题 | 修复 | 位置 |
+|---|---|---|---|
+| 1 | Aptos 新版钱包走 `fungible_asset::Deposit`（Petra 默认），旧实现只认 `coin::DepositEvent` → 真实转账被判失败 | FA 事件三重反查：`store → ObjectCore.owner`（收款方）`→ FungibleStore.metadata → Metadata.symbol == "USDT"`（资产） | `chain_client.py AptosClient.validate_tx` |
+| 2 | 交易所提现手续费链下扣除，实际到账 ≠ 订单金额 | 校验保持**足额即认**（≥），同时把**实际到账精确落库** `paid_amount_usdt`（超额可见/可对账） | `validate_tx` 返回 `(ok, reason, received)`；`payment_orders.paid_amount_usdt`；`/v1/payments/orders` 序列化 |
+| 3 | 平台地址链上公开 → 任何人可用**链上历史他人付款**的哈希激活新订单（H1 查重只挡系统内用过的哈希） | **交易时间窗 15 分钟**：tx 上链时间 ≥ 订单创建 -900s（覆盖"先付款再下单"的用户，交易所提现到账常需数分钟）；更早即拒绝且订单保持 pending 可重提；未来时间 >+300s 拒绝 | 四链新增 `get_tx_timestamp`；`submit_tx` H4-2 |
+| 4 | 并发双提交 / 与 poll_sweep 竞争同一订单可双开通 | **行级锁** `SELECT ... FOR UPDATE` + `_confirm` 原子 CAS（H3 已有）+ **tx_hash 唯一部分索引**（DB 层第二道防线） | `submit_tx` H4-1；迁移 `b2c3d4e5f6a7` |
+| 5 | pending 订单 TTL 30 分钟无清理，永久悬挂 | `payment.expire_sweep` Beat 任务（每 2 分钟）批量置 `expired` | `tasks_payment.py` + `celery_app.py` |
+| 6 | 交易所提现**从本金扣手续费** → 实际到账 < 订单金额（如提 20U 付 19.9U 订单，TRC20 扣 1.8U 到账 18.2 被拒） | **手续费容差**：入账下限 = max(订单金额 - 容差, 订单金额×50%)，容差规则 `payment_fee_tolerance_usdt` 默认 2.0（后台可调）。2026 实测依据：OKX TRC20 ~1.8U（非 ERC20 最坏）、币安 TRC20 ~1.0U、BEP20 ~0.2-0.3U、Aptos ~0.04U。冷钱包直转 gas 用 TRX/BNB/ETH/APT 另付、USDT 全额到账不占容差 | `_verify_value`；`services/settings/service.py` |
+| 7 | **BSC-USDT 是 18 位小数**（ETH 是 6 位），硬编码 /10**6 → 金额放大 10^12 倍 → 转真实 0.000001 USDT 即可激活任意订单（**严重漏洞**） | 按链查 `USDT_DECIMALS`（trc20=6/bep20=18/erc20=6/aptos=6） | `chain_client.py` |
+| 8 | EVM/Tron 只看**第一笔** Transfer 事件/第一页转账腿 → 多腿交易（路由、交易所批量提现）误拒真实付款 | 遍历**全部**事件匹配 (to, amount)；Tron 按哈希反查**翻页**（limit 上限 50，上限 2000 腿） | `EvmClient.validate_tx`；`TronClient.validate_tx` |
+| 9 | BSC 是 POA 链，web3 `eth_getBlock` 因 extraData>32 字节直接抛异常 → **BEP20 确认数永远失败** | 注入 `ExtraDataToPOAMiddleware`（仅 bep20） | `EvmClient._w3_list` |
+| 10 | 公共 RPC 限流（bsc.publicnode.com 实测 403）→ 支付校验/确认随机失败 | 主节点 + 3 备用节点依次回退（bep20: meowrpc/blockrazor/1rpc；erc20: merkle/1rpc/ankr）；主节点已换 `bsc-rpc.publicnode.com` | `_RPC_FALLBACKS`；`docker-compose.prod.local.yml` |
+| 11 | Tron 时间戳：trongrid 免费档限流返回空 → 时间窗被静默跳过；tronscanapi 字段名是 `timestamp` 非 `blockTimestamp` | 改走 tronscanapi `transaction-info` 的 `timestamp` 字段（与 validate_tx 同源） | `TronClient.get_tx_timestamp` |
+
+**#7-#11 为 H5 修复（2026-08-19）**：Aptos 真金验证后，对 trc20/bep20/erc20 用**真实链上转账数据**零成本回归（不花钱、直接跑生产校验函数）发现——已全部修复并复验：三链 validate_tx / get_tx_timestamp / get_confirmations 全部 `ok=True`，时间戳 sanity、确认数正常（含主节点 403 时备用节点自动接管）。
+
+**状态机**：`pending → verifying → polling → confirmed / failed / manual / expired`。
+
+**实测记录**：
+- FA 路径：`validate_tx → (True, '', 1.96)` ✓
+- H1 重放：新订单提交已用哈希 → `该 TxHash 已被其他订单使用` ✓
+- H4-2 时间窗：43.8 分钟前的真实哈希对新建订单 → REJECT ✓（15 分钟窗语义复算验证）
+- 容差：规则值 2.0 ✓；1U 订单下限 0.5U、19.9U 订单下限 17.9U ✓；真实 1.96 交易 vs 下限 0.5 通过、vs 17.9 拒绝 ✓
+- expire sweep：手动执行 `expired 0 orders (ttl=30min)` ✓；beat 注册 `payment-expire` 并真实触发 ✓
+
+**运维注意**：
+- Celery Beat 默认 PersistentScheduler（`celerybeat-schedule` 文件缓存调度表）——**新增/修改 beat 任务后必须删除该文件并重启 beat**，否则新任务不生效。
+- 超额部分（如 1.96 - 1.0 = 0.96）目前仅落库可见，不做自动找零/入余额；如需余额/抵扣体系为后续产品迭代。
+- Tron 校验走 tronscanapi（第三方）；如需去第三方依赖可切换 trongrid 内部交易解析（未实施）。
+- **ERC20 大额提现费（3.5~10U）超出 2U 容差**：小额订单不建议 ERC20（支付页建议用户走 TRC20/BEP20/Aptos）；如需覆盖可在后台把 `payment_fee_tolerance_usdt` 调大，但 50% 下限始终兜底。
+- 容差与时间窗均为后台可调/代码常量：容差规则 `payment_fee_tolerance_usdt`（后台设置-支付订单组）；时间窗 900s 为 `service.py` 常量。
+
 ## 关联文档
 - 平台设计 / 需求编号：`docs/2026-08-12-signal-saas-platform-design.md`（G09 链上确认、G13 提现、G27 订阅支付）
 - 上线清单 / 运维：`docs/PRODUCTION_CHECKLIST.md`、`docs/OPERATIONS_RUNBOOK.md`

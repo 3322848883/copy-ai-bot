@@ -29,10 +29,12 @@ class PaymentOrder(TimestampMixin, Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     plan_id: Mapped[str] = mapped_column(String(32))
     amount_usdt: Mapped[float] = mapped_column(Float)
+    # ★ H4：链上实际到账金额（用户可能多付，如 2U 扣手续费到账 1.96 → 订单 1.0）
+    paid_amount_usdt: Mapped[float | None] = mapped_column(Float, nullable=True)
     network: Mapped[str] = mapped_column(String(8))  # trc20 / bep20 / erc20
     tx_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending")
-    # pending / verifying / polling / confirmed / failed / manual / timeout
+    # pending / verifying / polling / confirmed / failed / manual / timeout / expired
     confirmations: Mapped[int] = mapped_column(Integer, default=0)
     required_confirmations: Mapped[int] = mapped_column(Integer, default=12)
     poll_attempts: Mapped[int] = mapped_column(Integer, default=0)

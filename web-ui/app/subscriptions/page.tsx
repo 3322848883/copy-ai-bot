@@ -2,7 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import QRCode from "qrcode";
 import { apiFetch, tokenStore } from "@/lib/api";
+import PaymentGuideModal from "@/components/PaymentGuideModal";
+import { ToastStack, useToasts } from "@/components/Toast";
+import { usePlatformConfig } from "@/lib/config";
 
 type Plan = { plan_id: string; name: string; price_usdt: number; duration_days: number; trial: boolean };
 type Order = {
@@ -19,7 +23,6 @@ type Order = {
   ttl_seconds?: number;
 };
 type SubStatus = { active: boolean; plan_id?: string; expires_at?: string };
-type Toast = { type: "success" | "warn" | "info" | "error"; msg: string };
 type HistoryOrder = {
   order_id: number;
   plan_id: string;
@@ -39,15 +42,15 @@ const ORDER_STATUS_LABEL: Record<string, string> = {
   failed: "失败",
   manual: "人工处理",
   timeout: "已超时",
+  expired: "已过期",
 };
 
 const NETWORKS = [
-  { key: "trc20", label: "TRC-20", note: "12 确认" },
-  { key: "bep20", label: "BEP-20", note: "15 确认" },
-  { key: "erc20", label: "ERC-20", note: "32 确认" },
-  { key: "aptos", label: "APTOS", note: "20 确认" },
+  { key: "trc20", label: "TRC-20" },
+  { key: "bep20", label: "BEP-20" },
+  { key: "erc20", label: "ERC-20" },
+  { key: "aptos", label: "APTOS" },
 ];
-const PENDING_LIMIT_MS = 30 * 60 * 1000; // 30min 订单倒计时（后台 payment_order_ttl_min 可配，创建订单时返回 ttl_seconds 覆盖）
 
 /** M4 T4.10 订阅：推荐标签 + 套餐卡（正式上试用下）+ 订单信息卡 + 订阅状态卡 + 支付状态机。 */
 export default function SubscriptionsPage() {
@@ -63,15 +66,32 @@ export default function SubscriptionsPage() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const { toasts, push: showToast, dismiss } = useToasts();
+  const cfg = usePlatformConfig();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [orders, setOrders] = useState<HistoryOrder[]>([]);
+  const [qrDataUrl, setQrDataUrl] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
 
-  const showToast = useCallback((type: Toast["type"], m: string) => {
-    setToasts((t) => [...t, { type, msg: m }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.msg !== m || x.type !== type)), 3400);
-  }, []);
+  useEffect(() => {
+    if (!order?.platform_address) {
+      setQrDataUrl("");
+      return;
+    }
+    let alive = true;
+    QRCode.toDataURL(order.platform_address, {
+      width: 176,
+      margin: 1,
+      color: { dark: "#0a1628", light: "#ffffff" },
+      errorCorrectionLevel: "M",
+    })
+      .then((url) => alive && setQrDataUrl(url))
+      .catch(() => alive && setQrDataUrl(""));
+    return () => {
+      alive = false;
+    };
+  }, [order?.platform_address]);
 
   const load = useCallback(async () => {
     try {
@@ -197,7 +217,7 @@ export default function SubscriptionsPage() {
   const subProgress = sub?.active ? Math.min(100, Math.max(0, ((1 - subLeftMs / (subDuration * 86400_000)) * 100))) : 0;
 
   /* ── 支付状态机 ── */
-  const orderTtlMs = order?.ttl_seconds ? order.ttl_seconds * 1000 : PENDING_LIMIT_MS;
+  const orderTtlMs = order?.ttl_seconds ? order.ttl_seconds * 1000 : cfg.payment.order_ttl_min * 60 * 1000;
   const pendingLeft = orderCreatedAt && order?.status === "pending" ? Math.max(0, orderTtlMs - (nowTick - orderCreatedAt)) : 0;
   const required = order?.required ?? order?.required_confirmations ?? 0;
   const confirmPct = order && required > 0 ? Math.min(100, Math.round(((order.confirmations ?? 0) / required) * 100)) : 0;
@@ -260,7 +280,7 @@ export default function SubscriptionsPage() {
           <>
             {/* G10 过期黄条 */}
             <div style={{ marginBottom: 16, padding: 12, borderRadius: 6, border: "1px solid rgba(234,179,8,0.3)", background: "rgba(234,179,8,0.06)", fontSize: 12, color: "var(--warning)", lineHeight: 1.6 }}>
-              ⚠ 订阅已过期 / 未开通（G10）：CopyBot 自动暂停开仓（OPEN/ADD 拦截），平仓（REDUCE/CLOSE）放行；续费后立即恢复跟单。
+              ⚠ 订阅已过期 / 未开通：CopyBot 自动暂停开仓（OPEN/ADD 拦截），平仓（REDUCE/CLOSE）放行；续费后立即恢复跟单。
             </div>
             <div className="empty-state" style={{ minHeight: 160, marginBottom: 24 }}>
               <div className="es-ic">◇</div>
@@ -293,7 +313,7 @@ export default function SubscriptionsPage() {
                   <div>
                     <div style={{ fontWeight: 600 }}>{p.name}</div>
                     <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                      {p.trial ? "体验 7 天 · 最多 1 个机器人" : "全部策略 + 无限跟单机器人"}
+                      {p.trial ? `体验 ${p.duration_days} 天` : `有效期 ${p.duration_days} 天 · 全部策略 + 跟单机器人`}
                     </div>
                   </div>
                   <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--font-geist-mono), monospace" }}>
@@ -313,7 +333,7 @@ export default function SubscriptionsPage() {
           })}
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", marginBottom: 24 }}>
-          绑定平台邀请码的用户享免订阅权益
+          注册时填写邀请码，好友订阅成功后邀请人可获得邀请奖励
         </div>
 
         {/* 下单流程 */}
@@ -321,7 +341,10 @@ export default function SubscriptionsPage() {
           <div className="panel">
             <div className="panel-hdr">
               <div className="panel-title"><span className="sec-dot"></span>选择支付网络</div>
-              <span className="panel-sub">TRC-20 / BEP-20 / ERC-20 / APTOS 四链自动核验</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <button onClick={() => setGuideOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--muted)", padding: 0, textDecoration: "underline", textUnderlineOffset: 3 }}>支付教程</button>
+                <span className="panel-sub">TRC-20 / BEP-20 / ERC-20 / APTOS 四链自动核验</span>
+              </div>
             </div>
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
               {NETWORKS.map((n) => (
@@ -335,7 +358,7 @@ export default function SubscriptionsPage() {
                   }}
                   onClick={() => setNetwork(n.key)}
                 >
-                  {n.label} <span style={{ fontSize: 11, opacity: 0.7 }}>{n.note}</span>
+                  {n.label} <span style={{ fontSize: 11, opacity: 0.7 }}>{cfg.chain_confirmations[n.key as keyof typeof cfg.chain_confirmations]} 确认</span>
                 </button>
               ))}
             </div>
@@ -348,7 +371,10 @@ export default function SubscriptionsPage() {
           <div className="panel">
             <div className="panel-hdr">
               <div className="panel-title"><span className="sec-dot"></span>订单信息</div>
-              <span className="panel-sub">#{order.order_id} · 请 30 分钟内完成转账</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <button onClick={() => setGuideOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--muted)", padding: 0, textDecoration: "underline", textUnderlineOffset: 3 }}>支付教程</button>
+                <span className="panel-sub">#{order.order_id} · 请 {cfg.payment.order_ttl_min} 分钟内完成转账</span>
+              </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -385,13 +411,19 @@ export default function SubscriptionsPage() {
               </div>
             </div>
 
-            {/* QR 占位 */}
-            <div style={{ border: "1px dashed var(--rule)", borderRadius: 6, padding: 12, display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
-              <div style={{ width: 52, height: 52, background: "var(--surface)", border: "1px solid var(--rule)", borderRadius: 4, display: "grid", placeItems: "center", fontSize: 9, color: "var(--muted)" }}>
-                QR
+            {/* 收款二维码 */}
+            <div style={{ border: "1px dashed var(--rule)", borderRadius: 6, padding: 12, display: "flex", alignItems: "center", gap: 16, marginTop: 16 }}>
+              <div style={{ width: 132, height: 132, background: "#ffffff", borderRadius: 6, display: "grid", placeItems: "center", flexShrink: 0, overflow: "hidden" }}>
+                {qrDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={qrDataUrl} alt="收款地址二维码" style={{ width: 120, height: 120, display: "block" }} />
+                ) : (
+                  <span style={{ fontSize: 10, color: "#64748b" }}>生成中…</span>
+                )}
               </div>
-              <div style={{ fontSize: 10, color: "var(--muted)", lineHeight: 1.7 }}>
-                扫码转账（或复制地址）
+              <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.8 }}>
+                <b style={{ color: "var(--fg)" }}>扫码转账</b>（或复制地址）
+                <br />钱包扫码后请核对网络与金额
                 <br />转账完成后提交 TxHash
               </div>
             </div>
@@ -402,7 +434,7 @@ export default function SubscriptionsPage() {
               <input
                 className="input"
                 style={{ fontFamily: "var(--font-geist-mono), monospace" }}
-                placeholder="0x 或 9f 开头的交易哈希（dev 可输入 mock_confirm_xxx）"
+                placeholder={process.env.NODE_ENV === "development" ? "0x 或 9f 开头的交易哈希（dev 可输入 mock_confirm_xxx）" : "0x 或 9f 开头的交易哈希"}
                 value={txHash}
                 onChange={(e) => setTxHash(e.target.value)}
               />
@@ -449,9 +481,20 @@ export default function SubscriptionsPage() {
                 ⚠ 确认超时，已提交人工处理（后台管理员将核实到账）
               </div>
             )}
+            {order.status === "expired" && (
+              <div style={{ marginTop: 12, padding: 12, borderRadius: 6, border: "1px solid var(--rule)", background: "var(--surface)", fontSize: 12, color: "var(--muted)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <span>订单已过期（超过有效期未完成支付）</span>
+                <button className="btn btn-secondary" style={{ padding: "4px 12px", fontSize: 11, height: 28 }} onClick={() => { setOrder(null); setOrderCreatedAt(null); setTxHash(""); }}>
+                  重新下单
+                </button>
+              </div>
+            )}
             {order.status === "manual" && (
               <div style={{ marginTop: 12, padding: 12, borderRadius: 6, border: "1px solid rgba(234,179,8,0.3)", background: "rgba(234,179,8,0.06)", fontSize: 12, color: "var(--warning)" }}>
                 ⚠ 需要人工介入 · 请联系客服处理（后台管理员强制确认）
+                {cfg.support.email && (
+                  <>：<a href={`mailto:${cfg.support.email}`} style={{ color: "var(--warning)" }}>{cfg.support.email}</a></>
+                )}
               </div>
             )}
             {order.note && (
@@ -490,7 +533,7 @@ export default function SubscriptionsPage() {
                     {orders.map((o) => (
                       <tr key={o.order_id} style={{ borderBottom: "1px solid var(--rule)" }}>
                         <td style={{ padding: "10px 8px", fontFamily: "var(--font-geist-mono), monospace", color: "var(--muted)" }}>#{o.order_id}</td>
-                        <td style={{ padding: "10px 8px" }}>{o.plan_id}</td>
+                        <td style={{ padding: "10px 8px" }}>{planName(o.plan_id)}</td>
                         <td style={{ padding: "10px 8px" }}>{o.amount_usdt.toFixed(2)} USDT</td>
                         <td style={{ padding: "10px 8px", textTransform: "uppercase" }}>{o.network}</td>
                         <td style={{ padding: "10px 8px" }}>
@@ -510,16 +553,18 @@ export default function SubscriptionsPage() {
         </div>
       )}
 
+      {/* 支付教程弹窗 */}
+      <PaymentGuideModal
+        open={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        network={order?.network || network}
+        confirmations={cfg.chain_confirmations}
+        ttlMin={cfg.payment.order_ttl_min}
+        supportEmail={cfg.support.email}
+      />
+
       {/* Toast 栈 */}
-      <div className="toast-stack">
-        {toasts.map((t, i) => (
-          <div key={i} className={`toast ${t.type}`}>
-            <span className="t-ic">{t.type === "success" ? "✓" : t.type === "warn" ? "!" : t.type === "error" ? "✕" : "i"}</span>
-            <span>{t.msg}</span>
-            <button className="t-close" onClick={() => setToasts((x) => x.filter((_, j) => j !== i))}>✕</button>
-          </div>
-        ))}
-      </div>
+      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </main>
   );
 }

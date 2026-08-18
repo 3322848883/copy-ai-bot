@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 import { useWsChannel } from "@/components/WsProvider";
-import { Sparkline } from "@/components/Sparkline";
 
 type Bot = {
   id: number;
@@ -356,16 +355,14 @@ export default function MyBotsPage() {
                     ))}
                   </div>
 
-                  {/* 底部：spark + 操作按钮组 */}
+                  {/* 底部：总盈亏 + 操作按钮组 */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, paddingTop: 12, borderTop: "1px solid rgba(51,65,85,0.4)", flexWrap: "wrap" }}>
-                    <div style={{ height: 30, flex: 1, minWidth: 90, maxWidth: 150 }}>
-                      <Sparkline
-                        id={`bot-${bot.id}`}
-                        color={sm.color}
-                        w={100}
-                        h={30}
-                        values={[bot.pnl.realized_pnl_usdt, bot.pnl.unrealized_pnl_usdt, bot.pnl.total_notional_usdt / 100, bot.virtual_locked_usdt / 20]}
-                      />
+                    <div style={{ flex: 1, minWidth: 90 }}>
+                      <div style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>总盈亏（已实现+未实现）</div>
+                      <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 14, fontWeight: 700, color: bot.pnl.realized_pnl_usdt + bot.pnl.unrealized_pnl_usdt >= 0 ? "var(--success)" : "var(--danger)" }}>
+                        {bot.pnl.realized_pnl_usdt + bot.pnl.unrealized_pnl_usdt >= 0 ? "+" : ""}
+                        {fmtNum(bot.pnl.realized_pnl_usdt + bot.pnl.unrealized_pnl_usdt)} USDT
+                      </div>
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {bot.status === "active" && (
@@ -380,7 +377,7 @@ export default function MyBotsPage() {
                           style={{ padding: "6px 14px", fontSize: 12 }}
                           onClick={() => {
                             if (sub && !sub.active) {
-                              setErr("订阅未开通或已过期，无法重新开启（G10）");
+                              setErr("订阅未开通或已过期，无法重新开启");
                             } else {
                               onStatus(bot, "active");
                             }

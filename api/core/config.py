@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(PROJECT_ROOT / ".env"), env_file_encoding="utf-8", extra="ignore")
 
     # ── 应用 ──
-    app_name: str = "signal-saas"
+    app_name: str = "OmniAlpha"
     app_env: str = "dev"  # dev / test / prod
     debug: bool = True
     api_prefix: str = "/v1"

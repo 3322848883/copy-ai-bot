@@ -44,6 +44,7 @@ async def list_codes(
                 "status": c.status,
                 "remark": c.remark,
                 "bind_count": c.bind_count,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
                 "max_binds": c.max_binds,
             }
             for c in rows

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 
-type Code = { id: number; exchange: string; code: string; status: string; remark: string | null; bind_count: number; max_binds: number | null };
+type Code = { id: number; exchange: string; code: string; status: string; remark: string | null; bind_count: number; max_binds: number | null; created_at?: string | null };
 
 const EXCHANGES = ["全部", "GATE", "BINANCE", "OKX", "BYBIT", "BITGET"];
 const NET_CLASS: Record<string, string> = { gate: "gate", binance: "bin", okx: "okx", bybit: "byb", bitget: "bgt" };
@@ -132,7 +132,7 @@ export default function AdminExchangeInvitesPage() {
                   <td className="num">{c.bind_count.toLocaleString()}</td>
                   <td className="num">{c.max_binds ? c.max_binds.toLocaleString() : "不限"}</td>
                   <td>{c.status === "active" ? <span className="badge badge-ok">启用</span> : <span className="badge badge-err">停用</span>}</td>
-                  <td className="sub-ref">{c.id ? new Date(c.id * 1).toLocaleDateString("zh-CN") : "—"}</td>
+                  <td className="sub-ref">{c.created_at ? new Date(c.created_at).toLocaleDateString("zh-CN") : "—"}</td>
                   <td>
                     <button className={`btn btn-${c.status === "active" ? "secondary" : "primary"} btn-sm`} style={{ marginRight: 6 }} onClick={() => toggle(c)}>{c.status === "active" ? "停用" : "启用"}</button>
                     <button className="btn btn-secondary btn-sm" style={{ color: "#f87171" }} onClick={() => remove(c)}>删除</button>

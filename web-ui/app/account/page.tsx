@@ -5,11 +5,17 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 
-type ApiKey = { id: number; exchange: string };
+type ApiKey = { id: number; exchange: string; bound_at?: string; last_checked_at?: string };
 type SubStatus = { active: boolean; plan_id?: string; expires_at?: string };
-type Toast = { type: "success" | "warn" | "info" | "error"; msg: string };
 
 const EXCHANGE_LABEL: Record<string, string> = { gate: "Gate", binance: "Binance", okx: "OKX", bybit: "Bybit", bitget: "Bitget" };
+
+function fmtTime(iso?: string | null) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
 const TABS: Array<[string, string]> = [
   ["overview", "账户概览"],
   ["apikeys", "API 密钥管理"],
@@ -46,7 +52,6 @@ export default function AccountPage() {
   const [bindExchange, setBindExchange] = useState("gate");
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
-  const [toasts, setToasts] = useState<Toast[]>([]);
 
   const loadKeys = useCallback(async () => {
     try {
@@ -344,7 +349,7 @@ export default function AccountPage() {
               <div className="panel">
                 <div className="panel-hdr">
                   <div className="panel-title"><span className="sec-dot"></span>已绑定 API</div>
-                  <span className="panel-sub">read=1 · trade=1 · withdraw=0（拒绝提现权限）</span>
+                  <span className="panel-sub">仅授权读取与合约交易 · 拒绝提现权限</span>
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
@@ -361,15 +366,15 @@ export default function AccountPage() {
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                         <span style={{ color: "var(--muted)" }}>权限</span>
-                        <span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "var(--success)" }}>读取 ✓ / 交易 ✓ / 提现 ✗</span>
+                        <span style={{ fontFamily: "var(--font-geist-mono), monospace" }}>读取 / 合约交易</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                        <span style={{ color: "var(--muted)" }}>密钥</span>
-                        <span style={{ fontFamily: "var(--font-geist-mono), monospace" }}>••••••••••••{String(k.id).padStart(4, "0")}</span>
+                        <span style={{ color: "var(--muted)" }}>绑定时间</span>
+                        <span style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{fmtTime(k.bound_at)}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                         <span style={{ color: "var(--muted)" }}>最近校验</span>
-                        <span style={{ fontFamily: "var(--font-geist-mono), monospace" }}>实时已校验</span>
+                        <span style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{fmtTime(k.last_checked_at)}</span>
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         <button
@@ -455,19 +460,19 @@ export default function AccountPage() {
                     <button className="btn btn-primary" type="submit" disabled={loading || !exchange}>确认</button>
                   </form>
                   <div style={{ marginTop: 16, padding: 12, borderRadius: 4, background: "rgba(0,212,170,0.05)", border: "1px solid rgba(0,212,170,0.25)", fontSize: 12, color: "var(--accent)" }}>
-                    ℹ 切换所属交易所需重新绑定该所 API 与交易所邀请码（G27），已有机器人不受影响。
+                    ℹ 切换所属交易所需重新绑定该所 API 与交易所邀请码，已有机器人不受影响。
                   </div>
                 </div>
 
                 <div className="panel">
                   <div className="panel-hdr">
-                    <div className="panel-title"><span className="sec-dot"></span>交易所邀请码（G27）</div>
+                    <div className="panel-title"><span className="sec-dot"></span>交易所邀请码</div>
                     <span className="panel-sub">/v1/identity/bind-exchange-invite</span>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
                     {exchangeInvite
                       ? <>已绑定：<span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "var(--accent)" }}>{exchangeInvite}</span></>
-                      : "绑定平台资源池邀请码，享主号下级免订阅权益（G06）"}
+                      : "绑定平台资源池邀请码，享主号下级免订阅权益"}
                   </div>
                   <form onSubmit={onBindExchangeInvite} style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
                     <div style={{ flex: 1 }}>
@@ -531,7 +536,7 @@ export default function AccountPage() {
                 </form>
                 {/* 安全风控提示条 */}
                 <div style={{ marginTop: 20, padding: 12, borderRadius: 4, background: "rgba(234,179,8,0.06)", border: "1px solid rgba(234,179,8,0.25)", fontSize: 12, color: "var(--warning)", lineHeight: 1.6 }}>
-                  ⚠ 风控提示：若账号被标记高危，提现与奖励核实将延长至 48h（G11）。
+                  ⚠ 风控提示：若账号被标记高危，提现与奖励核实将延长至 48h。
                 </div>
               </div>
             )}
@@ -586,17 +591,6 @@ export default function AccountPage() {
           </div>
         </div>
       )}
-
-      {/* Toast 栈 */}
-      <div className="toast-stack">
-        {toasts.map((t, i) => (
-          <div key={i} className={`toast ${t.type}`}>
-            <span className="t-ic">{t.type === "success" ? "✓" : t.type === "warn" ? "!" : t.type === "error" ? "✕" : "i"}</span>
-            <span>{t.msg}</span>
-            <button className="t-close" onClick={() => setToasts((x) => x.filter((_, j) => j !== i))}>✕</button>
-          </div>
-        ))}
-      </div>
     </main>
   );
 }

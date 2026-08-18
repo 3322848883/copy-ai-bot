@@ -42,6 +42,7 @@ PLATFORM_RULES: dict[str, dict] = {
     "chain_confirm_aptos": {"default": 20, "label": "APTOS 确认数", "unit": "块", "group": "链上确认"},
     # 支付订单
     "payment_order_ttl_min": {"default": 30, "label": "支付订单倒计时", "unit": "min", "group": "支付订单"},
+    "payment_fee_tolerance_usdt": {"default": 2.0, "label": "支付手续费容差", "unit": "USDT", "group": "支付订单"},
     # 邮件
     "mail_enabled": {"default": True, "label": "邮件发送", "unit": "", "group": "邮件", "bool": True},
     "smtp_host": {"default": _SMTP_DEFAULTS["smtp_host"], "label": "SMTP 主机", "unit": "", "group": "邮件", "str": True},
@@ -49,6 +50,9 @@ PLATFORM_RULES: dict[str, dict] = {
     "smtp_user": {"default": _SMTP_DEFAULTS["smtp_user"], "label": "SMTP 账号", "unit": "", "group": "邮件", "str": True},
     "smtp_password": {"default": _SMTP_DEFAULTS["smtp_password"], "label": "SMTP 密码", "unit": "", "group": "邮件", "str": True, "secret": True},
     "mail_from": {"default": _SMTP_DEFAULTS["mail_from"], "label": "发件人地址", "unit": "", "group": "邮件", "str": True},
+    # 客服联系（前台页脚/忘记密码/支付教程展示；为空时前台显示中性文案）
+    "support_email": {"default": "", "label": "客服邮箱", "unit": "", "group": "客服联系", "str": True},
+    "support_telegram": {"default": "", "label": "客服 Telegram", "unit": "", "group": "客服联系", "str": True},
 }
 
 # 密钥型规则：读取回显脱敏（用占位掩码），留空 / 占位符保存时保留原值
@@ -57,14 +61,14 @@ _SECRET_MASK = "********"
 
 # 邮件模板（可后台编辑，Redis 覆盖默认值）
 TEMPLATE_SUBJECTS: dict[str, str] = {
-    "verify_code": "邮箱验证码",
-    "subscription_expiring": "订阅即将到期",
+    "verify_code": "OmniAlpha 邮箱验证码",
+    "subscription_expiring": "OmniAlpha 订阅即将到期",
 }
 DEFAULT_TEMPLATES: dict[str, str] = {
     "verify_code": (
         '<div style="border-bottom:1px solid #22304a;padding-bottom:16px;margin-bottom:20px">'
-        '<strong style="color:#00d4aa;font-size:18px">signal·saas</strong>'
-        '<span style="color:#64748b;font-size:12px;margin-left:8px">信号聚合跟单平台</span></div>'
+        '<strong style="color:#00d4aa;font-size:18px">Omni<span style="color:#00b5e0">Alpha</span></strong>'
+        '<span style="color:#64748b;font-size:12px;margin-left:8px">全维信号跟单平台</span></div>'
         '<h2 style="color:#f1f5f9;font-size:18px;margin:0 0 12px">邮箱验证码</h2>'
         '<p style="color:#94a3b8;font-size:14px;line-height:1.6;margin:0 0 20px">'
         '您正在使用该邮箱注册 / 登录，本次验证码为：</p>'
@@ -80,8 +84,8 @@ DEFAULT_TEMPLATES: dict[str, str] = {
     ),
     "subscription_expiring": (
         '<div style="border-bottom:1px solid #22304a;padding-bottom:16px;margin-bottom:20px">'
-        '<strong style="color:#00d4aa;font-size:18px">signal·saas</strong>'
-        '<span style="color:#64748b;font-size:12px;margin-left:8px">信号聚合跟单平台</span></div>'
+        '<strong style="color:#00d4aa;font-size:18px">Omni<span style="color:#00b5e0">Alpha</span></strong>'
+        '<span style="color:#64748b;font-size:12px;margin-left:8px">全维信号跟单平台</span></div>'
         '<h2 style="color:#f59e0b;font-size:18px;margin:0 0 12px">订阅即将到期</h2>'
         '<p style="color:#f1f5f9;font-size:14px;line-height:1.7;margin:0 0 16px">'
         '您好 <strong style="color:#40ffc5">{name}</strong>，您的订阅将于 '

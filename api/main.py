@@ -137,6 +137,18 @@ app.include_router(referrals_router.router, prefix=settings.api_prefix)
 app.include_router(rewards_router.router, prefix=settings.api_prefix)
 app.include_router(withdrawals_router.router, prefix=settings.api_prefix)
 
+# ── 站内消息（列表/未读数/已读）──
+from api.routers.v1 import notifications as notifications_router  # noqa: E402
+from api.routers.v1 import announcements as announcements_router  # noqa: E402
+
+app.include_router(notifications_router.router, prefix=settings.api_prefix)
+app.include_router(announcements_router.router, prefix=settings.api_prefix)
+
+# ── 公开平台配置（免鉴权：邀请奖励/确认数/订单时限/提现参数/客服联系）──
+from api.routers.v1 import config as config_router  # noqa: E402
+
+app.include_router(config_router.router, prefix=settings.api_prefix)
+
 # ── M6 P0 路由注册（首页数据看板 + WebSocket 实时推送）──
 from api.routers.v1 import dashboard as dashboard_router  # noqa: E402
 from api.routers.v1 import ws as ws_router  # noqa: E402
@@ -159,6 +171,7 @@ from api.routers.admin import review as admin_review  # noqa: E402
 from api.routers.admin import wallets as admin_wallets  # noqa: E402
 from api.routers.admin import invites as admin_invites  # noqa: E402
 from api.routers.admin import settings as admin_settings  # noqa: E402
+from api.routers.admin import announcements as admin_announcements  # noqa: E402
 
 app.include_router(admin_auth.router, prefix=settings.admin_prefix)
 app.include_router(admin_users.router, prefix=settings.admin_prefix)
@@ -174,3 +187,4 @@ app.include_router(admin_review.router, prefix=settings.admin_prefix)
 app.include_router(admin_wallets.router, prefix=settings.admin_prefix)
 app.include_router(admin_invites.router, prefix=settings.admin_prefix)
 app.include_router(admin_settings.router, prefix=settings.admin_prefix)
+app.include_router(admin_announcements.router, prefix=settings.admin_prefix)

@@ -408,17 +408,18 @@ export default function AdminStrategiesPage() {
             </div>
           </div>
           {listedFiltered.slice(0, 3).map((s) => (
-            <div className="ops-card" key={s.id}>
+            <div className="ops-card" key={s.id} style={{ opacity: 0.65 }}>
               <div className="ops-head">
                 <span className="ops-name">{s.display_name}</span>
-                <span className="badge badge-muted">模式 B · WS</span>
+                <span className="badge badge-muted">模式 B · 待接入</span>
               </div>
               <div className="ops-grid2">
-                <div><div className="ops-f">子账户 ID</div><div className="ops-v">V2 启用</div></div>
-                <div><div className="ops-f">实时余额</div><div className="ops-v">V2 启用</div></div>
+                <div><div className="ops-f">子账户 ID</div><div className="ops-v">—</div></div>
+                <div><div className="ops-f">实时余额</div><div className="ops-v">—</div></div>
                 <div><div className="ops-f">WS 状态</div><div className="ops-v">—</div></div>
                 <div><div className="ops-f">今日信号</div><div className="ops-v">—</div></div>
               </div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>子账户实时数据将在 V2 接入</div>
             </div>
           ))}
         </div>

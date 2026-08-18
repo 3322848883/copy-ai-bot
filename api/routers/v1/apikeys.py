@@ -44,7 +44,17 @@ async def list_apikeys(db: DbDep, user_id: int = Depends(get_current_user)) -> d
     rows = (
         await db.execute(select(ApiKey).where(ApiKey.user_id == user_id))
     ).scalars().all()
-    return {"items": [{"id": k.id, "exchange": k.exchange} for k in rows]}
+    return {
+        "items": [
+            {
+                "id": k.id,
+                "exchange": k.exchange,
+                "bound_at": k.created_at.isoformat() if k.created_at else None,
+                "last_checked_at": k.last_checked_at.isoformat() if k.last_checked_at else None,
+            }
+            for k in rows
+        ]
+    }
 
 
 @router.delete("/{exchange}")

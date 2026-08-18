@@ -17,6 +17,7 @@ from api.models.billing import (
     PlatformAddress,
 )
 from api.models.audit import AuditEvent, Notification
+from api.models.announcement import Announcement
 
 __all__ = [
     "User",
@@ -42,4 +43,5 @@ __all__ = [
     "PlatformAddress",
     "AuditEvent",
     "Notification",
+    "Announcement",
 ]

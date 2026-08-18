@@ -207,16 +207,18 @@ export default function Home() {
               </svg>
               <div style={{ position: "relative", zIndex: 2, maxWidth: 560 }}>
                 <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 8 }}>
-                  SIGNAL AGGREGATION · 5 EXCHANGES
+                  OMNIALPHA · AI ALPHA ENGINE
                 </div>
-                <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.3 }}>跨 5 大交易所信号聚合，一键跟单</div>
+                <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.3 }}>
+                  你睡觉时，<span style={{ color: "var(--accent)" }}>AI</span> 仍在为你捕获 Alpha
+                </div>
                 <div style={{ color: "var(--muted)", fontSize: 14, marginTop: 8 }}>
-                  平台聚合 Binance · OKX · Bybit · Bitget · Gate 带单信号，实时匹配策略，自动执行跟单
+                  AI 引擎 7×24 扫描全市场信号，智能识别、自动执行、秒级跟单——不盯盘、不错过、资金始终在你自己账户
                 </div>
                 <div style={{ display: "flex", gap: 24, marginTop: 20, flexWrap: "wrap" }}>
                   <div>
-                    <div style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.08em" }}>聚合信号源</div>
-                    <div style={{ fontSize: 22, fontWeight: 700 }}>5 所</div>
+                    <div style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.08em" }}>接入信号源</div>
+                    <div style={{ fontSize: 22, fontWeight: 700 }}>5+ 持续扩展</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.08em" }}>运行机器人</div>
@@ -329,9 +331,9 @@ export default function Home() {
               >
                 <div style={{ display: "flex", gap: 16, flex: 1, flexWrap: "wrap" }}>
                   {[
-                    { num: onboarding.has_api ? "✓" : "1", title: "绑定交易所", desc: onboarding.has_api ? "已完成 API 绑定" : "完成 API 绑定，开启跟单", done: onboarding.has_api, current: !onboarding.has_api },
+                    { num: onboarding.has_api ? "✓" : "1", title: "连接账户", desc: onboarding.has_api ? "已完成 API 连接" : "1 分钟完成 API 连接，随时可撤销", done: onboarding.has_api, current: !onboarding.has_api },
                     { num: onboarding.has_bot ? "✓" : "2", title: "选择策略", desc: onboarding.has_bot ? "已选择策略" : "从策略广场挑选适合的策略", done: onboarding.has_bot, current: !onboarding.has_bot && onboarding.has_api },
-                    { num: "3", title: "开启跟单", desc: "配置方向/杠杆/比例，开始跟单", done: false, current: onboarding.has_bot },
+                    { num: "3", title: "开启跟单", desc: "配置方向/杠杆/比例，Alpha 自动执行", done: false, current: onboarding.has_bot },
                   ].map((s, i) => (
                     <div key={i} style={{ flex: 1, minWidth: 160, display: "flex", flexDirection: "column", gap: 6 }}>
                       <span
@@ -429,28 +431,30 @@ export default function Home() {
               </Link>
             </div>
 
-            {/* 双栏：实时行情 + 最近订单 */}
-            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
-              <div className="card" style={{ padding: 18 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <h2 style={{ fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", boxShadow: "0 0 8px var(--accent)" }} />
-                    实时行情
-                  </h2>
-                  <span style={{ fontSize: 10, color: "var(--tertiary)", fontFamily: "var(--font-geist-mono)" }}>WS · pnl.tick</span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 0 }}>
-                  {data.tickers.map((t) => (
-                    <div key={t.symbol} style={{ padding: "12px 14px", borderRight: "1px solid var(--rule)", borderBottom: "1px solid var(--rule)" }}>
-                      <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, color: "var(--muted)" }}>{t.symbol}</div>
-                      <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 15, fontWeight: 600, marginTop: 4 }}>{fmt(t.price, t.price < 1 ? 4 : 1)}</div>
-                      <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, fontWeight: 500, color: t.change_pct >= 0 ? "var(--success)" : "var(--danger)" }}>
-                        {t.change_pct >= 0 ? "+" : ""}{t.change_pct}%
+            {/* 双栏：实时行情（行情拉取失败时隐藏，不展示占位/假数据）+ 最近订单 */}
+            <div style={{ display: "grid", gridTemplateColumns: data.tickers.length > 0 ? "1.4fr 1fr" : "1fr", gap: 16 }}>
+              {data.tickers.length > 0 && (
+                <div className="card" style={{ padding: 18 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <h2 style={{ fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", boxShadow: "0 0 8px var(--accent)" }} />
+                      实时行情
+                    </h2>
+                    <span style={{ fontSize: 10, color: "var(--tertiary)", fontFamily: "var(--font-geist-mono)" }}>GATE · 10s</span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 0 }}>
+                    {data.tickers.map((t) => (
+                      <div key={t.symbol} style={{ padding: "12px 14px", borderRight: "1px solid var(--rule)", borderBottom: "1px solid var(--rule)" }}>
+                        <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, color: "var(--muted)" }}>{t.symbol}</div>
+                        <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 15, fontWeight: 600, marginTop: 4 }}>{fmt(t.price, t.price < 1 ? 4 : 1)}</div>
+                        <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12, fontWeight: 500, color: t.change_pct >= 0 ? "var(--success)" : "var(--danger)" }}>
+                          {t.change_pct >= 0 ? "+" : ""}{t.change_pct}%
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="card" style={{ padding: 18 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>

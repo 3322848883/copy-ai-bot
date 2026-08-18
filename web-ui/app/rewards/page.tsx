@@ -6,7 +6,14 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 
 type Balance = { total_usdt: number; available_usdt: number; withdrawing_usdt: number; paid_usdt: number; frozen_usdt: number };
-type LedgerItem = { id: number; amount_usdt: number; status: string; verifying_ends_at: string | null; created_at?: string | null };
+
+function maskEmail(email?: string | null) {
+  if (!email) return "—";
+  const at = email.indexOf("@");
+  if (at <= 1) return email;
+  return `${email.slice(0, 2)}***${email.slice(at)}`;
+}
+type LedgerItem = { id: number; amount_usdt: number; status: string; source_user_id?: number | null; source_email?: string | null; verifying_ends_at: string | null; created_at?: string | null };
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   verifying: { label: "核实中", cls: "badge-warn" },
@@ -80,13 +87,13 @@ export default function RewardsPage() {
     { label: "累计奖励", val: bal?.total_usdt, sub: "USDT · 所有记录 SUM（含取消/回滚）" },
     { label: "提现中", val: bal?.withdrawing_usdt, color: "#60a5fa", sub: "USDT · 审核 / 打款中" },
     { label: "已提现", val: bal?.paid_usdt, color: "var(--muted)", sub: "USDT · 含链上 TxHash" },
-    { label: "冻结", val: bal?.frozen_usdt, color: "var(--danger)", sub: "USDT · 48h 风控核实中（G11）" },
+    { label: "冻结", val: bal?.frozen_usdt, color: "var(--danger)", sub: "USDT · 48h 风控核实中" },
   ];
 
   function remark(item: LedgerItem): string {
     switch (item.status) {
       case "verifying": return `24h 核实 · 剩余 ${countdown(item.verifying_ends_at)}`;
-      case "frozen": return "48h 风控核实（G11）";
+      case "frozen": return "48h 风控核实";
       case "available": return "核实通过 · 已计入可提现";
       case "withdrawing": return "已发起提现";
       case "paid": return "已转入提现流程 · TxHash 已记录";
@@ -181,7 +188,7 @@ export default function RewardsPage() {
                     <tr key={item.id}>
                       <td className="num">{item.created_at ? item.created_at.slice(0, 16) : "—"}</td>
                       <td>{negative ? "奖励回滚" : "订阅奖励"}</td>
-                      <td>—</td>
+                      <td title={item.source_email ?? undefined}>{maskEmail(item.source_email)}</td>
                       <td className="num" style={{ color: negative ? "var(--danger)" : "var(--success)" }}>
                         {negative ? "-" : "+"}{item.amount_usdt.toFixed(2)} U
                       </td>

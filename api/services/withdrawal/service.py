@@ -146,7 +146,7 @@ class WithdrawalService:
             from api.services.payment.chain_client import get_chain_client
 
             client = get_chain_client(wd.network)
-            ok, reason = await client.validate_tx(tx_hash, wd.address, wd.amount_usdt)
+            ok, reason, _received = await client.validate_tx(tx_hash, wd.address, wd.amount_usdt)
             if not ok:
                 wd.tx_hash = tx_hash
                 wd.status = "paid_failed"

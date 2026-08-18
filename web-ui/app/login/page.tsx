@@ -7,6 +7,7 @@ import { apiFetch, tokenStore } from "@/lib/api";
 import RiskDisclosureModal from "@/components/RiskDisclosureModal";
 import AuthBrand from "@/components/AuthBrand";
 import { ToastStack, useToasts } from "@/components/Toast";
+import { usePlatformConfig } from "@/lib/config";
 import * as S from "@/components/authStyles";
 
 /** ★ 登录页：对齐设计稿（双栏品牌区 + 玻璃拟态认证卡 + Tab 滑动高亮 + 忘记密码入口）。 */
@@ -30,6 +31,7 @@ function LoginForm() {
   const [view, setView] = useState<"login" | "forgot">("login");
   const [tab, setTab] = useState<"login" | "register">("login");
   const { toasts } = useToasts();
+  const cfg = usePlatformConfig();
 
   /** 响应式：<900px 隐藏品牌区、卡片单列（设计稿 @media max-width:900px） */
   const [wide, setWide] = useState(true);
@@ -181,7 +183,16 @@ function LoginForm() {
               <div style={S.subTitle}>忘记密码</div>
               <div style={S.riskBox}>
                 <span>⚠</span>
-                <span>自助密码重置暂未开放（后端暂无 forgot/reset 接口）。如需重置密码，请直接联系管理员处理。</span>
+                <span>
+                  自助密码重置暂未开放。如需重置密码，请联系平台客服，并提供你的注册邮箱与近期订单信息以便核实身份，核实通过后将为重置。
+                  {cfg.support.email && (
+                    <>
+                      <br />
+                      客服邮箱：
+                      <a href={`mailto:${cfg.support.email}`} style={{ color: "var(--accent)", textDecoration: "none" }}>{cfg.support.email}</a>
+                    </>
+                  )}
+                </span>
               </div>
               <div style={S.authFoot}>
                 <a style={S.link} onClick={() => setView("login")}>← 返回登录</a>

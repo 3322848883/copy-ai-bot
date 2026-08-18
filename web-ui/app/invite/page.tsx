@@ -3,11 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
+import { ToastStack, useToasts } from "@/components/Toast";
+import { usePlatformConfig, type PlatformConfig } from "@/lib/config";
 
 type InviteItem = { invitee_email: string; bound_at: string; reward_usdt: number; reward_status: string; verifying_ends_at: string | null };
 type Risk = { risk_flag: boolean };
 type Stats = { total_invitees: number; total_reward: number; verifying_reward: number; available_reward: number };
-type Toast = { type: "success" | "warn" | "info" | "error"; msg: string };
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   verifying: { label: "核实中", cls: "badge-warn" },
@@ -21,14 +22,14 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   none: { label: "未产生奖励", cls: "badge-muted" },
 };
 
-const RULES: Array<[string, string]> = [
-  ["奖励比例 10%", "好友每笔订阅费（试用 5U / 正式 19.9U）的 10% 计入你的奖励，无封顶"],
-  ["24 小时核实期", "订阅成功后进入 24h 核实，核实期内好友退款则奖励自动取消（G11 高危账号延长至 48h）"],
-  ["可提现门槛", "奖励到账后可提现，最低 10 U 起提 + 1 U 手续费，支持 TRC-20 / BEP-20 / ERC-20 / APTOS（G13）"],
-  ["主号下级免订阅", "绑定平台资源池邀请码的用户自动标记为主号下级，享免订阅权益（G06）"],
+const rulesOf = (cfg: PlatformConfig): Array<[string, string]> => [
+  [`奖励比例 ${cfg.referral.reward_pct}%`, `好友每笔订阅费的 ${cfg.referral.reward_pct}% 计入你的奖励，无封顶`],
+  [`${cfg.referral.verify_hours} 小时核实期`, `订阅成功后进入 ${cfg.referral.verify_hours}h 核实，核实期内好友退款则奖励自动取消（高危账号延长至 ${cfg.referral.abuse_verify_hours}h）`],
+  ["可提现门槛", `奖励到账后可提现，最低 ${cfg.withdraw.min_withdrawal_usdt} U 起提 + ${cfg.withdraw.fee_usdt} U 手续费，支持 TRC-20 / BEP-20 / ERC-20 / APTOS`],
+  ["奖励实时通知", "好友绑定、奖励到账、提现进度均通过站内消息实时推送"],
 ];
 
-/** M4 T4.10 邀请中心：10% Hero + 核实时间轴 + 收益趋势 + 流水账本 + 规则说明。 */
+/** 邀请中心：奖励 Hero + 核实时间轴 + 收益趋势 + 流水账本 + 规则说明（数值全部来自 /v1/config）。 */
 export default function InvitePage() {
   const router = useRouter();
   const [code, setCode] = useState("");
@@ -40,14 +41,11 @@ export default function InvitePage() {
   // ★ 收益趋势范围 Tab + 核实倒计时
   const [range, setRange] = useState(30);
   const [now, setNow] = useState(Date.now());
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const { toasts, push: showToast, dismiss } = useToasts();
+  const cfg = usePlatformConfig();
+  const RULES = rulesOf(cfg);
 
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/register?invite=${code}` : "";
-
-  const showToast = useCallback((type: Toast["type"], m: string) => {
-    setToasts((t) => [...t, { type, msg: m }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.msg !== m || x.type !== type)), 3400);
-  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -112,10 +110,10 @@ export default function InvitePage() {
     ctx.fillStyle = "#00d4aa";
     ctx.font = "700 34px 'PingFang SC','Microsoft YaHei',sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("AI 信号聚合跟单", W / 2, 110);
+    ctx.fillText("OmniAlpha · Alpha 一直在被捕获", W / 2, 110);
     ctx.fillStyle = "#f1f5f9";
     ctx.font = "500 18px 'PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("好友注册即享 10% 返佣奖励", W / 2, 158);
+    ctx.fillText(`好友注册即享 ${cfg.referral.reward_pct}% 返佣奖励`, W / 2, 158);
     // 邀请码框
     ctx.fillStyle = "rgba(0,212,170,0.12)";
     ctx.strokeStyle = "#00d4aa";
@@ -138,13 +136,13 @@ export default function InvitePage() {
     ctx.fillStyle = "#94a3b8";
     ctx.font = "400 14px 'PingFang SC','Microsoft YaHei',sans-serif";
     ctx.fillText("注册时填写邀请码，好友购买套餐后您获得奖励", W / 2, H - 90);
-    ctx.fillText("奖励核实期 24h · 风控场景 48h", W / 2, H - 62);
+    ctx.fillText(`奖励核实期 ${cfg.referral.verify_hours}h · 风控场景 ${cfg.referral.abuse_verify_hours}h`, W / 2, H - 62);
   }
 
   useEffect(() => {
     if (posterOpen) drawPoster();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [posterOpen, code]);
+  }, [posterOpen, code, cfg]);
 
   function savePoster() {
     const canvas = posterRef.current;
@@ -164,8 +162,8 @@ export default function InvitePage() {
   const statCards: Array<{ label: string; val: string; sub: string; color?: string }> = [
     { label: "已邀请", val: `${stats?.total_invitees ?? 0}`, sub: "人 · 好友注册绑定" },
     { label: "累计奖励", val: (stats?.total_reward ?? 0).toFixed(2), sub: "USDT · 全部邀请奖励合计", color: "var(--success)" },
-    { label: "待核实", val: (stats?.verifying_reward ?? 0).toFixed(2), sub: "USDT · 24h 核实倒计时", color: "var(--warning)" },
-    { label: "冻结奖励", val: frozenTotal.toFixed(2), sub: "USDT · 48h 风控核实（G11）", color: "var(--danger)" },
+    { label: "待核实", val: (stats?.verifying_reward ?? 0).toFixed(2), sub: `USDT · ${cfg.referral.verify_hours}h 核实倒计时`, color: "var(--warning)" },
+    { label: "冻结奖励", val: frozenTotal.toFixed(2), sub: `USDT · ${cfg.referral.abuse_verify_hours}h 风控核实`, color: "var(--danger)" },
     { label: "已提现奖励", val: withdrawnTotal.toFixed(2), sub: `USDT · ${withdrawnCount} 笔提现` },
   ];
 
@@ -173,7 +171,7 @@ export default function InvitePage() {
   const latest = invites[0] || null;
   const latestStatus = latest?.reward_status || "none";
   const verifyEnd = latest?.verifying_ends_at ? new Date(latest.verifying_ends_at).getTime() : null;
-  const verifyTotal = latestStatus === "frozen" ? 48 * 3600_000 : 24 * 3600_000;
+  const verifyTotal = latestStatus === "frozen" ? cfg.referral.abuse_verify_hours * 3600_000 : cfg.referral.verify_hours * 3600_000;
   const verifyLeft = verifyEnd ? Math.max(0, verifyEnd - now) : 0;
   const verifyPct = verifyEnd ? Math.min(100, Math.max(0, (1 - verifyLeft / verifyTotal) * 100)) : 0;
   const cdText = verifyEnd
@@ -222,8 +220,8 @@ export default function InvitePage() {
   /* ── 流水备注 ── */
   function remark(inv: InviteItem): string {
     switch (inv.reward_status) {
-      case "verifying": return "24h 核实 · 通过后自动入账";
-      case "frozen": return "批量邀请风控 · 48h 核实（G11）";
+      case "verifying": return `${cfg.referral.verify_hours}h 核实 · 通过后自动入账`;
+      case "frozen": return `批量邀请风控 · ${cfg.referral.abuse_verify_hours}h 核实`;
       case "available": return "核实通过 · 已计入可提现余额";
       case "withdrawing": return "已发起提现 · 关联提现单";
       case "paid": return "转入提现流程 · TxHash 已记录";
@@ -243,11 +241,11 @@ export default function InvitePage() {
         <div className="page-hdr">
           <div>
             <div className="page-eyebrow">REFERRAL REWARDS · 邀请奖励</div>
-            <h1 className="page-title">邀请奖励<small>好友订阅 · 你拿 10% 现金奖励</small></h1>
+            <h1 className="page-title">邀请奖励<small>好友订阅 · 你拿 {cfg.referral.reward_pct}% 现金奖励</small></h1>
           </div>
         </div>
 
-        {/* 邀请 Hero：大标题 + 10% 徽章 + 邀请码 code-box + 分享/海报 */}
+        {/* 邀请 Hero：大标题 + 奖励比例徽章 + 邀请码 code-box + 分享/海报 */}
         <div
           style={{
             position: "relative", borderRadius: 10, overflow: "hidden", border: "1px solid var(--rule)",
@@ -257,9 +255,9 @@ export default function InvitePage() {
           }}
         >
           <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 8, minWidth: 260, flex: 1 }}>
-            <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.01em" }}>邀请好友，享 10% 现金奖励</div>
+            <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.01em" }}>邀请好友，享 {cfg.referral.reward_pct}% 现金奖励</div>
             <div style={{ color: "var(--muted)", maxWidth: 480 }}>
-              好友通过你的邀请码注册并订阅，你将获得其订阅费 10% 的现金奖励，直接进入可提现余额，无上限、无封顶。
+              好友通过你的邀请码注册并订阅，你将获得其订阅费 {cfg.referral.reward_pct}% 的现金奖励，直接进入可提现余额，无上限、无封顶。
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
               <span
@@ -268,7 +266,7 @@ export default function InvitePage() {
                   border: "1px solid rgba(0,212,170,0.4)", fontSize: 22, fontWeight: 700, color: "var(--accent)",
                 }}
               >
-                10%
+                {cfg.referral.reward_pct}%
               </span>
               <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6 }}>
                 <strong style={{ color: "var(--fg)" }}>好友每笔订阅费</strong>
@@ -332,7 +330,7 @@ export default function InvitePage() {
                   </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
                     {latest
-                      ? `${latest.invitee_email} 支付订阅 · 触发 10% 奖励 = ${latest.reward_usdt.toFixed(2)} U`
+                      ? `${latest.invitee_email} 支付订阅 · 触发 ${cfg.referral.reward_pct}% 奖励 = ${latest.reward_usdt.toFixed(2)} U`
                       : "暂无邀请，分享邀请码给好友开始"}
                   </div>
                 </div>
@@ -364,11 +362,11 @@ export default function InvitePage() {
                     )}
                   </div>
                   <div style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 10, color: "var(--tertiary)", marginTop: 2 }}>
-                    {step2Active && verifyEnd ? `剩余 ${cdText} · ${latestStatus === "frozen" ? "48h" : "24h"} 倒计时` : "—"}
+                    {step2Active && verifyEnd ? `剩余 ${cdText} · ${latestStatus === "frozen" ? `${cfg.referral.abuse_verify_hours}h` : `${cfg.referral.verify_hours}h`} 倒计时` : "—"}
                   </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
                     {latestStatus === "frozen"
-                      ? "风控检测到批量邀请行为 · 已延长核实至 48h（G11）"
+                      ? `风控检测到批量邀请行为 · 已延长核实至 ${cfg.referral.abuse_verify_hours}h`
                       : "核实期内下级退款则奖励取消 · 通过后自动转入可提现余额"}
                   </div>
                   {step2Active && (
@@ -410,7 +408,7 @@ export default function InvitePage() {
               </div>
             </div>
 
-            {/* 48h 风控黄条 */}
+            {/* 风控黄条（批量邀请冻结提醒） */}
             {risk && (
               <div
                 style={{
@@ -418,7 +416,7 @@ export default function InvitePage() {
                   background: "rgba(234,179,8,0.06)", fontSize: 12, color: "var(--warning)", lineHeight: 1.6,
                 }}
               >
-                ⚠ 检测到批量邀请行为，冻结奖励 {frozenTotal.toFixed(2)} U 已延长核实至 48h（G11 风控规则）
+                ⚠ 检测到批量邀请行为，冻结奖励 {frozenTotal.toFixed(2)} U 已延长核实至 {cfg.referral.abuse_verify_hours}h
               </div>
             )}
           </div>
@@ -538,15 +536,7 @@ export default function InvitePage() {
       </div>
 
       {/* Toast 栈 */}
-      <div className="toast-stack">
-        {toasts.map((t, i) => (
-          <div key={i} className={`toast ${t.type}`}>
-            <span className="t-ic">{t.type === "success" ? "✓" : t.type === "warn" ? "!" : t.type === "error" ? "✕" : "i"}</span>
-            <span>{t.msg}</span>
-            <button className="t-close" onClick={() => setToasts((x) => x.filter((_, j) => j !== i))}>✕</button>
-          </div>
-        ))}
-      </div>
+      <ToastStack toasts={toasts} onDismiss={dismiss} />
 
       {/* ★ M6 海报预览弹窗 */}
       {posterOpen && (

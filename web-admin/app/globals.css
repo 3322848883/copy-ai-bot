@@ -372,3 +372,17 @@ textarea.input { height: auto; padding: 12px; min-height: 80px; resize: vertical
 .login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; position: relative; }
 .login-page .grid-bg, .login-page .bg-dots, .login-page .bg-sweep, .login-page .bg-noise { position: fixed; pointer-events: none; z-index: 0; }
 @media (max-width: 820px) { .auth-wrap { grid-template-columns: 1fr; max-width: 400px; } .brand-panel { display: none; } }
+
+/* ── 小屏基础适配（后台以桌面为主，保证可用） ── */
+@media (max-width: 820px) {
+  .shell { grid-template-columns: 1fr; }
+  .sidebar { position: static; top: auto; bottom: auto; width: auto; flex-direction: row; flex-wrap: wrap; }
+  .side-group { width: 100%; margin-top: 4px; }
+  .side-logout { width: auto; }
+  .side-bottom { display: none; }
+  .main { grid-column: 1; padding: 14px; }
+  .panel { padding: 14px; }
+  .ftx-table { font-size: 11px; }
+  .ftx-table thead th, .ftx-table tbody td { padding: 0 8px; }
+  .top-search { display: none; }
+}

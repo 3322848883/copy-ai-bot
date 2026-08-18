@@ -1,4 +1,4 @@
-# 本地生产测试 override（叠加 base + prod）
+﻿# 本地生产测试 override（叠加 base + prod）
 # 用法：docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.prod.local.yml up -d --build
 # 目的：本机无域名/hosts 权限，验证 APP_ENV=prod 完整栈启动 + fail-fast + 核心业务流程
 # 差异：端口避开 WSL 占用（8000→8001、8025→8026）、CORS/SMTP 用可过校验的占位值、mailhog 别名
@@ -36,7 +36,7 @@ services:
       MAIL_FROM: no-reply@signal-saas.test
       # ★ 上线检查修复（2026-08-18）：binance 官方 dataseed 与 llamarpc 容器内不可达（000/521），
       #   换 publicnode 公共节点（已实测容器内 200）
-      BSC_RPC_URL: https://bsc.publicnode.com
+      BSC_RPC_URL: https://bsc-rpc.publicnode.com
       ETH_RPC_URL: https://ethereum-rpc.publicnode.com
       # ★ 上线检查修复：gate.com 容器内被墙，浏览器采集走主机代理中继（scripts/proxy_relay.py）
       BROWSER_PROXY_URL: http://host.docker.internal:17897
@@ -57,7 +57,7 @@ services:
       SMTP_HOST: smtp-capture
       SMTP_PORT: "1025"
       MAIL_FROM: no-reply@signal-saas.test
-      BSC_RPC_URL: https://bsc.publicnode.com
+      BSC_RPC_URL: https://bsc-rpc.publicnode.com
       ETH_RPC_URL: https://ethereum-rpc.publicnode.com
       BROWSER_PROXY_URL: http://host.docker.internal:17897
     # ★ Linux 服务器必需：host.docker.internal 默认不解析（Docker Desktop 自带，Linux 需 host-gateway）
@@ -78,7 +78,7 @@ services:
       SMTP_HOST: smtp-capture
       SMTP_PORT: "1025"
       MAIL_FROM: no-reply@signal-saas.test
-      BSC_RPC_URL: https://bsc.publicnode.com
+      BSC_RPC_URL: https://bsc-rpc.publicnode.com
       ETH_RPC_URL: https://ethereum-rpc.publicnode.com
 
   consumer:
@@ -92,7 +92,7 @@ services:
       SMTP_HOST: smtp-capture
       SMTP_PORT: "1025"
       MAIL_FROM: no-reply@signal-saas.test
-      BSC_RPC_URL: https://bsc.publicnode.com
+      BSC_RPC_URL: https://bsc-rpc.publicnode.com
       ETH_RPC_URL: https://ethereum-rpc.publicnode.com
 
   web:

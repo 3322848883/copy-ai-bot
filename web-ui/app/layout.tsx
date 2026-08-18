@@ -5,6 +5,8 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { WsProvider } from "@/components/WsProvider";
 import Nav from "@/components/Nav";
+import AnnouncementBanner from "@/components/AnnouncementBanner";
+import Footer from "@/components/Footer";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -18,8 +20,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "signal·saas 信号聚合跟单平台",
-  description: "跨 5 大交易所信号聚合 + 一键跟单 SaaS",
+  title: "OmniAlpha · 你的 AI Alpha 引擎",
+  description: "AI 驱动的信号聚合与自动执行引擎 · 7×24 不间断捕获机会。你的资金，你的账户，你的 Alpha。",
 };
 
 export default function RootLayout({
@@ -53,7 +55,9 @@ export default function RootLayout({
               <i style={{ left: "10%", "--dur": "26s", "--delay": "14s", "--drift": "-8px" } as CSSProperties}></i>
             </div>
             <Nav />
-            {children}
+            <AnnouncementBanner />
+            <div style={{ minHeight: "calc(100vh - 160px)" }}>{children}</div>
+            <Footer />
           </WsProvider>
         </Providers>
       </body>

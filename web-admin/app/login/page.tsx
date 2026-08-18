@@ -147,9 +147,12 @@ function AdminLoginInner() {
         <div className="brand-panel">
           <div className="brand-logo">
             <div className="brand-mark">
-              <svg viewBox="0 0 16 16" fill="none"><path d="M1 9h3l2-6 3 10 2-5h4" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <svg viewBox="0 0 32 32" fill="none" width={22} height={22}>
+                <path d="M16 1.5 L29 9 V23 L16 30.5 L3 23 V9 Z" fill="#00d4aa" />
+                <path d="M11 19.5 v-6 a5 5 0 1 1 10 0 v6 M8.5 22 h5 M18.5 22 h5" stroke="#06281f" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
             </div>
-            signal·admin
+            Omni<span style={{ color: "#00d4aa" }}>Alpha</span>
           </div>
           <div>
             <span className="admin-badge">ADMIN CONSOLE</span>

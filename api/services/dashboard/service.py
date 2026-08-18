@@ -1,9 +1,12 @@
 # dashboard 模块（M6 P0：首页数据看板聚合）
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,13 +19,47 @@ from api.services.ledger.service import LedgerService
 
 logger = logging.getLogger("signal-saas.dashboard")
 
-# 首页实时行情（dev mock；生产接交易所公开 ticker）
-_TICKERS: list[dict] = [
-    {"symbol": "BTC_USDT", "price": 64040.8, "change_pct": 2.34},
-    {"symbol": "ETH_USDT", "price": 3287.4, "change_pct": -1.12},
-    {"symbol": "SOL_USDT", "price": 148.92, "change_pct": 5.67},
-    {"symbol": "DOGE_USDT", "price": 0.1542, "change_pct": -0.84},
-]
+# 首页实时行情：Gate 公开 ticker（免鉴权）。进程内缓存 10s；任何异常返回空列表（前端隐藏区块，绝不造假数据）
+_TICKER_PAIRS = ["BTC_USDT", "ETH_USDT", "SOL_USDT", "DOGE_USDT"]
+_TICKER_TTL = 10.0
+_ticker_cache: list[dict] = []
+_ticker_fetched_at: float = 0.0
+_ticker_lock = asyncio.Lock()
+
+
+async def _fetch_tickers() -> list[dict]:
+    """并发拉取 Gate 现货公开行情，失败/超时返回 []。"""
+    global _ticker_cache, _ticker_fetched_at
+
+    async def _get_pair(client: httpx.AsyncClient, pair: str) -> dict | None:
+        r = await client.get("/spot/tickers", params={"currency_pair": pair})
+        r.raise_for_status()
+        items = r.json()
+        if not isinstance(items, list) or not items:
+            return None
+        t = items[0]
+        return {
+            "symbol": pair,
+            "price": float(t["last"]),
+            "change_pct": round(float(t.get("change_percentage") or 0), 2),
+        }
+
+    now = time.monotonic()
+    if _ticker_cache and now - _ticker_fetched_at < _TICKER_TTL:
+        return _ticker_cache
+    async with _ticker_lock:
+        if _ticker_cache and time.monotonic() - _ticker_fetched_at < _TICKER_TTL:
+            return _ticker_cache
+        try:
+            async with httpx.AsyncClient(base_url="https://api.gateio.ws/api/v4", timeout=8.0) as client:
+                rows = await asyncio.gather(*(_get_pair(client, p) for p in _TICKER_PAIRS), return_exceptions=True)
+            out = [r for r in rows if isinstance(r, dict)]
+            if out:
+                _ticker_cache = out
+                _ticker_fetched_at = time.monotonic()
+            return out
+        except Exception:  # noqa: BLE001 行情失败不影响看板其余数据
+            return []
 
 
 class DashboardService:
@@ -79,7 +116,7 @@ class DashboardService:
             "onboarding": onboarding,
             "bots": bots,
             "recent_orders": recent_orders,
-            "tickers": _TICKERS,
+            "tickers": await _fetch_tickers(),
         }
 
     async def _recent_orders(self, user_id: int, limit: int = 8) -> list[dict]:

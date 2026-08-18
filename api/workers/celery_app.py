@@ -67,6 +67,11 @@ celery_app.conf.update(
             "task": "payment.poll_sweep",
             "schedule": 2 * 60,
         },
+        # ★ H4：TTL 过期清理（每 2 分钟，pending 超 30min → expired）
+        "payment-expire": {
+            "task": "payment.expire_sweep",
+            "schedule": 2 * 60,
+        },
         # ★ M4 T4.5：奖励核实释放（每 10 分钟）
         "reward-scan": {
             "task": "reward.scan_verifying",

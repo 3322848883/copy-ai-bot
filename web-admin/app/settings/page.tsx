@@ -33,9 +33,11 @@ const RULE_META: Record<string, RULE_META> = {
   smtp_user: { label: "SMTP 账号", unit: "", str: true },
   smtp_password: { label: "SMTP 密码", unit: "", str: true, secret: true },
   mail_from: { label: "发件人地址", unit: "", str: true },
+  support_email: { label: "客服邮箱", unit: "", str: true },
+  support_telegram: { label: "客服 Telegram", unit: "", str: true },
 };
 
-const GROUP_ORDER = ["验证码", "邀请奖励", "链上确认", "支付订单", "邮件"];
+const GROUP_ORDER = ["验证码", "邀请奖励", "链上确认", "支付订单", "邮件", "客服联系"];
 
 /** 系统设置：验证码 / 邀请奖励 / 链上确认 + 邮件模板 + 订阅套餐。 */
 export default function AdminSettingsPage() {
@@ -188,10 +190,8 @@ export default function AdminSettingsPage() {
         <div className="params-grid">
           {grouped.map(({ group, keys }) => (
             <div className="param-card" key={group}>
-              <div className="param-name">{group === "验证码" ? "注册邮箱验证码" : group === "邀请奖励" ? "邀请奖励" : group === "支付订单" ? "支付订单" : group === "邮件" ? "邮件" : "链上确认数"}</div>
-              <div className="param-desc">
-                {group === "验证码" ? "注册/登录邮箱验证码开关与参数" : group === "邀请奖励" ? "返佣比例与核实期（G11）" : group === "支付订单" ? "支付订单待支付倒计时" : group === "邮件" ? "邮件总开关 + SMTP 服务器参数（凭密码留空保存保留原值）" : "支付按网络所需确认数（G09）"}
-              </div>
+              <div className="param-name">{GROUP_META[group]?.name ?? group}</div>
+              <div className="param-desc">{GROUP_META[group]?.desc ?? ""}</div>
               {keys.map((key) => {
                 const meta = RULE_META[key];
                 return (
@@ -387,8 +387,18 @@ function groupOf(key: string): string {
   if (key.startsWith("referral")) return "邀请奖励";
   if (key.startsWith("payment_order")) return "支付订单";
   if (key.startsWith("mail") || key.startsWith("smtp")) return "邮件";
+  if (key.startsWith("support")) return "客服联系";
   return "链上确认";
 }
+
+const GROUP_META: Record<string, { name: string; desc: string }> = {
+  验证码: { name: "注册邮箱验证码", desc: "注册/登录邮箱验证码开关与参数" },
+  邀请奖励: { name: "邀请奖励", desc: "返佣比例与核实期" },
+  链上确认: { name: "链上确认数", desc: "支付按网络所需确认数" },
+  支付订单: { name: "支付订单", desc: "支付订单待支付倒计时" },
+  邮件: { name: "邮件", desc: "邮件总开关 + SMTP 服务器参数（凭密码留空保存保留原值）" },
+  客服联系: { name: "客服联系", desc: "前台页脚/忘记密码/支付教程展示的客服渠道，留空则前台不展示" },
+};
 
 const codeVar = "{code}";
 const ttlVar = "{ttl}";
