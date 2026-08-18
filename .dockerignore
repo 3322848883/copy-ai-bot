@@ -3,11 +3,23 @@
 venv
 __pycache__
 *.pyc
+**/__pycache__
+**/*.pyc
 .pytest_cache
 web-ui/node_modules
 web-ui/.next
 web-ui/out
+web-admin/node_modules
+web-admin/.next
+web-admin/out
 node_modules
+**/node_modules
+**/.next
+
+# 测试与本地产物（后端镜像运行时不需要）
+tests
+playwright-report
+test-results
 
 # 本地数据（登录态/数据库/日志，不进镜像）
 data
