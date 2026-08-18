@@ -144,7 +144,13 @@ class PaymentService:
             order.status = "failed"
             await self.db.commit()
             raise PaymentError(f"收款地址校验失败: {to_reason}")
-        value_ok, value_received = await self._verify_value(order, client)
+        value_ok, value_received, net_err = await self._verify_value(order, client)
+        if net_err:
+            # ★ P1：金额校验遇 RPC 故障 → 转轮询（与确认数路径三态语义一致），绝不判死
+            order.status = "verifying"
+            await self.db.commit()
+            await self.db.refresh(order)
+            return order
         if value_ok and value_received is not None:
             # 实际到账金额精确落库（超付可见/可对账；校验语义仍为足额即认）
             order.paid_amount_usdt = value_received
@@ -207,7 +213,12 @@ class PaymentService:
                     order.status = "failed"
                     await self.db.commit()
                     return order
-                value_ok, value_received = await self._verify_value(order, get_chain_client(order.network))
+                value_ok, value_received, net_err = await self._verify_value(order, get_chain_client(order.network))
+                if net_err:
+                    # ★ P1：RPC 故障 → 下一轮重试，不判死
+                    order.status = "polling"
+                    await self.db.commit()
+                    return order
                 if value_ok and value_received is not None:
                     order.paid_amount_usdt = value_received
                 if not value_ok:
@@ -354,20 +365,24 @@ class PaymentService:
         self._platform_address = addr.address
         return True, ""
 
-    async def _verify_value(self, order: PaymentOrder, client) -> tuple[bool, float | None]:
-        """校验到账金额 ≥ 下限，返回 (ok, 实际到账USDT)。
+    async def _verify_value(self, order: PaymentOrder, client) -> tuple[bool, float | None, bool]:
+        """校验到账金额 ≥ 下限，返回 (ok, 实际到账USDT, 网络故障)。
 
         下限 = max(订单金额 - 手续费容差, 订单金额 × 50%)：
         - 容差覆盖交易所提现从本金扣费导致的短付（2026 实测：OKX TRC20 ~1.8U 最高、
           币安 TRC20 ~1.0U、BEP20 ~0.3U、Aptos ~0.04U；默认 2U 全覆盖非 ERC20）；
         - 50% 下限防小额订单被极低金额激活（1U 订单下限 0.5U）；
         - 冷钱包直转 gas 用 TRX/BNB/ETH/APT 另付、USDT 全额到账，不依赖容差。
+
+        ★ P1 修复：RPC 故障（network_error 前缀/异常）返回 net_error=True，
+        调用方转 verifying 轮询而非判死——与 get_confirmations 三态语义对齐。
         """
         try:
             expected_to = getattr(self, "_platform_address", "")
             tol = float(settings_svc.get_rule("payment_fee_tolerance_usdt") or 2.0)
             floor = max(order.amount_usdt - tol, order.amount_usdt * 0.5)
             ok, reason, received = await client.validate_tx(order.tx_hash, expected_to, floor)
-            return ok, received
+            net_error = isinstance(reason, str) and reason.startswith("network_error")
+            return ok, received, net_error
         except Exception:  # noqa: BLE001
-            return False, None
+            return False, None, True

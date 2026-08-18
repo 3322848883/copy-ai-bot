@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/payments", tags=["admin-payments"])
 
 
 class ManualIn(BaseModel):
-    status: str  # confirmed / failed
+    status: Literal["confirmed", "failed"]
 
 
 class AddressIn(BaseModel):
@@ -199,16 +200,26 @@ async def list_orders(
 @router.post("/{order_id}/manual")
 async def manual_set(order_id: int, body: ManualIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
     """manual/verifying 超限订单：人工确认或标记失败。"""
+    from sqlalchemy import select
+
     from api.services.billing.service import BillingService
     from api.services.payment.service import PaymentService
 
-    order = await db.get(PaymentOrder, order_id)
+    # ★ P1 修复：行锁 + 状态 CAS——两名管理员并发点击（或与 poll/expire sweep 竞争）时，
+    #   仅首个事务能命中状态条件；此后 activate_subscription 非幂等（重复调用重复延长订阅），
+    #   并发双确认会双倍延期 + 双发邀请奖励（真金白银），必须由数据库层挡住
+    allowed = ("manual", "verifying", "polling", "timeout", "failed", "expired")
+    result = await db.execute(
+        select(PaymentOrder)
+        .where(PaymentOrder.id == order_id, PaymentOrder.status.in_(allowed))
+        .with_for_update()
+    )
+    order = result.scalars().first()
     if order is None:
-        raise NotFoundError("订单不存在")
-    # ★ P1 修复：放开 failed/expired——超时 sweep 先行关闭但用户已实际付款的订单，
-    #   以及历史误判 failed 的订单，需保留人工确认恢复路径（否则真实到账资金死单）
-    if order.status not in ("manual", "verifying", "polling", "timeout", "failed", "expired"):
-        raise PaymentError(f"订单状态 {order.status} 不可人工处理")
+        exists = await db.get(PaymentOrder, order_id)
+        if exists is None:
+            raise NotFoundError("订单不存在")
+        raise PaymentError(f"订单状态 {exists.status} 不可人工处理")
 
     before = order.status
     if body.status == "confirmed":

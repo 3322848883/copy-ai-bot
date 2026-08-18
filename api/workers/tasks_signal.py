@@ -122,6 +122,44 @@ async def _poll_live_loop() -> str:
     return f"rounds={rounds}, events={events_total} (interval={interval}s)"
 
 
+# ── ★ 差分互斥锁：poll_live（1s 轮询）与 reconcile（10min 对账）是独立 Celery 进程，
+#    共同读写同一 Redis 基线 gate:feed:state:{trader_id}——并发差分会把同一开/平仓
+#    事件各产出一次，导致重复真实下单（双倍买入/平仓）。二者必须互斥。──
+_DIFF_LOCK_KEY = "signal:diff:lock"
+
+
+def _acquire_diff_lock(holder: str, ttl_s: int) -> tuple[bool, str]:
+    """返回 (是否获得锁, 持有令牌)。Redis 故障时放行（退回无锁旧行为）。"""
+    import uuid
+
+    from redis import Redis
+
+    token = f"{holder}:{uuid.uuid4().hex[:8]}"
+    try:
+        r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+        got = bool(r.set(_DIFF_LOCK_KEY, token, nx=True, ex=ttl_s))
+        r.close()
+    except Exception as exc:  # noqa: BLE001 Redis 故障不阻断差分（退回旧行为）
+        logger.warning("diff lock acquire failed: %s", exc)
+        return True, ""
+    return got, token if got else ""
+
+
+def _release_diff_lock(token: str) -> None:
+    if not token:
+        return
+    try:
+        from redis import Redis
+
+        r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+        # 仅释放自己持有的锁（值匹配），防止误删他人的锁
+        if r.get(_DIFF_LOCK_KEY) == token:
+            r.delete(_DIFF_LOCK_KEY)
+        r.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("diff lock release failed: %s", exc)
+
+
 async def _poll_live_round(feed) -> int:
     """单轮轮询：查活跃机器人 → 按模式对每个带单员做持仓差分 → 产出信号。
 
@@ -166,14 +204,22 @@ async def _poll_live_round(feed) -> int:
                 logger.warning("mode2 自动发现已跟单交易员失败: %s", exc)
         mode_a = [lid for lid in leader_ids if lid not in follower_ids]
         mode_f = [lid for lid in leader_ids if lid in follower_ids]
-        # ★ 页面池并发：一次并发拉取全部带单员持仓并差分，避免串行 N×往返
-        events_map: dict[str, list] = {}
-        for tid, evs in (await feed.poll_leaders_many(mode_a)).items():
-            events_map[tid] = evs
-        for tid, evs in (await feed.poll_followers_many(mode_f)).items():
-            events_map[tid] = evs
-        total = await _handle_events(db, events_map)
-        await db.commit()
+        # ★ 差分互斥：reconcile 正在强制对齐基线时本轮跳过（由对账兜底），避免同一事件双发
+        got, token = _acquire_diff_lock("poll", ttl_s=30)
+        if not got:
+            logger.info("poll round skipped: reconcile holding diff lock")
+            return 0
+        try:
+            # ★ 页面池并发：一次并发拉取全部带单员持仓并差分，避免串行 N×往返
+            events_map: dict[str, list] = {}
+            for tid, evs in (await feed.poll_leaders_many(mode_a)).items():
+                events_map[tid] = evs
+            for tid, evs in (await feed.poll_followers_many(mode_f)).items():
+                events_map[tid] = evs
+            total = await _handle_events(db, events_map)
+            await db.commit()
+        finally:
+            _release_diff_lock(token)
     return total
 
 
@@ -263,14 +309,21 @@ async def _reconcile_once() -> str:
             follower_ids = set(get_settings().signal_follower_leader_ids)
             mode_a = [lid for lid in leader_ids if lid not in follower_ids]
             mode_f = [lid for lid in leader_ids if lid in follower_ids]
-            # ★ 页面池并发：一次并发拉取全部持仓并强制对齐基线
-            events_map: dict[str, list] = {}
-            for tid, evs in (await feed.reconcile_leaders_many(mode_a)).items():
-                events_map[tid] = evs
-            for tid, evs in (await feed.reconcile_followers_many(mode_f)).items():
-                events_map[tid] = evs
-            total = await _handle_events(db, events_map)
-            await db.commit()
+            # ★ 差分互斥：poll_live 正在差分时跳过本轮（下个周期再来），避免同一事件双发
+            got, token = _acquire_diff_lock("reconcile", ttl_s=600)
+            if not got:
+                return "skipped: poll holding diff lock"
+            try:
+                # ★ 页面池并发：一次并发拉取全部持仓并强制对齐基线
+                events_map: dict[str, list] = {}
+                for tid, evs in (await feed.reconcile_leaders_many(mode_a)).items():
+                    events_map[tid] = evs
+                for tid, evs in (await feed.reconcile_followers_many(mode_f)).items():
+                    events_map[tid] = evs
+                total = await _handle_events(db, events_map)
+                await db.commit()
+            finally:
+                _release_diff_lock(token)
     finally:
         await scraper.close()  # 释放公开爬虫浏览器
         # ★ 释放登录会话浏览器：避免跨 asyncio.run 事件循环复用旧 _page（NoneType 报错）

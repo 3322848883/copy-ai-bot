@@ -23,6 +23,7 @@ class NoteIn(BaseModel):
 @router.get("")
 async def list_users(
     q: str = Query("", description="邮箱模糊搜索"),
+    status: str = Query("", description="normal=正常 / frozen=已冻结（服务端筛选，保证跨页完整）"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     db: DbDep = None,
@@ -30,12 +31,23 @@ async def list_users(
 ) -> dict:
     from sqlalchemy import func, select
 
+    if status not in ("", "normal", "frozen"):
+        from api.core.errors import ValidationError
+
+        raise ValidationError("status 仅支持 normal/frozen")
     stmt = select(User)
     count_stmt = select(func.count(User.id))
     if q:
         like = f"%{q.lower()}%"
         stmt = stmt.where(User.email.ilike(like))
         count_stmt = count_stmt.where(User.email.ilike(like))
+    # ★ P1：正常/冻结筛选走服务端——此前前端仅在首屏 50 条内过滤，第 2 页起记录被漏掉
+    if status == "frozen":
+        stmt = stmt.where(User.is_frozen.is_(True))
+        count_stmt = count_stmt.where(User.is_frozen.is_(True))
+    elif status == "normal":
+        stmt = stmt.where(User.is_frozen.is_(False), User.is_active.is_(True))
+        count_stmt = count_stmt.where(User.is_frozen.is_(False), User.is_active.is_(True))
     total = await db.scalar(count_stmt) or 0
     rows = (await db.execute(stmt.order_by(User.id.desc()).offset((page - 1) * size).limit(size))).scalars().all()
     return {

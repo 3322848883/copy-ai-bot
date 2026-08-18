@@ -11,7 +11,7 @@ export default function TermsPage() {
       <div style={{ maxWidth: 820, margin: "0 auto", padding: "48px 24px", position: "relative", zIndex: 1 }}>
         <Link href="/" style={{ color: "var(--accent)", fontSize: 13, textDecoration: "none" }}>← 返回首页</Link>
         <h1 style={{ fontSize: 26, fontWeight: 700, margin: "16px 0 8px" }}>服务条款</h1>
-        <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 24 }}>更新日期：2026-08-15 · 本文件为平台基础模板，正式上线前需外部法务复核</div>
+        <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 24 }}>更新日期：2026-08-15</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 20, fontSize: 14, lineHeight: 1.8 }}>
           <section>
             <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>1. 服务性质</h2>

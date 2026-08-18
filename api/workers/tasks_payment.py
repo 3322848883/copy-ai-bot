@@ -95,3 +95,51 @@ def poll_payment(order_id: int) -> str:
     except Exception as exc:  # noqa: BLE001
         logger.exception("poll order %s failed: %s", order_id, exc)
         raise
+
+
+@celery_app.task(name="payment.confirm_reconcile")
+def confirm_reconcile_sweep() -> str:
+    """★ P1 对账：扫描 confirmed 但订阅未激活/奖励未触发的订单并补偿。
+
+    _confirm 置 confirmed 后，activate_subscription / _trigger_rewards 是独立 commit，
+    进程在中间崩溃会留下"钱已到账但套餐未开通"的死单。以 subscription.payment_order_id
+    为幂等键重试（已存在则跳过，不会重复延期）。
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(confirm_reconcile_sweep_async())
+    raise RuntimeError("存在运行中的 loop，请 await confirm_reconcile_sweep_async()")
+
+
+async def confirm_reconcile_sweep_async() -> str:
+    from sqlalchemy import select
+
+    from api.db.session import get_session_factory
+    from api.models.billing import PaymentOrder, Subscription
+    from api.services.billing.service import BillingService
+    from api.services.payment.service import PaymentService
+
+    factory = get_session_factory()
+    fixed = 0
+    async with factory() as db:
+        orders = (
+            await db.execute(select(PaymentOrder).where(PaymentOrder.status == "confirmed"))
+        ).scalars().all()
+        for order in orders:
+            sub = (
+                await db.execute(
+                    select(Subscription.id).where(Subscription.payment_order_id == order.id).limit(1)
+                )
+            ).scalars().first()
+            if sub is not None:
+                continue  # 已激活（幂等键存在），跳过
+            try:
+                await BillingService(db).activate_subscription(order.user_id, order.plan_id, order.id)
+                await PaymentService(db)._trigger_rewards(order)
+                fixed += 1
+                logger.warning("confirm_reconcile: re-activated order %s (user %s)", order.id, order.user_id)
+            except Exception as exc:  # noqa: BLE001 单订单失败不阻断其余补偿
+                logger.exception("confirm_reconcile order %s failed: %s", order.id, exc)
+                await db.rollback()
+    return f"confirmed orders scanned={len(orders)}, re-activated={fixed}"

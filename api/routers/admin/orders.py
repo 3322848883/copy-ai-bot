@@ -72,16 +72,30 @@ async def list_orders(
 
 @router.get("/failures")
 async def failure_report(db: DbDep = None, _admin=Depends(get_current_admin)) -> dict:
-    """失败归类报表：failure_category 枚举分布 + KPI。"""
-    from sqlalchemy import func, select
+    """失败归类报表：failure_category 枚举分布 + KPI。
+    ★ P1 修复：KPI 标签是「今日订单」，此前却统计全量 CopyOrder——日期口径错误，改为
+    今日（UTC 0 点起；pending 单 executed_at 为空，一并计入今日口径）。"""
+    from datetime import datetime, timezone
 
-    total = (await db.scalar(select(func.count(CopyOrder.id)))) or 0
-    filled = (await db.scalar(select(func.count(CopyOrder.id)).where(CopyOrder.status == "filled"))) or 0
-    failed = (await db.scalar(select(func.count(CopyOrder.id)).where(CopyOrder.status == "failed"))) or 0
+    from sqlalchemy import func, or_, select
+
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_scope = or_(
+        CopyOrder.executed_at >= today_start,
+        (CopyOrder.executed_at.is_(None)) & (CopyOrder.status == "pending"),
+    )
+
+    total = (await db.scalar(select(func.count(CopyOrder.id)).where(today_scope))) or 0
+    filled = (
+        await db.scalar(select(func.count(CopyOrder.id)).where(today_scope, CopyOrder.status == "filled"))
+    ) or 0
+    failed = (
+        await db.scalar(select(func.count(CopyOrder.id)).where(today_scope, CopyOrder.status == "failed"))
+    ) or 0
     risk_blocked = (
         await db.scalar(
             select(func.count(CopyOrder.id)).where(
-                CopyOrder.status == "failed", CopyOrder.failure_category == "risk"
+                today_scope, CopyOrder.status == "failed", CopyOrder.failure_category == "risk"
             )
         )
     ) or 0
@@ -89,16 +103,16 @@ async def failure_report(db: DbDep = None, _admin=Depends(get_current_admin)) ->
     breakdown_rows = (
         await db.execute(
             select(CopyOrder.failure_category, func.count(CopyOrder.id))
-            .where(CopyOrder.failure_category.is_not(None))
+            .where(today_scope, CopyOrder.failure_category.is_not(None))
             .group_by(CopyOrder.failure_category)
         )
     ).all()
     breakdown = {cat: n for cat, n in breakdown_rows if cat}
 
-    # 平均延迟（仅已成交）
+    # 平均延迟（仅今日已成交）
     avg_latency = await db.scalar(
         select(func.avg(CopyOrder.latency_ms)).where(
-            CopyOrder.status == "filled", CopyOrder.latency_ms.is_not(None)
+            today_scope, CopyOrder.status == "filled", CopyOrder.latency_ms.is_not(None)
         )
     )
 

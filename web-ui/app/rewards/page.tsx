@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
+import { localDateTime } from "@/lib/time";
 
 type Balance = { total_usdt: number; available_usdt: number; withdrawing_usdt: number; paid_usdt: number; frozen_usdt: number };
 
@@ -186,7 +187,7 @@ export default function RewardsPage() {
                   const negative = item.status === "canceled" || item.status === "rolled_back";
                   return (
                     <tr key={item.id}>
-                      <td className="num">{item.created_at ? item.created_at.slice(0, 16) : "—"}</td>
+                      <td className="num">{localDateTime(item.created_at)}</td>
                       <td>{negative ? "奖励回滚" : "订阅奖励"}</td>
                       <td title={item.source_email ?? undefined}>{maskEmail(item.source_email)}</td>
                       <td className="num" style={{ color: negative ? "var(--danger)" : "var(--success)" }}>

@@ -193,6 +193,9 @@ class CopyEngine:
                 identity_type="normal",
                 bot_virtual_locked=bot.virtual_locked_usdt,
                 bot_max_total_position=bot.max_total_position_usdt,
+                # ★ P1 修复：激活死规则——此前恒为默认值，全局并发节流与当日亏损熔断永不触发
+                global_concurrent_now=await self._count_open_positions(),
+                today_realized_pnl=await self._user_open_pnl(bot.user_id),
             )
         )
         # ★ M6 T6.2 指标：风控决策
@@ -282,11 +285,11 @@ class CopyEngine:
         )
         self.db.add(order)
         if exec_res.success:
-            # 更新虚拟账本锁定
-            if sig.action == "open":
+            # 更新虚拟账本锁定（open/add 增加；reduce/close 的释放在 _sync_position
+            # 按该 symbol 现有持仓名义价值精确递减——★ P1 修复：此前 close 一律清零，
+            # 多 symbol 持仓的 bot 其他仓位锁定被误清，position_limit 风控严重低估敞口）
+            if sig.action in ("open", "add"):
                 bot.virtual_locked_usdt = bot.virtual_locked_usdt + margin
-            elif sig.action == "close":
-                bot.virtual_locked_usdt = 0.0
             await self._sync_position(bot, sig, exec_res)
         await self.db.commit()
         await self.db.refresh(order)
@@ -333,19 +336,43 @@ class CopyEngine:
         ).scalars().first()
         if sig.action == "close":
             if existing:
+                # ★ P1 修复：按该仓位名义价值释放锁定（leverage 换算保证金），不再整 bot 清零
+                released = (existing.notional_usdt or 0.0) / bot.leverage if bot.leverage else 0.0
+                bot.virtual_locked_usdt = max(bot.virtual_locked_usdt - released, 0.0)
                 existing.is_open = False
             return
         if existing:
-            existing.qty += exec_res.filled_qty
-            existing.mark_price = exec_res.avg_price or existing.mark_price
-            existing.notional_usdt = existing.qty * exec_res.avg_price
-            existing.unrealized_pnl = 0.0
+            mark = exec_res.avg_price or existing.mark_price
+            if sig.action == "reduce":
+                # ★ P1 修复：reduce 误走加仓分支——qty 只减不加，按减掉数量释放对应锁定
+                cut = min(exec_res.filled_qty, existing.qty)
+                released = cut * (existing.entry_price or mark) / bot.leverage if bot.leverage else 0.0
+                bot.virtual_locked_usdt = max(bot.virtual_locked_usdt - released, 0.0)
+                existing.qty = max(existing.qty - exec_res.filled_qty, 0.0)
+            else:
+                existing.qty += exec_res.filled_qty
+                if exec_res.avg_price and existing.qty > 0:
+                    # 加权平均入场价
+                    existing.entry_price = (
+                        (existing.entry_price or 0.0) * (existing.qty - exec_res.filled_qty)
+                        + exec_res.avg_price * exec_res.filled_qty
+                    ) / existing.qty
+            existing.mark_price = mark
+            existing.notional_usdt = existing.qty * mark
+            # ★ P1 修复：不再写死 0——按 (mark-entry)×qty 实时估算未实现盈亏
+            if existing.qty <= 1e-12:
+                existing.unrealized_pnl = 0.0
+            else:
+                entry = existing.entry_price or mark
+                side_sign = 1.0 if (existing.side or "long") == "long" else -1.0
+                existing.unrealized_pnl = (mark - entry) * existing.qty * side_sign
         else:
             self.db.add(
                 PositionSnapshot(
                     bot_id=bot.id, symbol=sig.symbol, side=sig.side,
                     qty=exec_res.filled_qty, entry_price=exec_res.avg_price,
                     mark_price=exec_res.avg_price, notional_usdt=exec_res.filled_qty * exec_res.avg_price,
+                    unrealized_pnl=0.0,
                     is_open=True,
                 )
             )
@@ -421,12 +448,52 @@ class CopyEngine:
             api_secret=api_secret,
         )
 
+    async def _count_open_positions(self) -> int:
+        """全局并发持仓数（distinct bot，规则 3 全局节流的数据源）。"""
+        from sqlalchemy import func
+
+        from api.models.bot import PositionSnapshot
+
+        return int(
+            (
+                await self.db.execute(
+                    select(func.count(func.distinct(PositionSnapshot.bot_id))).where(
+                        PositionSnapshot.is_open == True  # noqa: E712
+                    )
+                )
+            ).scalar()
+            or 0
+        )
+
+    async def _user_open_pnl(self, user_id: int) -> float:
+        """用户当前全部未实现盈亏之和（规则 4 当日亏损熔断的近似数据源）。
+
+        平台暂无逐笔已实现盈亏账本，以持仓浮亏作下限估计——浮亏超过熔断线同样应停止开仓。
+        """
+        from sqlalchemy import func
+
+        from api.models.bot import CopyBot, PositionSnapshot
+
+        val = (
+            await self.db.execute(
+                select(func.coalesce(func.sum(PositionSnapshot.unrealized_pnl), 0.0))
+                .join(CopyBot, CopyBot.id == PositionSnapshot.bot_id)
+                .where(CopyBot.user_id == user_id, PositionSnapshot.is_open == True)  # noqa: E712
+            )
+        ).scalar()
+        return float(val or 0.0)
+
     async def _subscription_active(self, user_id: int) -> bool:
-        """★ G10 + M5 T5.10：真实订阅校验（active 且未过期）。"""
+        """★ G10 + M5 T5.10：真实订阅校验（active 且未过期）。
+
+        ★ P1 修复：fail-closed——DB 异常时返回 False 拦截 open/add。
+        此前 fail-open，订阅闸门在数据库故障时对未订阅用户放行真实下单。
+        """
         from api.services.billing.service import BillingService
 
         try:
             sub = await BillingService(self.db).get_active_subscription(user_id)
             return sub is not None
         except Exception:  # noqa: BLE001
-            return True
+            logger.warning("subscription check failed for user %s, blocking open/add", user_id)
+            return False

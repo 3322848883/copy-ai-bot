@@ -42,7 +42,10 @@ const FILTERS = [
 ] as const;
 type FilterKey = (typeof FILTERS)[number]["key"];
 
-/** M5 T5.2 用户管理（对齐设计稿）：筛选 Tab + 搜索 + ftx-table + 详情抽屉（财务/跟单/风控）+ 冻结/解冻。 */
+/** M5 T5.2 用户管理（对齐设计稿）：筛选 Tab + 搜索 + ftx-table + 详情抽屉（财务/跟单/风控）+ 冻结/解冻。
+ *  ★ P1 修复：加分页 + 正常/冻结筛选走服务端——此前仅拉首屏 50 条且客户端过滤，第 2 页起记录被漏掉。 */
+const PAGE_SIZE = 50;
+
 export default function AdminUsersPage() {
   const router = useRouter();
   const toast = useToast();
@@ -50,6 +53,7 @@ export default function AdminUsersPage() {
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [page, setPage] = useState(1);
   const [riskMap, setRiskMap] = useState<Record<number, HighRisk>>({});
   const [subIds, setSubIds] = useState<Set<number>>(new Set());
   const [drawer, setDrawer] = useState<UserRow | null>(null);
@@ -91,15 +95,21 @@ export default function AdminUsersPage() {
     }
   }
 
-  const load = useCallback(async (query = "") => {
+  const statusOf = (key: FilterKey) => (key === "frozen" ? "frozen" : key === "normal" ? "normal" : "");
+
+  const load = useCallback(async (query = "", pageNo = 1, statusParam = "") => {
     try {
+      const qs = new URLSearchParams({ size: String(PAGE_SIZE), page: String(pageNo) });
+      if (query) qs.set("q", query);
+      if (statusParam) qs.set("status", statusParam);
       const [u, r, d] = await Promise.all([
-        apiFetch<{ items: UserRow[]; total: number }>(`/admin/v1/users?q=${encodeURIComponent(query)}&size=50`, {}, tokenStore.adminAccess),
+        apiFetch<{ items: UserRow[]; total: number }>(`/admin/v1/users?${qs.toString()}`, {}, tokenStore.adminAccess),
         apiFetch<{ items: HighRisk[] }>("/admin/v1/risk/high-risk", {}, tokenStore.adminAccess).catch(() => ({ items: [] })),
         apiFetch<{ items: ReviewDone[] }>("/admin/v1/review/done", {}, tokenStore.adminAccess).catch(() => ({ items: [] })),
       ]);
       setItems(u.items);
       setTotal(u.total);
+      setPage(pageNo);
       setRiskMap(Object.fromEntries(r.items.map((x) => [x.user_id, x])));
       setSubIds(new Set(d.items.filter((x) => x.action === "review.approve").map((x) => Number(x.target_id))));
     } catch {
@@ -115,8 +125,14 @@ export default function AdminUsersPage() {
     // 顶栏全局搜索跳转 /users?q=… 时预填关键词
     const urlQ = new URLSearchParams(window.location.search).get("q") || "";
     setQ(urlQ);
-    load(urlQ);
+    load(urlQ, 1, "");
   }, [load, router]);
+
+  const applyFilter = (key: FilterKey) => {
+    setFilter(key);
+    // normal/frozen 走服务端（跨页完整）；sub/risk 为全局标记集合，客户端过滤当前页
+    load(q, 1, statusOf(key));
+  };
 
   const filtered = useMemo(() => {
     let list = items;
@@ -133,7 +149,7 @@ export default function AdminUsersPage() {
     try {
       await apiFetch(`/admin/v1/users/${u.id}/freeze`, { method: "PATCH", body: JSON.stringify({ frozen: !u.is_frozen }) }, tokenStore.adminAccess);
       toast(u.is_frozen ? "success" : "warn", `用户 ${u.email} 已${u.is_frozen ? "解冻" : "冻结"} · 操作已记入审计日志`);
-      await load(q);
+      await load(q, page, statusOf(filter));
       setDrawer((prev) => (prev && prev.id === u.id ? { ...prev, is_frozen: !u.is_frozen } : prev));
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "操作失败");
@@ -142,7 +158,29 @@ export default function AdminUsersPage() {
     }
   }
 
-  const fmtTime = (iso: string | null) => (iso ? `${iso.slice(5, 10)} ${iso.slice(11, 16)}` : "—");
+  // ★ P1：后端 isoformat 为 UTC，直切字符串会把北京时间显示成 8 小时前的时刻——转本地时区
+  const fmtTime = (iso: string | null) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  const fmtFull = (iso: string | null | undefined) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageBtn = (active: boolean): React.CSSProperties => ({
+    width: 32, height: 32, borderRadius: 4, border: "1px solid",
+    borderColor: active ? "rgba(239,68,68,0.4)" : "var(--rule)",
+    background: active ? "rgba(239,68,68,0.1)" : "transparent",
+    color: active ? "var(--admin-red)" : "var(--muted)",
+    cursor: "pointer", fontFamily: "var(--font-geist-mono), monospace", fontSize: 12,
+  });
   const roleBadge = (role: string) => {
     const label = ROLE_LABEL[role] || role;
     if (role === "admin") return <span className="badge badge-err">{label}</span>;
@@ -184,9 +222,9 @@ export default function AdminUsersPage() {
             placeholder="邮箱搜索"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && load(q)}
+            onKeyDown={(e) => e.key === "Enter" && load(q, 1, statusOf(filter))}
           />
-          <button className="btn btn-primary" onClick={() => load(q)}>搜索</button>
+          <button className="btn btn-primary" onClick={() => load(q, 1, statusOf(filter))}>搜索</button>
         </div>
       </div>
 
@@ -209,13 +247,13 @@ export default function AdminUsersPage() {
               color: filter === f.key ? "var(--admin-red)" : "var(--muted)",
               fontWeight: filter === f.key ? 500 : 400,
             }}
-            onClick={() => setFilter(f.key)}
+            onClick={() => applyFilter(f.key)}
           >
             {f.label}
           </button>
         ))}
         <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace" }}>
-          {filter === "all" ? `共 ${total.toLocaleString()} 位` : `已筛选 ${filtered.length} / ${total.toLocaleString()} 位`}
+          {filter === "all" ? `共 ${total.toLocaleString()} 位` : filter === "sub" || filter === "risk" ? `本页已筛选 ${filtered.length} 位` : `已筛选 ${total.toLocaleString()} 位`}
         </span>
       </div>
 
@@ -258,6 +296,15 @@ export default function AdminUsersPage() {
             </tbody>
           </table>
         </div>
+        {pageCount > 1 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 16 }}>
+            <button style={pageBtn(false)} disabled={page === 1} onClick={() => load(q, page - 1, statusOf(filter))}>‹</button>
+            {Array.from({ length: pageCount }, (_, i) => i + 1).slice(0, 7).map((p) => (
+              <button key={p} style={pageBtn(page === p)} onClick={() => load(q, p, statusOf(filter))}>{p}</button>
+            ))}
+            <button style={pageBtn(false)} disabled={page === pageCount} onClick={() => load(q, page + 1, statusOf(filter))}>›</button>
+          </div>
+        )}
       </div>
 
       {/* 详情抽屉（财务 / 跟单 / 风控） */}
@@ -289,7 +336,7 @@ export default function AdminUsersPage() {
               <div style={secLabel}>基本信息</div>
               <div style={rowStyle}><span style={{ color: "var(--muted)" }}>用户 ID</span><span style={monoVal}>#{drawer.id}</span></div>
               <div style={rowStyle}><span style={{ color: "var(--muted)" }}>所选交易所</span><span style={monoVal}>{detail?.exchange || "—"}</span></div>
-              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>注册时间</span><span style={monoVal}>{drawer.created_at?.slice(0, 16) || "—"}</span></div>
+              <div style={rowStyle}><span style={{ color: "var(--muted)" }}>注册时间</span><span style={monoVal}>{fmtFull(drawer.created_at)}</span></div>
               <div style={rowStyle}><span style={{ color: "var(--muted)" }}>身份类型</span><span style={monoVal}>{detail?.identity_type === "sub_account" ? "主号下级" : ROLE_LABEL[drawer.role] || drawer.role}</span></div>
             </div>
 

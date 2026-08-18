@@ -72,6 +72,11 @@ celery_app.conf.update(
             "task": "payment.expire_sweep",
             "schedule": 2 * 60,
         },
+        # ★ P1 对账：confirmed 但订阅未激活/奖励未触发的订单补偿（每 5 分钟）
+        "payment-confirm-reconcile": {
+            "task": "payment.confirm_reconcile",
+            "schedule": 5 * 60,
+        },
         # ★ M4 T4.5：奖励核实释放（每 10 分钟）
         "reward-scan": {
             "task": "reward.scan_verifying",

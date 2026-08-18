@@ -7,6 +7,7 @@ import { apiFetch, tokenStore } from "@/lib/api";
 import PaymentGuideModal from "@/components/PaymentGuideModal";
 import { ToastStack, useToasts } from "@/components/Toast";
 import { usePlatformConfig } from "@/lib/config";
+import { localDate, localDateTime } from "@/lib/time";
 
 type Plan = { plan_id: string; name: string; price_usdt: number; duration_days: number; trial: boolean };
 type Order = {
@@ -258,7 +259,7 @@ export default function SubscriptionsPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
                 <span className="badge badge-ok">订阅中</span>
                 <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 12, color: "var(--muted)" }}>
-                  有效期至 {sub.expires_at?.slice(0, 10)}
+                  有效期至 {localDate(sub.expires_at) ?? "—"}
                 </span>
               </div>
               <div style={{ fontSize: 22, fontWeight: 700 }}>{planName(sub.plan_id)}</div>
@@ -548,7 +549,7 @@ export default function SubscriptionsPage() {
                             {o.tx_hash ? ` · ${o.confirmations}/${o.required}` : ""}
                           </span>
                         </td>
-                        <td style={{ padding: "10px 8px", color: "var(--muted)", whiteSpace: "nowrap" }}>{o.created_at?.replace("T", " ").slice(0, 16) || "-"}</td>
+                        <td style={{ padding: "10px 8px", color: "var(--muted)", whiteSpace: "nowrap" }}>{localDateTime(o.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>

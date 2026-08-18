@@ -305,7 +305,7 @@ export default function WithdrawPage() {
                         </div>
                         <div style={{ fontSize: 12, color: "var(--muted)" }}>
                           {isRejected
-                            ? <span style={{ color: "var(--danger)" }}>原因：{wd.reject_reason || "收款地址与实名不符"}</span>
+                            ? <span style={{ color: "var(--danger)" }}>原因：{wd.reject_reason || "管理员未注明（如有疑问请联系客服）"}</span>
                             : isPaid
                               ? <>TxHash：<span style={{ color: "var(--accent)" }}>{(wd.tx_hash || "—").slice(0, 6)}…{(wd.tx_hash || "").slice(-4)}</span> · 链上已确认</>
                               : WD_MSG[wd.status] || "等待管理员审核"}

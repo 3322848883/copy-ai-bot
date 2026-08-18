@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 import { useWsChannel } from "@/components/WsProvider";
+import { localDate } from "@/lib/time";
 
 type Bot = {
   id: number;
@@ -306,7 +307,7 @@ export default function Home() {
                       <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 400 }}>天</span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
-                      {data.metrics.subscription.plan_id === "monthly_19_9u" ? "正式版" : "试用版"} · 至 {data.metrics.subscription.expires_at?.slice(0, 10)}
+                      {data.metrics.subscription.plan_id === "monthly_19_9u" ? "正式版" : "试用版"} · 至 {localDate(data.metrics.subscription.expires_at) ?? "—"}
                     </div>
                   </>
                 ) : (

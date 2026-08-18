@@ -326,7 +326,7 @@ export default function AccountPage() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>交易所邀请码</span>
                     <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 14, color: exchangeInvite ? "var(--accent)" : "var(--fg)" }}>
-                      {exchangeInvite ? `${exchangeInvite}（G27 已绑定）` : "未绑定"}
+                      {exchangeInvite || "未绑定"}
                     </span>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -361,7 +361,7 @@ export default function AccountPage() {
                         </span>
                         <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--muted)" }}>
                           <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", boxShadow: "0 0 8px var(--success)" }} />
-                          已连接
+                          已绑定
                         </span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
@@ -472,7 +472,7 @@ export default function AccountPage() {
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
                     {exchangeInvite
                       ? <>已绑定：<span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "var(--accent)" }}>{exchangeInvite}</span></>
-                      : "绑定平台资源池邀请码，享主号下级免订阅权益"}
+                      : "绑定平台交易所邀请码，完成推荐关系绑定（绑定后不可更改）"}
                   </div>
                   <form onSubmit={onBindExchangeInvite} style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
                     <div style={{ flex: 1 }}>

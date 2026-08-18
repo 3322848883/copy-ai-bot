@@ -10,58 +10,88 @@ type Audit = {
 };
 
 const ACT_LABEL: Record<string, string> = {
-  payment_manual_confirm: "强制确认支付", payment_manual_fail: "支付标记失败",
-  withdrawal_approve: "通过提现", withdrawal_reject: "驳回提现", withdrawal_fill_tx: "填写 TxHash", withdrawal_retry: "重试发放", withdrawal_refund: "退还申请",
-  strategy_list: "信号源上架", strategy_force_list: "强制上架信号源", strategy_pause: "暂停策略", strategy_delist: "下架策略",
-  user_freeze: "冻结用户", user_unfreeze: "解冻用户",
-  reward_manual_grant: "手动补发奖励", reward_manual_deduct: "手动扣除奖励",
-  risk_rule_update: "更新风控参数", risk_emergency: "紧急制动",
+  "payment.manual_confirmed": "强制确认支付", "payment.manual_failed": "支付标记失败",
+  "payment.address.create": "新增收款地址", "payment.address.update": "修改收款地址", "payment.address.delete": "删除收款地址",
+  "withdrawal.approve": "通过提现", "withdrawal.reject": "驳回提现", "withdrawal.fill_tx": "填写 TxHash", "withdrawal.retry": "重试发放", "withdrawal.refund": "退还申请",
+  "strategy.listed": "上架信号源", "strategy.force_list": "强制上架信号源", "strategy.paused": "暂停策略", "strategy.delisted": "下架策略",
+  "strategy.gray": "调整灰度", "strategy.risk_update": "更新策略风控", "strategy.sync_profile": "同步画像",
+  "user.freeze": "冻结/解冻用户", "user.note_update": "更新用户备注",
+  "wallet.adjust": "手动调整余额", "apikey.bind": "绑定 API", "apikey.unbind": "解绑 API",
+  "auth.change_password": "修改密码",
+  "identity.bind_invite": "绑定邀请码", "identity.bind_exchange_invite": "绑定交易所邀请码", "identity.auto_mark_sub_account": "标记子账户",
+  "risk.rule_update": "更新风控参数", "risk.emergency_stop": "紧急制动", "risk.daily_loss_limit": "调整当日亏损线", "risk.abuse_check": "刷单检测",
+  "settings.rule_update": "更新系统规则", "settings.rules_batch_update": "批量更新规则", "settings.plan_upsert": "保存套餐", "settings.plan_delete": "删除套餐", "settings.template_update": "更新邮件模板",
   "exchange_invite.create": "新增邀请码", "exchange_invite.status": "启停邀请码", "exchange_invite.delete": "删除邀请码",
-  review_approve: "通过主号审核", review_reject: "驳回主号审核",
+  "review.approve": "通过主号审核", "review.reject": "驳回主号审核",
+  "announcement.create": "新增公告", "announcement.update": "更新公告", "announcement.status": "启停公告", "announcement.delete": "删除公告",
+  "signal_source.import": "导入信号源",
 };
 
+const ACTION_DOMAINS: Array<{ value: string; label: string }> = [
+  { value: "", label: "全部动作" },
+  { value: "payment.", label: "支付" },
+  { value: "withdrawal.", label: "提现" },
+  { value: "user.", label: "用户" },
+  { value: "wallet.", label: "余额" },
+  { value: "strategy.", label: "策略" },
+  { value: "risk.", label: "风控" },
+  { value: "settings.", label: "设置" },
+  { value: "announcement.", label: "公告" },
+  { value: "exchange_invite.", label: "交易所邀请" },
+  { value: "review.", label: "主号审核" },
+  { value: "identity.", label: "身份" },
+  { value: "apikey.", label: "API 密钥" },
+];
+
+const DANGER_RE = /manual_confirmed|manual_failed|emergency_stop|user\.freeze|wallet\.adjust|force_list|withdrawal\.(approve|reject|refund)|address\.delete|announcement\.delete|plan_delete|exchange_invite\.delete|rule_update/;
+
 function classify(action: string): { tag: string; label: string } {
-  if (/manual_confirm|emergency|freeze|delete|force_list|deduct/.test(action)) return { tag: "danger", label: "高危" };
-  if (/create|list|grant|approve/.test(action)) return { tag: "create", label: "创建" };
-  if (/status|reject|pause|delist|unfreeze|fill_tx|retry|refund|rule_update/.test(action)) return { tag: "update", label: "更新" };
-  if (/query|search|get|read/.test(action)) return { tag: "query", label: "查询" };
+  if (DANGER_RE.test(action)) return { tag: "danger", label: "高危" };
+  if (/\.create$|\.listed$|plan_upsert|signal_source\.import/.test(action)) return { tag: "create", label: "创建" };
   return { tag: "update", label: "更新" };
 }
 
-/** M5 T5.7 审计日志（对齐演示稿 audit：筛选栏 + 类型标签 + 操作内容高亮 + 分页）。 */
+/** M5 T5.7 审计日志（筛选栏 + 类型标签 + 操作内容高亮 + 分页）。
+ *  ★ P1 修复：筛选全部走服务端（actor_id/action/danger）——此前客户端过滤只作用于当前页，
+ *  其他页的高危记录被漏掉且 total 与表格矛盾；动作标签对齐后端点分命名。 */
 export default function AdminAuditPage() {
   const router = useRouter();
   const [items, setItems] = useState<Audit[]>([]);
   const [total, setTotal] = useState(0);
+  const [actorInput, setActorInput] = useState("");
   const [actor, setActor] = useState("");
-  const [type, setType] = useState("全部");
+  const [domain, setDomain] = useState("");
+  const [dangerOnly, setDangerOnly] = useState(false);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
+
+  // actor 输入防抖 400ms，避免每次按键触发请求
+  useEffect(() => {
+    const t = setTimeout(() => setActor(actorInput.trim()), 400);
+    return () => clearTimeout(t);
+  }, [actorInput]);
 
   const load = useCallback(async (p = 1) => {
     try {
       const qs = new URLSearchParams({ size: String(PAGE_SIZE), page: String(p) });
+      if (domain) qs.set("action", domain);
+      if (dangerOnly) qs.set("danger", "true");
+      const actorNum = Number(actor);
+      if (actor && Number.isInteger(actorNum) && actorNum > 0) qs.set("actor_id", String(actorNum));
       const r = await apiFetch<{ items: Audit[]; total: number }>(`/admin/v1/audit?${qs.toString()}`, {}, tokenStore.adminAccess);
       setItems(r.items);
       setTotal(r.total);
+      setPage(p);
     } catch { /* ignore */ }
-  }, []);
+  }, [actor, domain, dangerOnly]);
 
   useEffect(() => {
     if (!tokenStore.adminAccess) {
       router.push("/login");
       return;
     }
-    load();
+    load(1);
   }, [load, router]);
-
-  const filtered = useMemo(() => {
-    return items.filter((e) => {
-      if (actor && !String(e.actor_id).includes(actor.trim())) return false;
-      if (type !== "全部" && classify(e.action).label !== type) return false;
-      return true;
-    });
-  }, [items, actor, type]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -89,12 +119,26 @@ export default function AdminAuditPage() {
 
       {/* 筛选栏 */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>操作者</span>
-        <input className="input" style={{ width: 140, height: 32 }} placeholder="admin01 / reviewer02…" value={actor} onChange={(e) => setActor(e.target.value)} />
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>操作者 ID</span>
+        <input className="input" style={{ width: 140, height: 32 }} placeholder="如 1（防抖 400ms）" value={actorInput} onChange={(e) => setActorInput(e.target.value)} />
         <span style={{ fontSize: 12, color: "var(--muted)" }}>操作类型</span>
-        <select className="select" style={{ width: 140, height: 32 }} value={type} onChange={(e) => setType(e.target.value)}>
-          <option>全部</option><option>创建</option><option>更新</option><option>高危</option><option>查询</option>
+        <select className="select" style={{ width: 150, height: 32 }} value={domain} onChange={(e) => setDomain(e.target.value)}>
+          {ACTION_DOMAINS.map((d) => (
+            <option key={d.value} value={d.value}>{d.label}</option>
+          ))}
         </select>
+        <button
+          className="btn"
+          style={{
+            padding: "5px 14px", borderRadius: 999, height: 32, minWidth: 0, fontSize: 12,
+            border: dangerOnly ? "1px solid var(--admin-red-border)" : "1px solid var(--rule)",
+            background: dangerOnly ? "rgba(239,68,68,0.1)" : "transparent",
+            color: dangerOnly ? "var(--admin-red)" : "var(--muted)",
+          }}
+          onClick={() => setDangerOnly((v) => !v)}
+        >
+          仅看高危
+        </button>
         <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace" }}>共 {total.toLocaleString()} 条</span>
       </div>
 
@@ -110,8 +154,8 @@ export default function AdminAuditPage() {
               <tr><th>时间</th><th>操作者</th><th>类型</th><th>操作内容</th><th>IP</th></tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>暂无审计记录</td></tr>}
-              {filtered.map((e) => {
+              {items.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>暂无审计记录</td></tr>}
+              {items.map((e) => {
                 const t = e.created_at ? new Date(e.created_at) : null;
                 const time = t ? `${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")} ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}` : "—";
                 const cls = classify(e.action);

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 import { useWsChannel } from "@/components/WsProvider";
+import { localDate } from "@/lib/time";
 
 type Bot = {
   id: number;
@@ -283,7 +284,7 @@ export default function MyBotsPage() {
           <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 8, border: "1px solid rgba(234,179,8,0.35)", background: "rgba(234,179,8,0.07)", fontSize: 12, color: "var(--warning)", marginBottom: 16, flexWrap: "wrap" }}>
             <span>⚠</span>
             <span>
-              订阅未开通或已过期{sub.expires_at ? `（${sub.expires_at.slice(0, 10)}）` : ""} · <strong style={{ color: "var(--warning)" }}>跟单已暂停开仓，已有持仓可正常平仓</strong>。请尽快{" "}
+              订阅未开通或已过期{sub.expires_at ? `（${localDate(sub.expires_at) ?? "—"}）` : ""} · <strong style={{ color: "var(--warning)" }}>跟单已暂停开仓，已有持仓可正常平仓</strong>。请尽快{" "}
               <Link href="/subscriptions" style={{ color: "var(--warning)", textDecoration: "underline" }}>续费</Link> 恢复跟单。
             </span>
           </div>

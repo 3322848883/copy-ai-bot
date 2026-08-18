@@ -115,6 +115,20 @@ async def high_risk_users(db: DbDep = None, _admin=Depends(get_current_admin)) -
 
     one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
     rows = (await db.execute(select(User).where(User.is_frozen.is_(True)).order_by(User.id.desc()).limit(50))).scalars().all()
+    # ★ P1 修复：冻结奖励按 Reward.status='frozen' 真实聚合（此前恒为 0.0 假数据）
+    user_ids = [u.id for u in rows]
+    frozen_map: dict[int, float] = {}
+    if user_ids:
+        from api.models.billing import Reward
+
+        frozen_rows = (
+            await db.execute(
+                select(Reward.owner_id, func.sum(Reward.amount_usdt))
+                .where(Reward.owner_id.in_(user_ids), Reward.status == "frozen")
+                .group_by(Reward.owner_id)
+            )
+        ).all()
+        frozen_map = {uid: float(total or 0) for uid, total in frozen_rows}
     items = []
     for u in rows:
         bind_count = (
@@ -130,7 +144,7 @@ async def high_risk_users(db: DbDep = None, _admin=Depends(get_current_admin)) -
                 "email": masked,
                 "trigger": "批量邀请绑定" if bind_count >= 3 else "风控冻结",
                 "bind_1h": bind_count,
-                "frozen_amount_usdt": 0.0,
+                "frozen_amount_usdt": round(frozen_map.get(u.id, 0.0), 2),
                 "status": "高危冻结",
             }
         )

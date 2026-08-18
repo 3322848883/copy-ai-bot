@@ -9,12 +9,33 @@ from api.models.audit import AuditEvent
 
 router = APIRouter(prefix="/audit", tags=["admin-audit"])
 
+# ★ P1：高危动作全集（与前端审计页 classify 口径一致，服务端筛选保证跨页完整）
+DANGER_ACTIONS = (
+    "payment.manual_confirmed",
+    "payment.manual_failed",
+    "payment.address.delete",
+    "withdrawal.approve",
+    "withdrawal.reject",
+    "withdrawal.refund",
+    "user.freeze",
+    "wallet.adjust",
+    "strategy.force_list",
+    "announcement.delete",
+    "settings.plan_delete",
+    "exchange_invite.delete",
+    "risk.emergency_stop",
+    "risk.rule_update",
+    "settings.rule_update",
+    "settings.rules_batch_update",
+)
+
 
 @router.get("")
 async def list_audit(
     action: str = Query(""),
     actor_id: int | None = Query(None),
     target_type: str = Query(""),
+    danger: bool = Query(False),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     db: DbDep = None,
@@ -33,6 +54,9 @@ async def list_audit(
     if target_type:
         stmt = stmt.where(AuditEvent.target_type == target_type)
         count_stmt = count_stmt.where(AuditEvent.target_type == target_type)
+    if danger:
+        stmt = stmt.where(AuditEvent.action.in_(DANGER_ACTIONS))
+        count_stmt = count_stmt.where(AuditEvent.action.in_(DANGER_ACTIONS))
     total = await db.scalar(count_stmt) or 0
     rows = (
         await db.execute(stmt.order_by(AuditEvent.id.desc()).offset((page - 1) * size).limit(size))

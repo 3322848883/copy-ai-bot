@@ -21,10 +21,6 @@ class StrategyCreate(BaseModel):
     exchange: str = "gate"
 
 
-class StrategyStatusUpdate(BaseModel):
-    status: Literal["listed", "paused", "delisted"]
-
-
 # ── 待选池（T2.5 后台）──
 @router.get("/pending")
 async def list_pending(
@@ -94,19 +90,6 @@ async def add_strategy(
         "failures": gate.failures,
         "forced": gate.forced,
     }
-
-
-# ── 状态变更（下架/暂停）──
-@router.patch("/{strategy_id}/status")
-async def update_status(
-    strategy_id: int,
-    body: StrategyStatusUpdate,
-    db: DbDep = None,
-    user_id: int = Depends(get_current_user),
-) -> dict:
-    svc = StrategyService(db)
-    strategy = await svc.update_status(strategy_id, body.status, actor_id=user_id)
-    return {"id": strategy.id, "status": strategy.status}
 
 
 # ── 策略详情（T2.10/T2.11 ★ G21 画像兜底）──

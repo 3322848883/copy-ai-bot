@@ -171,7 +171,8 @@ class TronClient(ChainClient):
             return False, "no trc20 transfer to target", None
         except Exception as exc:  # noqa: BLE001
             logger.warning("tron validate_tx failed: %s", exc)
-            return False, str(exc), None
+            # ★ P1：network_error 前缀供上层区分"RPC 故障"（转轮询）与"金额不足"（判死）
+            return False, f"network_error: {exc}", None
 
     async def get_tx_timestamp(self, tx_hash: str) -> int | None:
         """tronscanapi transaction-info 的 timestamp（毫秒）→ unix 秒。
@@ -275,7 +276,8 @@ class EvmClient(ChainClient):
                 last_exc = exc
                 continue
         logger.warning("%s validate_tx all rpc failed: %s", self.network, last_exc)
-        return False, str(last_exc), None
+        # ★ P1：network_error 前缀供上层区分"RPC 故障"（转轮询）与"金额不足"（判死）
+        return False, f"network_error: {last_exc}", None
 
     async def get_tx_timestamp(self, tx_hash: str) -> int | None:
         """回执所在区块的 timestamp（unix 秒）；多节点回退。"""
@@ -420,7 +422,8 @@ class AptosClient(ChainClient):
             return False, "no usdt deposit event to target", None
         except Exception as exc:  # noqa: BLE001
             logger.warning("aptos validate_tx failed: %s", exc)
-            return False, str(exc), None
+            # ★ P1：network_error 前缀供上层区分"RPC 故障"（转轮询）与"金额不足"（判死）
+            return False, f"network_error: {exc}", None
 
     async def get_tx_timestamp(self, tx_hash: str) -> int | None:
         """tx.timestamp（微秒字符串）→ unix 秒。"""

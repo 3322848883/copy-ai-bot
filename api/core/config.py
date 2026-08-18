@@ -19,7 +19,9 @@ class Settings(BaseSettings):
 
     # ── 应用 ──
     app_name: str = "OmniAlpha"
-    app_env: str = "dev"  # dev / test / prod
+    # ★ P1 安全默认：缺省按 prod 跑（fail-fast 生效）。忘配 APP_ENV 时宁可启动失败，
+    #   不可静默落入 dev——dev 下 mock 链客户端/固定验证码/Gate 假成交等测试后门全部生效
+    app_env: str = "prod"  # dev / test / prod
     debug: bool = True
     api_prefix: str = "/v1"
     admin_prefix: str = "/admin/v1"
@@ -124,6 +126,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _validate_prod(self) -> "Settings":
         """★ M6 T0.6：生产环境密钥 fail-fast——缺配置/用默认值直接拒绝启动。"""
+        # ★ P1 修复：拼写错误（staging/production 等）不允许静默按非 prod 宽松模式运行
+        if self.app_env not in ("dev", "test", "prod"):
+            raise ValueError(f"APP_ENV 非法: {self.app_env}（仅允许 dev/test/prod）")
         if self.app_env != "prod":
             return self
         errors: list[str] = []

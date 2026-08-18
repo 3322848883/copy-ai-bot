@@ -392,7 +392,7 @@ export default function AdminStrategiesPage() {
       <div className="panel">
         <div className="panel-hdr">
           <div className="panel-title"><span className="sec-dot"></span>运维看板（★G26）</div>
-          <span className="panel-sub">source_mode · 子账户 · 实时余额 · WS 状态 · 模式 B 字段 V2 启用</span>
+          <span className="panel-sub">信号源采集会话 · 模式 A</span>
         </div>
         <div className="ops-grid">
           <div className="ops-card">
@@ -404,24 +404,8 @@ export default function AdminStrategiesPage() {
               <div><div className="ops-f">会话状态</div><div className="ops-v">{session?.state || "—"}</div></div>
               <div><div className="ops-f">跟单数</div><div className="ops-v">{session?.follow_count ?? "—"}</div></div>
               <div><div className="ops-f">采集状态</div><div className="ops-v"><span className={`ws-dot ${session?.state === "logged_in" ? "ws-online" : session?.state ? "ws-reconnect" : "ws-offline"}`}></span> {session?.state === "logged_in" ? "在线" : session?.state ? "连接中" : "未启动"}</div></div>
-              <div><div className="ops-f">今日信号</div><div className="ops-v">—</div></div>
             </div>
           </div>
-          {listedFiltered.slice(0, 3).map((s) => (
-            <div className="ops-card" key={s.id} style={{ opacity: 0.65 }}>
-              <div className="ops-head">
-                <span className="ops-name">{s.display_name}</span>
-                <span className="badge badge-muted">模式 B · 待接入</span>
-              </div>
-              <div className="ops-grid2">
-                <div><div className="ops-f">子账户 ID</div><div className="ops-v">—</div></div>
-                <div><div className="ops-f">实时余额</div><div className="ops-v">—</div></div>
-                <div><div className="ops-f">WS 状态</div><div className="ops-v">—</div></div>
-                <div><div className="ops-f">今日信号</div><div className="ops-v">—</div></div>
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>子账户实时数据将在 V2 接入</div>
-            </div>
-          ))}
         </div>
       </div>
 

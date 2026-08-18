@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 import { ToastStack, useToasts } from "@/components/Toast";
 import { usePlatformConfig, type PlatformConfig } from "@/lib/config";
+import { localDateTime, localMonthDay } from "@/lib/time";
 
 type InviteItem = { invitee_email: string; bound_at: string; reward_usdt: number; reward_status: string; verifying_ends_at: string | null };
 type Risk = { risk_flag: boolean };
@@ -212,8 +213,8 @@ export default function InvitePage() {
   const maxCum = trend.cum[BARS - 1] || 1;
   const cumY = (i: number) => Math.round(chartH - (trend.cum[i] / maxCum) * (chartH * 0.6) - 4);
   const cumPath = trend.cum.map((_, i) => `${i === 0 ? "M" : "L"}${18 + i * barGap},${cumY(i)}`).join(" ");
-  const endLabel = new Date(now - range * 86400_000).toISOString().slice(5, 10).replace("-", "-");
-  const startLabel = new Date(now).toISOString().slice(5, 10);
+  const endLabel = localMonthDay(new Date(now - range * 86400_000).toISOString());
+  const startLabel = localMonthDay(new Date(now).toISOString());
 
   /* ── 流水备注 ── */
   function remark(inv: InviteItem): string {
@@ -324,7 +325,7 @@ export default function InvitePage() {
                     下级订阅成功 <span className="badge badge-ok">已完成</span>
                   </div>
                   <div style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 10, color: "var(--tertiary)", marginTop: 2 }}>
-                    {latest ? latest.bound_at?.slice(0, 16) : "—"}
+                    {latest ? localDateTime(latest.bound_at) : "—"}
                   </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
                     {latest
@@ -496,7 +497,7 @@ export default function InvitePage() {
                   const positive = inv.reward_status !== "canceled" && inv.reward_status !== "rolled_back";
                   return (
                     <tr key={i}>
-                      <td className="num">{inv.bound_at?.slice(0, 16) || "—"}</td>
+                      <td className="num">{localDateTime(inv.bound_at)}</td>
                       <td>订阅奖励</td>
                       <td>{inv.invitee_email || "—"}</td>
                       <td className="num" style={{ color: positive ? "var(--success)" : "var(--danger)" }}>
