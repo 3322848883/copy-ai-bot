@@ -15,15 +15,16 @@
 | `SITE_DOMAIN` | 前台主域名（nginx 反代 + TLS） | ✅ |
 | `ADMIN_SUBDOMAIN` | 后台子域（独立 SPA 入口；证书须覆盖该子域） | ✅ |
 | `ENABLED_EXCHANGES` | V1 仅 `gate` | ✅ |
-| `TRON_RPC_URL/BSC_RPC_URL/ETH_RPC_URL` | 链上 RPC（建议自建/付费节点） | ✅ |
+| `TRON_RPC_URL/BSC_RPC_URL/ETH_RPC_URL/APTOS_RPC_URL` | 四链上链 RPC（主 + 3 备自动故障切换；建议自建/付费节点） | ✅ |
 | `BROWSER_PROXY_URL` | 浏览器采集代理；海外服务器留空，国内必配（详见 `docs/2026-08-18-browser-proxy-deployment.md`） | 视网络 |
 | `POSTGRES_PASSWORD` | 生产 DB 密码（compose 强制） | ✅ |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana 管理员密码（compose 强制） | ✅ |
 
 ## 2. 平台收款地址（后台维护，非环境变量）
 
-- [ ] 登录后台「订单管理 → 平台收款地址」配置 TRC-20 / BEP-20 / ERC-20 三条 active 地址
-- [ ] 地址格式校验（T 开头 34 位 / 0x+40 hex）；未配置的链用户提交时返回"暂未开放收款"
+- [ ] 登录后台「订单管理 → 平台收款地址」配置 TRC-20 / BEP-20 / ERC-20 / APTOS 四条 active 地址
+- [ ] 地址格式校验（T 开头 34 位 / 0x+40 hex EVM / Aptos 0x+64 hex）；未配置的链用户提交时返回"暂未开放收款"
+- [ ] 四链小额真实资金入账验证（Aptos 已端到端验证；BEP20 改动最多，建议 1U 复验）
 
 ## 3. 监控告警阈值（计划 §7.3 六指标，Grafana 看板 signal-saas）
 
@@ -103,3 +104,14 @@
 - [ ] 确认登录锁定生效：连续 5 次密码错误 → 15 分钟锁定（Redis `admin:login_lock:{email}` 自动过期）
 - [ ] 确认登录页文案与锁定提示（剩余尝试次数 / 锁定说明）正常展示
 - [ ] 演练：TOTP 动态码过期/错误 → 拒绝并提示；`totp-verify` 挑战一次性使用（重复提交失败）
+
+## 11. 上线全局核查（2026-08-19 完成，四批 commit）
+
+> 逐功能前台后台对照检查的修复明细与冒烟记录见 `docs/2026-08-19-production-hardening.md`。
+> commits：`fa82d81`（品牌+公告+配置端点）→ `91d6b30`（P0×3+P1×5）→ `b31e139`（构建上下文瘦身）→ `b3bf20f`（P1/P2 收尾）。
+
+- [x] P0：submit_tx 三态分流（未上链/RPC 故障转轮询，不再误判失败）；种子脚本弱口令兜底清除；提现链上校验下限改净额
+- [x] P1：订单 TTL 内联校验 + 过期禁提交；风控命中奖励 frozen 落库；邀请统计按 Reward 状态精确聚合；APTOS_TX_RE 正则；跟单固定金额输入
+- [x] P1 收尾：审计筛选服务端化（danger/action/actor_id）；人工确认支付行锁+CAS；跟单引擎虚拟锁定精算 + 订阅闸门 fail-closed；信号差分 Redis 互斥锁防双发；confirmed 对账补偿任务；`APP_ENV` 默认 prod fail-fast；用户管理分页 + 服务端状态筛选；订单 KPI 今日口径；高危用户冻结奖励真实聚合；前台 7 处 UTC 时区修复
+- [x] P2：withdraw 不再编造驳回原因；法务页草稿声明清理；死代码/假状态卡清理（模式 B 卡、G27 内部码等）
+- [ ] 遗留（人工操作）：后台「系统设置」填客服邮箱/TG；SMTP `MAIL_FROM` 改实际发信域名；BEP20 1U 真实资金复验（建议）

@@ -1,7 +1,8 @@
-# signal-saas 信号聚合跟单平台
+# OmniAlpha 信号聚合跟单平台（signal-saas）
 
-跨 5 大交易所（Binance / OKX / Bybit / Bitget / Gate）信号聚合 + 一键跟单 SaaS。
-平台不生产信号、不做自营、不抽水不返佣，唯一收入为订阅费。
+全市场优质信号一网打尽 + 一键跟单 SaaS，AI 引擎 7×24 扫描信号、智能识别、自动执行。
+平台不生产信号、不做自营、不抽水不返佣，唯一收入为订阅费；用户资金始终留在自己的交易所账户。
+信号源可持续扩展：爬虫广场（模式 A）+ 跟单账户 WS 镜像（模式 B）+ 未来个人策略接入；执行层直连交易所官方 API（V1 已接入 Gate，多交易所按 `ENABLED_EXCHANGES` 扩展）。
 
 ## 功能全景
 
@@ -147,6 +148,7 @@ npm run dev
 | M4 | 订阅 + 支付 + 邀请奖励 + 提现 | ✅ 已完成 |
 | M5 | 后台 12 模块 + 前台闭环 | ✅ 已完成 |
 | M6 | 首页数据看板 + WebSocket 实时推送 + 监控合规 | ✅ 已完成 |
+| M7 | 品牌重塑 OmniAlpha + 通知公告全链路 + 四链支付真实资金验证 + 上线全局核查（P0/P1/P2 修复） | ✅ 已完成 |
 
 详见 `docs/2026-08-12-signal-saas-v1-development-plan.md` 与 `docs/2026-08-12-signal-saas-requirements-coverage-check.md`。
 
@@ -171,6 +173,7 @@ CI（GitHub Actions `.github/workflows/ci.yml`）：push/PR 到 main 自动跑 r
 - 需求覆盖核对：`2026-08-12-signal-saas-requirements-coverage-check.md`
 - 差异分析与验收：`2026-08-12-signal-saas-design-gap-analysis.md`
 - 支付板块收尾（四链支付 + SMTP 后台化 + 假按钮清理）：`2026-08-18-m4-payment-finalization.md`
+- 上线全局核查修复（P0/P1/P2 全明细 + 冒烟记录 + 遗留待办）：`2026-08-19-production-hardening.md`
 - 浏览器采集代理与中继部署（服务器 Docker / 非 Docker 场景）：`2026-08-18-browser-proxy-deployment.md`
 - 框架与 UI 成品：`2026-08-12-signal-saas-*-framework.md` / `*.html`（前台/后台全部页面高保真蓝本）
 - Gate POC 验证：`2026-08-12-gate-poc-verification-report.md`
