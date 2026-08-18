@@ -34,35 +34,66 @@ services:
       SMTP_HOST: smtp-capture
       SMTP_PORT: "1025"
       MAIL_FROM: no-reply@signal-saas.test
+      # ★ 上线检查修复（2026-08-18）：binance 官方 dataseed 与 llamarpc 容器内不可达（000/521），
+      #   换 publicnode 公共节点（已实测容器内 200）
+      BSC_RPC_URL: https://bsc.publicnode.com
+      ETH_RPC_URL: https://ethereum-rpc.publicnode.com
+      # ★ 上线检查修复：gate.com 容器内被墙，浏览器采集走主机代理中继（scripts/proxy_relay.py）
+      BROWSER_PROXY_URL: http://host.docker.internal:17897
+    # ★ Linux 服务器必需：host.docker.internal 默认不解析（Docker Desktop 自带，Linux 需 host-gateway）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8001:8000"
 
   worker:
     environment:
       APP_ENV: prod
+      DEBUG: "false"
       JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
       VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      CORS_ALLOW_LOCAL_TEST: "1"
+      CORS_ORIGINS: http://localhost:3002,http://127.0.0.1:3002,http://localhost:3001,http://127.0.0.1:3001
       SMTP_HOST: smtp-capture
       SMTP_PORT: "1025"
       MAIL_FROM: no-reply@signal-saas.test
+      BSC_RPC_URL: https://bsc.publicnode.com
+      ETH_RPC_URL: https://ethereum-rpc.publicnode.com
+      BROWSER_PROXY_URL: http://host.docker.internal:17897
+    # ★ Linux 服务器必需：host.docker.internal 默认不解析（Docker Desktop 自带，Linux 需 host-gateway）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # ★ worker 跑 celery 无 HTTP 服务，禁用继承自 api 镜像的 8000 端口健康探测（否则永远 unhealthy）
+    healthcheck:
+      disable: true
 
   beat:
     environment:
       APP_ENV: prod
+      DEBUG: "false"
       JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
       VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      CORS_ALLOW_LOCAL_TEST: "1"
+      CORS_ORIGINS: http://localhost:3002,http://127.0.0.1:3002,http://localhost:3001,http://127.0.0.1:3001
       SMTP_HOST: smtp-capture
       SMTP_PORT: "1025"
       MAIL_FROM: no-reply@signal-saas.test
+      BSC_RPC_URL: https://bsc.publicnode.com
+      ETH_RPC_URL: https://ethereum-rpc.publicnode.com
 
   consumer:
     environment:
       APP_ENV: prod
+      DEBUG: "false"
       JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
       VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      CORS_ALLOW_LOCAL_TEST: "1"
+      CORS_ORIGINS: http://localhost:3002,http://127.0.0.1:3002,http://localhost:3001,http://127.0.0.1:3001
       SMTP_HOST: smtp-capture
       SMTP_PORT: "1025"
       MAIL_FROM: no-reply@signal-saas.test
+      BSC_RPC_URL: https://bsc.publicnode.com
+      ETH_RPC_URL: https://ethereum-rpc.publicnode.com
 
   web:
     ports:

@@ -56,7 +56,7 @@ function RegisterForm() {
   const [onbLoading, setOnbLoading] = useState(false);
 
   /** 验证码 30s 倒计时 */
-  const [countdown, setCountdown] = useState(0);
+  const [, setCountdown] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(
     () => () => {

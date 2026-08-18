@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     # ★ 方案B：公开爬虫独立 user_data_dir（与登录会话 signal_session_data_dir 彻底隔离）。
     #   公开接口(模式A)走此目录的浏览器；私有接口(模式B)走登录会话，互不争抢 Chrome profile 锁。
     scraper_data_dir: str = "data/scraper"
+    # ★ 浏览器代理（gate.com 等被墙站点必须走代理；Chromium 不读环境变量，须显式传 launch(proxy=)）
+    #   空=不走代理。容器内格式 http://host.docker.internal:<port>（本机 Clash 需中继/局域网监听）
+    browser_proxy_url: str = ""
 
     # ── 实时信号轮询（★实测 2026-08：1 秒轮询公开接口 2000+ 请求 0 次 403）──
     signal_poll_interval: int = 1      # 轮询间隔(秒)；带单员分钟级交易，1 秒不丢单

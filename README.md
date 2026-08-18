@@ -114,6 +114,7 @@ npm run dev
 | `REDIS_URL` | Redis（限流/Celery） | `redis://localhost:6379/0` |
 | `SMTP_HOST/PORT/MAIL_FROM` | 邮件（验证码，Mailhog 本地调试） | `localhost:1025` |
 | `SCRAPER_REAL` / `SCRAPER_HEADLESS` | 模式 A 真实采集开关 / 有头模式 | `1` / `false` |
+| `BROWSER_PROXY_URL` | 浏览器采集代理（gate.com 被墙时必配）。非 Docker 直跑填 `http://127.0.0.1:7897`；Docker 容器内经中继填 `http://host.docker.internal:17897`；海外服务器留空 | 空 |
 | `SIGNAL_FOLLOWER_LEADER_IDS` | 模式 B 跟单 leader_id 列表 | `["32801","24264"]` |
 | `SIGNAL_SESSION_ENABLED` | 持久化浏览器会话（后台登录 Gate） | `true` |
 
@@ -170,5 +171,6 @@ CI（GitHub Actions `.github/workflows/ci.yml`）：push/PR 到 main 自动跑 r
 - 需求覆盖核对：`2026-08-12-signal-saas-requirements-coverage-check.md`
 - 差异分析与验收：`2026-08-12-signal-saas-design-gap-analysis.md`
 - 支付板块收尾（四链支付 + SMTP 后台化 + 假按钮清理）：`2026-08-18-m4-payment-finalization.md`
+- 浏览器采集代理与中继部署（服务器 Docker / 非 Docker 场景）：`2026-08-18-browser-proxy-deployment.md`
 - 框架与 UI 成品：`2026-08-12-signal-saas-*-framework.md` / `*.html`（前台/后台全部页面高保真蓝本）
 - Gate POC 验证：`2026-08-12-gate-poc-verification-report.md`

@@ -16,6 +16,7 @@
 | `ADMIN_SUBDOMAIN` | 后台子域（独立 SPA 入口；证书须覆盖该子域） | ✅ |
 | `ENABLED_EXCHANGES` | V1 仅 `gate` | ✅ |
 | `TRON_RPC_URL/BSC_RPC_URL/ETH_RPC_URL` | 链上 RPC（建议自建/付费节点） | ✅ |
+| `BROWSER_PROXY_URL` | 浏览器采集代理；海外服务器留空，国内必配（详见 `docs/2026-08-18-browser-proxy-deployment.md`） | 视网络 |
 | `POSTGRES_PASSWORD` | 生产 DB 密码（compose 强制） | ✅ |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana 管理员密码（compose 强制） | ✅ |
 
@@ -68,6 +69,17 @@
 - [ ] 镜像打 tag（git commit sha），可回滚上一版本
 - [ ] 回滚步骤：`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate api worker beat consumer`
 - [ ] 数据库变更仅前向（Alembic）；需回滚时人工介入评估
+
+## 7.5 浏览器采集网络（gate.com 打通）
+
+> 完整决策表与步骤见 `docs/2026-08-18-browser-proxy-deployment.md`。
+
+- [ ] 容器内实测 gate.com：可达（200）→ `BROWSER_PROXY_URL` 留空；不可达 → 按国内场景配置
+- [ ] 国内 + Docker：中继 `scripts/proxy_relay.py` 已 systemd 常驻（`signal-relay.service`，Restart=always）
+- [ ] 中继端口（默认 17897）防火墙仅放行 Docker 网段（`172.17.0.0/16`），拒绝公网（⚠️ 否则=开放代理）
+- [ ] Linux 服务器确认 compose `extra_hosts: host.docker.internal:host-gateway` 生效（prod.local.yml 已带）
+- [ ] 验证：worker 日志 `launch ... proxy=http://...` 且无 `ERR_CONNECTION_CLOSED`；`signal.poll_live ... succeeded`
+- [ ] 非 Docker 部署：`.env` 直接 `BROWSER_PROXY_URL=http://127.0.0.1:7897`（无需中继）
 
 ## 8. 压测记录（T6.3）
 

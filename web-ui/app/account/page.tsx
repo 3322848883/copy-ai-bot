@@ -48,11 +48,6 @@ export default function AccountPage() {
   const [apiSecret, setApiSecret] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const showToast = useCallback((type: Toast["type"], m: string) => {
-    setToasts((t) => [...t, { type, msg: m }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.msg !== m || x.type !== type)), 3400);
-  }, []);
-
   const loadKeys = useCallback(async () => {
     try {
       const r = await apiFetch<{ items: ApiKey[] }>("/v1/apikeys", {}, tokenStore.access);

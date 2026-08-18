@@ -128,6 +128,7 @@ class GateScraper:
         #   公开接口(模式A)走此浏览器；私有接口(模式B)走 signal_session 登录会话。
         persistent = bool(settings.scraper_data_dir)
         data_dir = settings.scraper_data_dir
+        proxy = {"server": settings.browser_proxy_url} if settings.browser_proxy_url else None
         try:
             if persistent and self._context is None:
                 self._context = await self._playwright.chromium.launch_persistent_context(
@@ -137,14 +138,15 @@ class GateScraper:
                     viewport={"width": 1440, "height": 900},
                     locale="zh-CN",
                     extra_http_headers={"Accept-Language": "zh-CN,zh;q=0.9"},
+                    proxy=proxy,
                 )
                 self._browser = self._context.browser
-                logger.info("gate scraper: launch persistent chrome (data_dir=%s)", data_dir)
+                logger.info("gate scraper: launch persistent chrome (data_dir=%s proxy=%s)", data_dir, settings.browser_proxy_url or "off")
             else:
                 browser = await self._playwright.chromium.launch(
-                    channel="chrome", headless=headless, args=args
+                    channel="chrome", headless=headless, args=args, proxy=proxy
                 )
-                logger.info("gate scraper: launch chrome (headless=%s mode=%s)", headless, mode)
+                logger.info("gate scraper: launch chrome (headless=%s mode=%s proxy=%s)", headless, mode, settings.browser_proxy_url or "off")
                 self._browser = browser
                 self._context = await browser.new_context(
                     locale="zh-CN",
@@ -160,10 +162,11 @@ class GateScraper:
                     viewport={"width": 1440, "height": 900},
                     locale="zh-CN",
                     extra_http_headers={"Accept-Language": "zh-CN,zh;q=0.9"},
+                    proxy=proxy,
                 )
                 self._browser = self._context.browser
             else:
-                browser = await self._playwright.chromium.launch(headless=headless, args=args)
+                browser = await self._playwright.chromium.launch(headless=headless, args=args, proxy=proxy)
                 self._browser = browser
                 self._context = await browser.new_context(
                     locale="zh-CN",

@@ -128,6 +128,7 @@ class SignalSession:
 
             self._playwright = await async_playwright().start()
             headless = True if settings.signal_session_headless is None else settings.signal_session_headless
+            proxy = {"server": settings.browser_proxy_url} if settings.browser_proxy_url else None
             try:
                 self._context = await self._playwright.chromium.launch_persistent_context(
                     user_data_dir=self._data_dir,
@@ -136,8 +137,9 @@ class SignalSession:
                     viewport={"width": 1440, "height": 900},
                     locale="zh-CN",
                     extra_http_headers={"Accept-Language": "zh-CN,zh;q=0.9"},
+                    proxy=proxy,
                 )
-                logger.info("gate signal session: launch persistent chrome (headless=%s)", headless)
+                logger.info("gate signal session: launch persistent chrome (headless=%s proxy=%s)", headless, settings.browser_proxy_url or "off")
             except Exception as exc:  # noqa: BLE001 无系统 Chrome → 内置 chromium
                 logger.warning("gate signal session: chrome channel fail (%s), fallback chromium", exc)
                 self._context = await self._playwright.chromium.launch_persistent_context(
@@ -146,6 +148,7 @@ class SignalSession:
                     viewport={"width": 1440, "height": 900},
                     locale="zh-CN",
                     extra_http_headers={"Accept-Language": "zh-CN,zh;q=0.9"},
+                    proxy=proxy,
                 )
             self._browser = self._context.browser
             self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()

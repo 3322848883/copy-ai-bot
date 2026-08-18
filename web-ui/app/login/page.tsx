@@ -29,7 +29,7 @@ function LoginForm() {
   /** 卡片内视图：login（登录）| forgot（忘记密码，提示型入口） */
   const [view, setView] = useState<"login" | "forgot">("login");
   const [tab, setTab] = useState<"login" | "register">("login");
-  const { toasts, push } = useToasts();
+  const { toasts } = useToasts();
 
   /** 响应式：<900px 隐藏品牌区、卡片单列（设计稿 @media max-width:900px） */
   const [wide, setWide] = useState(true);
