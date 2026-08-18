@@ -15,13 +15,14 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "失败", manual: "待人工", timeout: "确认超时",
 };
 
-const NETWORK_LABEL: Record<string, string> = { trc20: "TRC-20", bep20: "BEP-20", erc20: "ERC-20" };
+const NETWORK_LABEL: Record<string, string> = { trc20: "TRC-20", bep20: "BEP-20", erc20: "ERC-20", aptos: "APTOS" };
 
 /** 网络标签配色（对齐设计稿 net-tag trc/bep/erc）。 */
 const NETWORK_STYLE: Record<string, React.CSSProperties> = {
   trc20: { color: "#00d4aa", borderColor: "rgba(0,212,170,0.4)" },
   bep20: { color: "#eab308", borderColor: "rgba(234,179,8,0.4)" },
   erc20: { color: "#60a5fa", borderColor: "rgba(59,130,246,0.4)" },
+  aptos: { color: "#c084fc", borderColor: "rgba(192,132,252,0.4)" },
 };
 
 /** 状态筛选（保留原逻辑：全部/待人工/轮询中/已确认/失败）。 */
@@ -159,7 +160,7 @@ export default function AdminPaymentsPage() {
       <div className="page-hdr">
         <div>
           <div className="page-eyebrow">PAYMENT RECORDS · 支付记录</div>
-          <h1 className="page-title">支付记录<small>三链支付 · 自动校验 + 人工介入</small></h1>
+          <h1 className="page-title">支付记录<small>四链支付 · 自动校验 + 人工介入</small></h1>
         </div>
       </div>
 
@@ -233,7 +234,7 @@ export default function AdminPaymentsPage() {
           <input
             className="input"
             style={{ flex: 1, minWidth: 260, height: 36, fontFamily: "var(--font-geist-mono), monospace", fontSize: 12 }}
-            placeholder="收款地址（TRC-20: T 开头 34 位 / EVM: 0x + 40 hex）"
+            placeholder="收款地址（TRC-20: T 开头 34 位 / EVM: 0x + 40 hex / APTOS: 0x + hex）"
             value={form.address}
             onChange={(e) => setForm({ ...form, address: e.target.value })}
           />

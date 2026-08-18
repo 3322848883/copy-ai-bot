@@ -20,11 +20,32 @@ type Order = {
 };
 type SubStatus = { active: boolean; plan_id?: string; expires_at?: string };
 type Toast = { type: "success" | "warn" | "info" | "error"; msg: string };
+type HistoryOrder = {
+  order_id: number;
+  plan_id: string;
+  amount_usdt: number;
+  network: string;
+  status: string;
+  confirmations: number;
+  required: number;
+  tx_hash?: string;
+  created_at?: string;
+};
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  pending: "待支付",
+  verifying: "确认中",
+  polling: "轮询中",
+  confirmed: "已完成",
+  failed: "失败",
+  manual: "人工处理",
+  timeout: "已超时",
+};
 
 const NETWORKS = [
   { key: "trc20", label: "TRC-20", note: "12 确认" },
   { key: "bep20", label: "BEP-20", note: "15 确认" },
   { key: "erc20", label: "ERC-20", note: "32 确认" },
+  { key: "aptos", label: "APTOS", note: "20 确认" },
 ];
 const PENDING_LIMIT_MS = 30 * 60 * 1000; // 30min 订单倒计时（后台 payment_order_ttl_min 可配，创建订单时返回 ttl_seconds 覆盖）
 
@@ -43,6 +64,9 @@ export default function SubscriptionsPage() {
   const [busy, setBusy] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [orders, setOrders] = useState<HistoryOrder[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const showToast = useCallback((type: Toast["type"], m: string) => {
     setToasts((t) => [...t, { type, msg: m }]);
@@ -71,6 +95,20 @@ export default function SubscriptionsPage() {
     const timer = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [load, router]);
+
+  async function openHistory() {
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    try {
+      const { orders: list } = await apiFetch<{ orders: HistoryOrder[] }>("/v1/payments/orders", {}, tokenStore.access);
+      setOrders(list || []);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "加载支付记录失败");
+      setOrders([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   async function createOrder() {
     setBusy(true);
@@ -183,7 +221,7 @@ export default function SubscriptionsPage() {
         <div className="page-hdr">
           <div>
             <div className="page-eyebrow">SUBSCRIBE &amp; PAY · 订阅支付</div>
-            <h1 className="page-title">订阅套餐<small>三链支付 · 自动核验 · 立即开通跟单</small></h1>
+            <h1 className="page-title">订阅套餐<small>四链支付 · 自动核验 · 立即开通跟单</small></h1>
           </div>
         </div>
 
@@ -213,7 +251,7 @@ export default function SubscriptionsPage() {
               <button className="btn btn-primary" style={{ height: 44, padding: "0 28px" }} onClick={() => { setOrder(null); setOrderCreatedAt(null); setErr(""); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
                 续费
               </button>
-              <button className="btn btn-secondary" style={{ height: 44, padding: "0 28px" }} onClick={() => showToast("info", "历史支付记录可在个人中心 · 订阅状态中查看")}>
+              <button className="btn btn-secondary" style={{ height: 44, padding: "0 28px" }} onClick={openHistory}>
                 查看记录
               </button>
             </div>
@@ -283,7 +321,7 @@ export default function SubscriptionsPage() {
           <div className="panel">
             <div className="panel-hdr">
               <div className="panel-title"><span className="sec-dot"></span>选择支付网络</div>
-              <span className="panel-sub">TRC-20 / BEP-20 / ERC-20 三链自动核验</span>
+              <span className="panel-sub">TRC-20 / BEP-20 / ERC-20 / APTOS 四链自动核验</span>
             </div>
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
               {NETWORKS.map((n) => (
@@ -422,6 +460,55 @@ export default function SubscriptionsPage() {
           </div>
         )}
       </div>
+
+      {/* 历史支付记录弹窗 */}
+      {historyOpen && (
+        <div onClick={() => setHistoryOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(4,10,20,0.66)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--panel)", border: "1px solid var(--rule)", borderRadius: 14, width: "100%", maxWidth: 720, maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid var(--rule)" }}>
+              <span style={{ fontWeight: 700, fontSize: 16 }}>历史支付记录</span>
+              <button onClick={() => setHistoryOpen(false)} style={{ background: "none", border: "none", fontSize: 20, color: "var(--muted)", cursor: "pointer", lineHeight: 1 }}>✕</button>
+            </div>
+            <div style={{ overflow: "auto", padding: "8px 20px 16px" }}>
+              {historyLoading ? (
+                <div style={{ textAlign: "center", padding: 40, color: "var(--muted)", fontSize: 13 }}>加载中…</div>
+              ) : orders.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 40, color: "var(--muted)", fontSize: 13 }}>暂无支付记录</div>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ color: "var(--muted)", textAlign: "left" }}>
+                      <th style={{ padding: "10px 8px", borderBottom: "1px solid var(--rule)" }}>#</th>
+                      <th style={{ padding: "10px 8px", borderBottom: "1px solid var(--rule)" }}>套餐</th>
+                      <th style={{ padding: "10px 8px", borderBottom: "1px solid var(--rule)" }}>金额</th>
+                      <th style={{ padding: "10px 8px", borderBottom: "1px solid var(--rule)" }}>网络</th>
+                      <th style={{ padding: "10px 8px", borderBottom: "1px solid var(--rule)" }}>状态</th>
+                      <th style={{ padding: "10px 8px", borderBottom: "1px solid var(--rule)" }}>创建时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders.map((o) => (
+                      <tr key={o.order_id} style={{ borderBottom: "1px solid var(--rule)" }}>
+                        <td style={{ padding: "10px 8px", fontFamily: "var(--font-geist-mono), monospace", color: "var(--muted)" }}>#{o.order_id}</td>
+                        <td style={{ padding: "10px 8px" }}>{o.plan_id}</td>
+                        <td style={{ padding: "10px 8px" }}>{o.amount_usdt.toFixed(2)} USDT</td>
+                        <td style={{ padding: "10px 8px", textTransform: "uppercase" }}>{o.network}</td>
+                        <td style={{ padding: "10px 8px" }}>
+                          <span style={{ color: o.status === "confirmed" ? "var(--accent)" : o.status === "failed" ? "var(--danger)" : "var(--warning)" }}>
+                            {ORDER_STATUS_LABEL[o.status] || o.status}
+                            {o.tx_hash ? ` · ${o.confirmations}/${o.required}` : ""}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 8px", color: "var(--muted)", whiteSpace: "nowrap" }}>{o.created_at?.replace("T", " ").slice(0, 16) || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast 栈 */}
       <div className="toast-stack">

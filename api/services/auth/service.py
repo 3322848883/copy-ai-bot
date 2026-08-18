@@ -18,6 +18,17 @@ from api.services.settings import service as settings_svc
 _email_codes: dict[str, dict] = {}
 
 _VERIFY_CODE_KEY = "verify_code:{email}"
+_RESET_CODE_KEY = "reset_code:{email}"
+
+
+def _code_key(email: str, purpose: str = "verify") -> str:
+    """验证码 Redis key：按用途隔离（verify=注册/登录，reset=重置密码）。"""
+    return _RESET_CODE_KEY.format(email=email) if purpose == "reset" else _VERIFY_CODE_KEY.format(email=email)
+
+
+def _code_memkey(email: str, purpose: str = "verify") -> str:
+    """内存兜底验证码 key（Redis 不可用时的单实例降级）。"""
+    return f"{purpose}:{email}"
 
 
 def _code_ttl_min() -> int:

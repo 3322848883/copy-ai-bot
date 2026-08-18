@@ -164,6 +164,7 @@ async def main():
             ("trc20", "TQmqKjv7wv9kYp5qU2N5Jh8Z3sL7hX5wJw", "dev TRC-20 收款地址"),
             ("bep20", "0x1111111111111111111111111111111111111111", "dev BEP-20 收款地址"),
             ("erc20", "0x2222222222222222222222222222222222222222", "dev ERC-20 收款地址"),
+            ("aptos", "0x417ec5499355c8bb34870a850de2fd13f9056fa2a336a72c00a8cca1dacd872b", "dev APTOS 收款地址"),
         ]
         for net, addr, remark in mock_addrs:
             db.add(PlatformAddress(network=net, address=addr, status="active", remark=remark, updated_by=10004))

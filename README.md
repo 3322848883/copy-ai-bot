@@ -12,7 +12,7 @@
 | 前台 | 策略广场 / 策略详情 | 带单员画像、收益曲线（SVG）、持仓与订单、一键创建跟单 |
 | 前台 | 我的跟单 | 机器人列表、统计条、修改配置（比例/杠杆/模式）、删除（双重确认）、暂停/恢复 |
 | 前台 | 邀请中心 / 奖励 | 邀请链接、海报生成、奖励明细（状态筛选 + 分页）、24h 倒计时 |
-| 前台 | 提现 | 申请表单（TRC-20/BEP-20 地址正则校验）、记录列表、状态流转 |
+| 前台 | 提现 | 申请表单（TRC-20/BEP-20/ERC-20/APTOS 地址正则校验）、记录列表、状态流转 |
 | 前台 | 个人中心 | API Key 绑定/解绑、好友邀请码绑定、交易所选择 |
 | 前台 | 订阅 | 试用（5U 仅 1 次）/ 正式（19.9U）套餐、多链 USDT 支付、自动核实 |
 | 后台 | 12 模块 | 用户/信号源/跟单订单/主号下级审核/钱包账本/邀请奖励/支付订单/提现审核/风控/审计日志/交易所邀请码/信号会话 |
@@ -169,5 +169,6 @@ CI（GitHub Actions `.github/workflows/ci.yml`）：push/PR 到 main 自动跑 r
 - 开发计划：`2026-08-12-signal-saas-v1-development-plan.md`
 - 需求覆盖核对：`2026-08-12-signal-saas-requirements-coverage-check.md`
 - 差异分析与验收：`2026-08-12-signal-saas-design-gap-analysis.md`
+- 支付板块收尾（四链支付 + SMTP 后台化 + 假按钮清理）：`2026-08-18-m4-payment-finalization.md`
 - 框架与 UI 成品：`2026-08-12-signal-saas-*-framework.md` / `*.html`（前台/后台全部页面高保真蓝本）
 - Gate POC 验证：`2026-08-12-gate-poc-verification-report.md`

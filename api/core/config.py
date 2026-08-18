@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     tron_rpc_url: str = "https://api.trongrid.io"
     bsc_rpc_url: str = "https://bsc-dataseed.binance.org"
     eth_rpc_url: str = "https://eth.llamarpc.com"
+    aptos_rpc_url: str = "https://fullnode.mainnet.aptoslabs.com/v1"
+    # APTOS 上的 USDT 资产类型（LayerZero/Bridge 桥接标准合约，6 位小数）
+    aptos_usdt: str = "0xf22bede237a07e121b56d91a491eb7bcdfd1f5907926a9e58338f964a01b17fa::asset::USDT"
 
     # ── 邮件（SMTP）──
     smtp_host: str = "localhost"

@@ -10,11 +10,13 @@ type Rules = Record<string, Val>;
 type Plan = { plan_id: string; name: string; price_usdt: number; duration_days: number; trial: boolean; max_purchase: number | null; enabled: boolean };
 type Template = { key: string; subject: string; html: string };
 
-const RULE_META: Record<string, { label: string; unit: string; bool?: boolean }> = {
+type RULE_META = { label: string; unit: string; bool?: boolean; str?: boolean; secret?: boolean };
+
+const RULE_META: Record<string, RULE_META> = {
   verify_code_enabled: { label: "注册邮箱验证码", unit: "", bool: true },
   verify_code_ttl_min: { label: "验证码有效期", unit: "min" },
   verify_code_max_attempts: { label: "最大错误尝试", unit: "次" },
-  verify_code_dev_code: { label: "dev 固定验证码", unit: "" },
+  verify_code_dev_code: { label: "dev 固定验证码", unit: "", str: true },
   verify_code_length: { label: "验证码位数", unit: "位" },
   referral_reward_pct: { label: "邀请奖励比例", unit: "%" },
   referral_verify_hours: { label: "邀请核实期", unit: "h" },
@@ -23,8 +25,14 @@ const RULE_META: Record<string, { label: string; unit: string; bool?: boolean }>
   chain_confirm_trc20: { label: "TRC-20 确认数", unit: "块" },
   chain_confirm_bep20: { label: "BEP-20 确认数", unit: "块" },
   chain_confirm_erc20: { label: "ERC-20 确认数", unit: "块" },
+  chain_confirm_aptos: { label: "APTOS 确认数", unit: "块" },
   payment_order_ttl_min: { label: "支付订单倒计时", unit: "min" },
   mail_enabled: { label: "邮件发送", unit: "", bool: true },
+  smtp_host: { label: "SMTP 主机", unit: "", str: true },
+  smtp_port: { label: "SMTP 端口", unit: "" },
+  smtp_user: { label: "SMTP 账号", unit: "", str: true },
+  smtp_password: { label: "SMTP 密码", unit: "", str: true, secret: true },
+  mail_from: { label: "发件人地址", unit: "", str: true },
 };
 
 const GROUP_ORDER = ["验证码", "邀请奖励", "链上确认", "支付订单", "邮件"];
@@ -86,6 +94,17 @@ export default function AdminSettingsPage() {
     if (!editKey) return;
     const meta = RULE_META[editKey];
     if (meta?.bool) return;
+    if (meta?.str) {
+      // 文本/机密字段：机密留空或占位则不发（保留原值）
+      if (meta.secret && (editVal === "" || editVal === "********")) {
+        toast("success", "密码留空，已保留原值");
+        setEditKey(null);
+        return;
+      }
+      saveRule(editKey, editVal);
+      setEditKey(null);
+      return;
+    }
     const n = Number(editVal);
     if (Number.isNaN(n)) {
       toast("error", "请输入数字");
@@ -171,7 +190,7 @@ export default function AdminSettingsPage() {
             <div className="param-card" key={group}>
               <div className="param-name">{group === "验证码" ? "注册邮箱验证码" : group === "邀请奖励" ? "邀请奖励" : group === "支付订单" ? "支付订单" : group === "邮件" ? "邮件" : "链上确认数"}</div>
               <div className="param-desc">
-                {group === "验证码" ? "注册/登录邮箱验证码开关与参数" : group === "邀请奖励" ? "返佣比例与核实期（G11）" : group === "支付订单" ? "支付订单待支付倒计时" : group === "邮件" ? "邮件发送总开关（验证码/订阅提醒）" : "支付按网络所需确认数（G09）"}
+                {group === "验证码" ? "注册/登录邮箱验证码开关与参数" : group === "邀请奖励" ? "返佣比例与核实期（G11）" : group === "支付订单" ? "支付订单待支付倒计时" : group === "邮件" ? "邮件总开关 + SMTP 服务器参数（凭密码留空保存保留原值）" : "支付按网络所需确认数（G09）"}
               </div>
               {keys.map((key) => {
                 const meta = RULE_META[key];
@@ -262,8 +281,20 @@ export default function AdminSettingsPage() {
               <button className="modal-close" onClick={() => setEditKey(null)}>✕</button>
             </div>
             <div className="field">
-              <label className="field-label">数值{RULE_META[editKey]?.unit ? `（${RULE_META[editKey].unit}）` : ""}</label>
-              <input className="input" type="number" value={editVal} onChange={(e) => setEditVal(e.target.value)} onKeyDown={(e) => e.key === "Enter" && confirmEdit()} />
+              <label className="field-label">数值{RULE_META[editKey]?.unit ? `（${RULE_META[editKey].unit}）` : ""}{RULE_META[editKey]?.secret ? "（留空保留原值）" : ""}</label>
+              {RULE_META[editKey]?.str ? (
+                <input
+                  className="input"
+                  type={RULE_META[editKey]?.secret ? "password" : "text"}
+                  value={editVal}
+                  onChange={(e) => setEditVal(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && confirmEdit()}
+                  placeholder={RULE_META[editKey]?.secret ? "留空保留原密码" : ""}
+                  autoComplete="off"
+                />
+              ) : (
+                <input className="input" type="number" value={editVal} onChange={(e) => setEditVal(e.target.value)} onKeyDown={(e) => e.key === "Enter" && confirmEdit()} />
+              )}
             </div>
             <div className="modal-btn-row">
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setEditKey(null)}>取消</button>
@@ -355,7 +386,7 @@ function groupOf(key: string): string {
   if (key.startsWith("verify_code")) return "验证码";
   if (key.startsWith("referral")) return "邀请奖励";
   if (key.startsWith("payment_order")) return "支付订单";
-  if (key.startsWith("mail")) return "邮件";
+  if (key.startsWith("mail") || key.startsWith("smtp")) return "邮件";
   return "链上确认";
 }
 

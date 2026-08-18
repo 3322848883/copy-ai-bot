@@ -22,8 +22,9 @@ const NETWORKS = [
   { key: "trc20", label: "TRC-20", note: "Tron · 到账快", placeholder: "TX…（TRC-20）", regex: /^T[1-9A-HJ-NP-Za-km-z]{33}$/ },
   { key: "bep20", label: "BEP-20", note: "BNB Chain", placeholder: "0x…（BEP-20）", regex: /^0x[a-fA-F0-9]{40}$/ },
   { key: "erc20", label: "ERC-20", note: "Ethereum · 需 Gas", placeholder: "0x…（ERC-20）", regex: /^0x[a-fA-F0-9]{40}$/ },
+  { key: "aptos", label: "APTOS", note: "Aptos · 快", placeholder: "0x…（APTOS）", regex: /^0x[a-fA-F0-9]{1,64}$/ },
 ];
-const NET_LABEL: Record<string, string> = { trc20: "TRC-20", bep20: "BEP-20", erc20: "ERC-20" };
+const NET_LABEL: Record<string, string> = { trc20: "TRC-20", bep20: "BEP-20", erc20: "ERC-20", aptos: "APTOS" };
 const WD_STATUS: Record<string, { label: string; cls: string }> = {
   pending_review: { label: "审核中", cls: "badge-info" },
   approved: { label: "已通过待打款", cls: "badge-info" },
@@ -181,7 +182,7 @@ export default function WithdrawPage() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12 }}>
               <label className="label">网络</label>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12 }}>
                 {NETWORKS.map((n) => (
                   <div
                     key={n.key}

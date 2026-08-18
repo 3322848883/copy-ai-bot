@@ -27,8 +27,9 @@ services:
       DEBUG: "false"
       JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
       VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
-      # 本地生产测试：CORS 用占位值通过 prod 校验（同源反代/脚本直连不触发 CORS）
-      CORS_ORIGINS: https://placeholder.invalid
+      # 本地生产测试：显式放行本地 web/web-admin 跨源（prod 默认拒绝 localhost，需 CORS_ALLOW_LOCAL_TEST=1）
+      CORS_ALLOW_LOCAL_TEST: "1"
+      CORS_ORIGINS: http://localhost:3002,http://127.0.0.1:3002,http://localhost:3001,http://127.0.0.1:3001
       # SMTP 指向 mailhog 别名（config prod 拒绝 localhost/mailhog，用别名绕过）
       SMTP_HOST: smtp-capture
       SMTP_PORT: "1025"

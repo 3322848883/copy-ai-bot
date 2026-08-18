@@ -41,8 +41,8 @@ class PaymentService:
         billing = BillingService(self.db)
         plan = billing.get_plan(plan_id)
         await billing.can_purchase(user_id, plan_id)
-        if network not in ("trc20", "bep20", "erc20"):
-            raise ValidationError("network 必须为 trc20 / bep20 / erc20")
+        if network not in ("trc20", "bep20", "erc20", "aptos"):
+            raise ValidationError("network 必须为 trc20 / bep20 / erc20 / aptos")
 
         order = PaymentOrder(
             user_id=user_id,

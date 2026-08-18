@@ -48,14 +48,20 @@ class Mailer:
         await self._send_smtp(email, subject, html)
 
     async def _send_smtp(self, to: str, subject: str, html: str) -> None:
-        settings = get_settings()
+        # SMTP 参数后台可配（「系统设置→邮件」），未覆盖时沿 .env 默认值
+        host = settings_svc.get_rule("smtp_host") or ""
+        port = int(settings_svc.get_rule("smtp_port") or 0)
+        user = settings_svc.get_rule("smtp_user") or ""
+        password = settings_svc.get_rule("smtp_password") or ""
+        mail_from = settings_svc.get_rule("mail_from") or ""
+
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = settings.mail_from
+        msg["From"] = mail_from
         msg["To"] = to
         msg.attach(MIMEText(html, "html", "utf-8"))
 
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as server:
-            if settings.smtp_user:
-                server.login(settings.smtp_user, settings.smtp_password or "")
-            server.sendmail(settings.mail_from, [to], msg.as_string())
+        with smtplib.SMTP(host, port, timeout=10) as server:
+            if user:
+                server.login(user, password)
+            server.sendmail(mail_from, [to], msg.as_string())

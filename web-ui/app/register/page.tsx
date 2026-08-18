@@ -153,13 +153,6 @@ function RegisterForm() {
     }
   }
 
-  /** 重发验证码：后端无独立 resend 端点（重复 register 会报"邮箱已注册"），仅重置 30s 倒计时 */
-  function onResend() {
-    if (countdown > 0) return;
-    startCountdown();
-    push("info", "验证码已重新发送（5 分钟有效，dev 环境固定 123456）");
-  }
-
   /** 步骤 3：勾选风险揭示后进入首次引导（尽力同步后端风险确认状态） */
   async function onEnterOnboarding() {
     if (!riskChecked) {
@@ -403,13 +396,10 @@ function RegisterForm() {
                         onChange={(e) => setCode(e.target.value)}
                         placeholder="000000"
                       />
-                      <button className="btn btn-secondary" type="button" style={S.sendBtn} disabled={countdown > 0 || loading} onClick={onResend}>
-                        {countdown > 0 ? `${countdown}s 后重发` : "重新发送"}
-                      </button>
                     </div>
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                    开发环境固定验证码：<strong style={{ color: "var(--accent)" }}>123456</strong>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                      验证码通过注册发送；未收到请联系管理员。开发环境固定验证码：<strong style={{ color: "var(--accent)" }}>123456</strong>
+                    </div>
                   </div>
                   <button className="btn btn-primary" type="submit" disabled={loading} style={S.btnPrimary48}>
                     {loading ? "验证中…" : "验证并注册"}

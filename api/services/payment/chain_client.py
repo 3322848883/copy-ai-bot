@@ -9,13 +9,14 @@ from api.core.config import get_settings
 logger = logging.getLogger("signal-saas.chain")
 
 # 各链确认阈值（设计蓝本 T4.4；ERC-20 提升至 32 对齐行业标准）
-REQUIRED_CONFIRMATIONS: dict[str, int] = {"trc20": 12, "bep20": 15, "erc20": 32}
+REQUIRED_CONFIRMATIONS: dict[str, int] = {"trc20": 12, "bep20": 15, "erc20": 32, "aptos": 20}
 
-# USDT 合约地址（TRC-20 / BEP-20 / ERC-20）
+# USDT 合约地址（TRC-20 / BEP-20 / ERC-20 / APTOS 资产类型）
 USDT_CONTRACT: dict[str, str] = {
     "trc20": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
     "bep20": "0x55d398326f99059fF775485246999027B3197955",
     "erc20": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "aptos": "0xf22bede237a07e121b56d91a491eb7bcdfd1f5907926a9e58338f964a01b17fa::asset::USDT",
 }
 
 # ERC-20 ABI（仅 decimals + Transfer 事件）
@@ -204,12 +205,91 @@ class EthClient(EvmClient):
     network = "erc20"
 
 
+class AptosClient(ChainClient):
+    """APTOS 网络 USDT。生产：Aptos fullnode REST API（无 EVM 概念，
+    交易 version 即链上序号，用 ledger_version 计算确认数）。
+
+    APTOS 上没有类似 EVM 的 Transfer 事件；USDT 桥接资产走 coin module，
+    入账表现为发往收款地址的 `0x1::coin::DepositEvent<USDT>`，事件 guid 的
+    account_address 即收款方。
+    """
+
+    network = "aptos"
+
+    async def _get_tx(self, tx_hash: str) -> dict:
+        import httpx
+
+        url = f"{get_settings().aptos_rpc_url}/transactions/by_hash/{tx_hash}"
+        async with httpx.AsyncClient(timeout=_RPC_TIMEOUT) as c:
+            r = await c.get(url)
+            r.raise_for_status()
+        return r.json()
+
+    async def _get_ledger_version(self) -> int:
+        import httpx
+
+        url = get_settings().aptos_rpc_url.rstrip("/") + "/"
+        async with httpx.AsyncClient(timeout=_RPC_TIMEOUT) as c:
+            r = await c.get(url)
+            r.raise_for_status()
+        return int(r.json().get("ledger_version") or 0)
+
+    async def get_confirmations(self, tx_hash: str) -> tuple[bool, int, dict]:
+        """错误三态语义同 TronClient（unconfirmed / network_error / failed）。"""
+        if get_settings().app_env == "dev":
+            return await MockChainClient().get_confirmations(tx_hash)
+        try:
+            import httpx
+
+            tx = await self._get_tx(tx_hash)
+            if tx.get("type") == "pending_transaction" or tx.get("version") is None:  # 未上链
+                return False, 0, {"error": "unconfirmed"}
+            if tx.get("success") is False:
+                return False, 0, {"error": "failed"}
+            version = int(tx["version"])
+            ledger = await self._get_ledger_version()
+            confirmations = max(ledger - version + 1, 0)
+            return True, confirmations, {}
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:  # 交易不存在 → 未上链，继续轮询
+                return False, 0, {"error": "unconfirmed"}
+            logger.warning("aptos get_confirmations http error: %s", exc)
+            return False, 0, {"error": "network_error", "detail": str(exc)}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("aptos get_confirmations failed: %s", exc)
+            return False, 0, {"error": "network_error", "detail": str(exc)}
+
+    async def validate_tx(self, tx_hash: str, expected_to: str, expected_value_usdt: float) -> tuple[bool, str]:
+        if get_settings().app_env == "dev":
+            return True, ""
+        try:
+            tx = await self._get_tx(tx_hash)
+            if tx.get("success") is not True:
+                return False, "tx not success"
+            usdt = get_settings().aptos_usdt
+            coin_module = usdt.split("::")[0]  # 资产合约地址段，用于过滤是否是 USDT 类事件
+            for ev in tx.get("events") or []:
+                etype = ev.get("type") or ""
+                if "coin::DepositEvent" not in etype or coin_module not in etype:
+                    continue
+                recv = (ev.get("guid") or {}).get("account_address") or ""
+                amount = int(ev.get("data") or {}).get("amount") or 0
+                val_usdt = amount / 10**6
+                if str(recv).lower() == str(expected_to).lower() and val_usdt >= expected_value_usdt:
+                    return True, ""
+            return False, "no usdt deposit event to target"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("aptos validate_tx failed: %s", exc)
+            return False, str(exc)
+
+
 def get_chain_client(network: str) -> ChainClient:
     """按网络返回客户端（dev mock / 生产真实 RPC）。"""
     mapping: dict[str, ChainClient] = {
         "trc20": TronClient(),
         "bep20": BscClient(),
         "erc20": EthClient(),
+        "aptos": AptosClient(),
     }
     try:
         return mapping[network]

@@ -18,6 +18,8 @@ logger = logging.getLogger("signal-saas.withdrawal")
 # ★ G13：最低提现门槛（后台可配，默认 10U）+ 1U 手续费
 TRC20_RE = re.compile(r"^T[1-9A-HJ-NP-Za-km-z]{33}$")
 BEP20_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
+# APTOS：32 字节地址，canonical 形式 0x + 变长 hex（去前导 0），范围 1~64 位
+APTOS_RE = re.compile(r"^0x[a-fA-F0-9]{1,64}$")
 
 
 class WithdrawalService:
@@ -100,6 +102,8 @@ class WithdrawalService:
             return bool(BEP20_RE.match(address))
         if network == "erc20":
             return bool(BEP20_RE.match(address))
+        if network == "aptos":
+            return bool(APTOS_RE.match(address))
         return False
 
     # ── 审核 5 动作 ──

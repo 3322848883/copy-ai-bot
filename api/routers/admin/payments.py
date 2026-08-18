@@ -32,14 +32,19 @@ class AddressPatchIn(BaseModel):
 # ── 地址格式校验 ──
 _TRC20_RE = re.compile(r"^T[1-9A-HJ-NP-Za-km-z]{33}$")
 _EVM_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+# APTOS：32 字节地址，canonical 形式 0x + 变长 hex（去前导 0），范围 1~64 位
+_APTOS_RE = re.compile(r"^0x[0-9a-fA-F]{1,64}$")
 
 
 def _validate_address(network: str, address: str) -> None:
-    if network not in ("trc20", "bep20", "erc20"):
-        raise ValidationError("network 必须为 trc20 / bep20 / erc20")
+    if network not in ("trc20", "bep20", "erc20", "aptos"):
+        raise ValidationError("network 必须为 trc20 / bep20 / erc20 / aptos")
     if network == "trc20":
         if not _TRC20_RE.match(address):
             raise ValidationError("TRC-20 地址必须为 T 开头 34 位 Base58")
+    elif network == "aptos":
+        if not _APTOS_RE.match(address):
+            raise ValidationError("APTOS 地址必须为 0x + 1~64 位 hex")
     else:
         if not _EVM_RE.match(address):
             raise ValidationError("BEP-20/ERC-20 地址必须为 0x + 40 位 hex")

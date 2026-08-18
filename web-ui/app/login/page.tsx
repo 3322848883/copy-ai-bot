@@ -29,7 +29,6 @@ function LoginForm() {
   /** 卡片内视图：login（登录）| forgot（忘记密码，提示型入口） */
   const [view, setView] = useState<"login" | "forgot">("login");
   const [tab, setTab] = useState<"login" | "register">("login");
-  const [forgotEmail, setForgotEmail] = useState("");
   const { toasts, push } = useToasts();
 
   /** 响应式：<900px 隐藏品牌区、卡片单列（设计稿 @media max-width:900px） */
@@ -88,16 +87,6 @@ function LoginForm() {
     } catch {
       redirectAfterLogin();
     }
-  }
-
-  /** ★ 忘记密码：后端 api/routers/v1/auth.py 无 forgot/reset 端点 → 提示型入口（联系管理员重置）。 */
-  function onForgotSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!forgotEmail.trim()) {
-      push("warn", "请输入邮箱");
-      return;
-    }
-    push("warn", "自助密码重置暂未开放（后端无 forgot/reset 接口），请联系管理员重置密码");
   }
 
   return (
@@ -182,56 +171,18 @@ function LoginForm() {
                   {loading ? "登录中…" : "登 录"}
                 </button>
               </form>
-              <div style={S.divider}>
-                <span style={S.dividerLine} />
-                或
-                <span style={S.dividerLine} />
-              </div>
-              <button className="btn btn-secondary" type="button" style={S.btnSecondary48} onClick={() => push("info", "V1 暂不支持验证码登录，请使用密码登录或注册")}>
-                使用邮箱验证码登录
-              </button>
               <div style={S.authFoot}>
                 没有账号？ <Link href="/register" style={S.link}>立即注册</Link>
               </div>
             </div>
           ) : (
-            /* ★ 忘记密码视图（3 步指示器；后端无接口 → 提示型入口：联系管理员重置） */
+            /* ★ 忘记密码视图（后端无 forgot/reset 接口 → 仅告知联系管理员，不再提供假的"发送验证码"流程） */
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={S.subTitle}>重置密码</div>
-              <div style={S.steps}>
-                <div style={{ ...S.stepItem, ...S.stepActiveColor }}>
-                  <span style={{ ...S.stepNum, ...S.stepActiveNum }}>1</span>邮箱
-                </div>
-                <div style={S.stepLine} />
-                <div style={S.stepItem}>
-                  <span style={S.stepNum}>2</span>新密码
-                </div>
-                <div style={S.stepLine} />
-                <div style={S.stepItem}>
-                  <span style={S.stepNum}>3</span>完成
-                </div>
+              <div style={S.subTitle}>忘记密码</div>
+              <div style={S.riskBox}>
+                <span>⚠</span>
+                <span>自助密码重置暂未开放（后端暂无 forgot/reset 接口）。如需重置密码，请直接联系管理员处理。</span>
               </div>
-              <form onSubmit={onForgotSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={S.field}>
-                  <label style={S.fieldLabel}>邮箱</label>
-                  <input
-                    className="input"
-                    style={{ ...S.input48, ...S.inputMono }}
-                    type="email"
-                    required
-                    value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    placeholder="you@example.com"
-                  />
-                </div>
-                <div style={S.riskBox}>
-                  <span>⚠</span>
-                  <span>自助密码重置暂未开放（后端暂无 forgot/reset 接口）。如需重置密码，请联系管理员处理。</span>
-                </div>
-                <button className="btn btn-primary" type="submit" style={S.btnPrimary48}>
-                  发送验证码
-                </button>
-              </form>
               <div style={S.authFoot}>
                 <a style={S.link} onClick={() => setView("login")}>← 返回登录</a>
               </div>

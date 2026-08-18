@@ -13,8 +13,8 @@ router = APIRouter(prefix="/withdrawals", tags=["withdrawals"])
 
 
 class WithdrawIn(BaseModel):
-    network: Literal["trc20", "bep20", "erc20"]
-    address: str = Field(min_length=20, max_length=64)
+    network: Literal["trc20", "bep20", "erc20", "aptos"]
+    address: str = Field(min_length=3, max_length=128)
     amount_usdt: float = Field(gt=0)
 
 

@@ -50,10 +50,12 @@ async def set_rule(body: RuleIn, db: DbDep = None, admin=Depends(require_admin))
     if meta is None:
         raise ValidationError(f"未知设置项: {body.key}")
     settings_svc.set_rule(body.key, body.value)
+    # 审计不落明文凭据（密钥型设置项）。
+    audit_val = "********" if "password" in body.key.lower() else body.value
     await AuditService(db).log(
         actor_id=admin["id"], action="settings.rule_update",
         target_type="setting", target_id=body.key,
-        before={"value": settings_svc.get_rule(body.key)}, after={"value": body.value},
+        before={"value": audit_val}, after={"value": audit_val},
     )
     return {"key": body.key, "value": body.value}
 

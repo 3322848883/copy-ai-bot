@@ -6,6 +6,22 @@ import json
 
 from api.core.config import get_settings
 
+
+def _smtp_defaults() -> dict:
+    """SMTP 规则兜底默认值 = 当前环境变量配置（后台未覆盖时沿用 .env）。"""
+    s = get_settings()
+    return {
+        "smtp_host": s.smtp_host,
+        "smtp_port": s.smtp_port,
+        "smtp_user": s.smtp_user or "",
+        "smtp_password": s.smtp_password or "",
+        "mail_from": s.mail_from,
+    }
+
+
+_SMTP_DEFAULTS = _smtp_defaults()
+
+
 # ── 平台参数定义（与 admin/risk 的 RISK_RULES 同模式，默认值兜底）──
 PLATFORM_RULES: dict[str, dict] = {
     # 验证码（注册邮箱验证码）
@@ -23,11 +39,21 @@ PLATFORM_RULES: dict[str, dict] = {
     "chain_confirm_trc20": {"default": 12, "label": "TRC-20 确认数", "unit": "块", "group": "链上确认"},
     "chain_confirm_bep20": {"default": 15, "label": "BEP-20 确认数", "unit": "块", "group": "链上确认"},
     "chain_confirm_erc20": {"default": 32, "label": "ERC-20 确认数", "unit": "块", "group": "链上确认"},
+    "chain_confirm_aptos": {"default": 20, "label": "APTOS 确认数", "unit": "块", "group": "链上确认"},
     # 支付订单
     "payment_order_ttl_min": {"default": 30, "label": "支付订单倒计时", "unit": "min", "group": "支付订单"},
     # 邮件
     "mail_enabled": {"default": True, "label": "邮件发送", "unit": "", "group": "邮件", "bool": True},
+    "smtp_host": {"default": _SMTP_DEFAULTS["smtp_host"], "label": "SMTP 主机", "unit": "", "group": "邮件", "str": True},
+    "smtp_port": {"default": _SMTP_DEFAULTS["smtp_port"], "label": "SMTP 端口", "unit": "", "group": "邮件"},
+    "smtp_user": {"default": _SMTP_DEFAULTS["smtp_user"], "label": "SMTP 账号", "unit": "", "group": "邮件", "str": True},
+    "smtp_password": {"default": _SMTP_DEFAULTS["smtp_password"], "label": "SMTP 密码", "unit": "", "group": "邮件", "str": True, "secret": True},
+    "mail_from": {"default": _SMTP_DEFAULTS["mail_from"], "label": "发件人地址", "unit": "", "group": "邮件", "str": True},
 }
+
+# 密钥型规则：读取回显脱敏（用占位掩码），留空 / 占位符保存时保留原值
+_SECRET_KEYS: frozenset[str] = frozenset({"smtp_password"})
+_SECRET_MASK = "********"
 
 # 邮件模板（可后台编辑，Redis 覆盖默认值）
 TEMPLATE_SUBJECTS: dict[str, str] = {
@@ -122,15 +148,15 @@ def get_rule(key: str):
 
 
 def set_rule(key: str, value) -> None:
-    """写入平台参数。"""
+    """写入平台参数。密钥型规则留空 / 占位掩码时不覆盖（保留原值）。"""
     meta = PLATFORM_RULES.get(key)
     if meta is None:
         raise ValueError(f"未知设置项: {key}")
+    if key in _SECRET_KEYS and (value in (None, "") or str(value) == _SECRET_MASK):
+        return
     r = _redis()
     if meta.get("bool"):
         r.set(f"sys:setting:{key}", "1" if value else "0")
-    elif meta.get("str"):
-        r.set(f"sys:setting:{key}", str(value))
     else:
         r.set(f"sys:setting:{key}", str(value))
 
@@ -138,7 +164,11 @@ def set_rule(key: str, value) -> None:
 def get_all_rules() -> dict:
     out = {}
     for key in PLATFORM_RULES:
-        out[key] = get_rule(key)
+        val = get_rule(key)
+        if key in _SECRET_KEYS:
+            out[key] = _SECRET_MASK if val else ""
+        else:
+            out[key] = val
     return out
 
 
@@ -203,6 +233,7 @@ def get_chain_confirmations() -> dict[str, int]:
         "trc20": int(get_rule("chain_confirm_trc20")),
         "bep20": int(get_rule("chain_confirm_bep20")),
         "erc20": int(get_rule("chain_confirm_erc20")),
+        "aptos": int(get_rule("chain_confirm_aptos")),
     }
 
 

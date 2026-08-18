@@ -377,12 +377,9 @@ export default function AccountPage() {
                         <span style={{ fontFamily: "var(--font-geist-mono), monospace" }}>实时已校验</span>
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
-                        <button className="btn btn-secondary" style={{ flex: 1, padding: "6px 12px", fontSize: 12, height: 32 }} onClick={() => showToast("success", "已重新校验 API（实时连通性 + 权限）")}>
-                          重新校验
-                        </button>
                         <button
                           className="btn btn-secondary"
-                          style={{ padding: "6px 12px", fontSize: 12, height: 32, color: "var(--danger)", borderColor: "rgba(239,68,68,0.4)" }}
+                          style={{ flex: 1, padding: "6px 12px", fontSize: 12, height: 32, color: "var(--danger)", borderColor: "rgba(239,68,68,0.4)" }}
                           disabled={unbinding === k.exchange}
                           onClick={() => onUnbindApi(k.exchange)}
                         >
