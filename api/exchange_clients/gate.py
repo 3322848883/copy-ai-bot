@@ -74,13 +74,14 @@ class GateAdapter(ExchangeAdapter):
     async def set_margin_mode(self, symbol: str, mode: str, leverage: int, api_key: str, api_secret: str) -> None:
         """★ G07：下单前必须调用（isolated / cross）。
         Gate.io 期货以杠杆值区分保证金模式：leverage=0 → 全仓(cross)，>0 → 逐仓(isolated)。
+        ★ leverage 是 query 参数（body 传会 MISSING_REQUIRED_PARAM，与 set_leverage 同）。
         """
         if not self.mock:
             lev = 0 if mode == "cross" else (leverage if leverage and leverage > 0 else 1)
             await self._signed_post(
                 f"/futures/usdt/positions/{self._gate_symbol(symbol)}/leverage",
                 api_key, api_secret,
-                payload={"leverage": lev},
+                query=f"leverage={lev}",
             )
         logger.info("set_margin_mode(%s, %s, lev=%s)", symbol, mode, leverage)
 
@@ -110,15 +111,19 @@ class GateAdapter(ExchangeAdapter):
             "contract": self._gate_symbol(symbol),
             "size": qty if side == "buy" else -qty,
             "price": str(price) if price else "0",
-            "tif": "ioc" if price else "post_only",
+            # ★ TIF：price="0" 是市价单，Gate 要求市价必须 IOC/FOC（POC 报
+            #   "market order without IOC or FOK"）；带限价也用 IOC 滑点保护。
+            "tif": "ioc",
             "reduce_only": reduce_only,
         }
         data = await self._signed_post("/futures/usdt/orders", api_key, api_secret, payload)
+        # ★ 市价单 price="0"，实际成交价在 fill_price；快照入场价取错会记 0
+        avg_price = float(data.get("fill_price") or data.get("price") or 0)
         return OrderResult(
             order_id=str(data.get("id", "")),
             status="filled" if data.get("status") == "finished" else str(data.get("status", "rejected")),
             filled_qty=float(data.get("size", 0)),
-            avg_price=float(data.get("price", 0)),
+            avg_price=avg_price,
             raw=data,
         )
 
@@ -126,6 +131,9 @@ class GateAdapter(ExchangeAdapter):
         if self.mock:
             return {"symbol": symbol, "size": 0.5, "entry_price": 96000.0, "mark_price": 96500.0, "unrealised_pnl": 250.0}
         data = await self._signed_get(f"/futures/usdt/positions/{self._gate_symbol(symbol)}", api_key, api_secret)
+        # ★ Gate 单持仓接口返回 list（无仓位为 []），取首元素
+        if isinstance(data, list):
+            data = data[0] if data else None
         if not data or float(data.get("size", 0)) == 0:
             return None
         return data
@@ -191,7 +199,9 @@ class GateAdapter(ExchangeAdapter):
         async with httpx.AsyncClient(timeout=10) as client:
             # 用 content 发送与哈希完全一致的 body，避免 json= 二次序列化导致签名不匹配
             resp = await client.post(url, content=body, headers=headers)
-            if resp.status_code not in (200, 204):
+            # ★ 创建订单成功返回 201 Created（只认 200 会把已成交订单误判失败，
+            #   实际仓位已开但 copy_orders 记 failed、快照丢失）
+            if resp.status_code not in (200, 201, 204):
                 logger.error("gate POST %s failed: %s", path, resp.text)
                 return {}
             # 204 No Content / 空响应视为成功（如 set_leverage）

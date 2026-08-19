@@ -195,45 +195,18 @@ def _release_diff_lock(token: str) -> None:
 async def _poll_live_round(feed) -> int:
     """单轮轮询：查活跃机器人 → 按模式对每个带单员做持仓差分 → 产出信号。
 
-    ★ 模式路由：leader_id ∈ signal_follower_leader_ids → 模式2（跟单账户镜像，走 follower 差分）；
-       否则 → 模式1（公开广场，走 leader 差分）。二者互不混淆。
-    ★ 模式2 自动发现：已跟单交易员（含空仓的）由 fetch_followed_leaders 动态发现并入监控，
-       避免手动维护 signal_follower_leader_ids 漏掉新跟单交易员。
+    ★ 模式路由（_load_leader_modes）：Strategy.source='B'（跟单同步上架）→ 模式2 镜像差分；
+       'A'（公开广场）→ 模式1 公开差分。判定基于持久数据，会话抖动不再引起模式跳变。
+    ★ 模式2 自动发现由 sync_followed_leaders（600s）负责：新跟单 → source='B' → 下轮自动转模式2。
     """
-    from sqlalchemy import select
-
     from api.db.session import get_session_factory
-    from api.models.bot import CopyBot
-    from api.models.signal import Strategy, Trader
 
     factory = get_session_factory()
     total = 0
     async with factory() as db:
-        leader_ids = (
-            (
-                await db.execute(
-                    select(Trader.trader_id)
-                    .join(Strategy, Strategy.trader_id == Trader.id)
-                    .join(CopyBot, CopyBot.strategy_id == Strategy.id)
-                    .where(CopyBot.status == "active")
-                )
-            )
-            .scalars()
-            .all()
-        )
+        leader_ids, follower_ids = await _load_leader_modes(db)
         if not leader_ids:
             return 0
-        follower_ids = set(get_settings().signal_follower_leader_ids)
-        # ★ 模式2 自动发现：合并运行中已跟单交易员（含空仓），确保不漏跟单。
-        #   ★ 仅当配置为空时才每轮尝试（避免每秒调用登录会话接口）；配置非空时由
-        #     sync_followed_leaders(60s) 负责动态发现，这里不再重复高频调用。
-        if not follower_ids:
-            try:
-                discovered = await feed.scraper.fetch_followed_leaders()
-                if discovered:
-                    follower_ids |= {lid for lid, _nick in discovered}
-            except Exception as exc:  # noqa: BLE001 自动发现失败不阻断轮询
-                logger.warning("mode2 自动发现已跟单交易员失败: %s", exc)
         mode_a = [lid for lid in leader_ids if lid not in follower_ids]
         mode_f = [lid for lid in leader_ids if lid in follower_ids]
         # ★ 差分互斥：reconcile 正在强制对齐基线时本轮跳过（由对账兜底），避免同一事件双发
@@ -255,13 +228,47 @@ async def _poll_live_round(feed) -> int:
     return total
 
 
+async def _load_leader_modes(db) -> tuple[list[str], set[str]]:
+    """加载活跃机器人监控的带单员及其差分模式（poll 与 reconcile 共用）。
+
+    ★ 模式判定以 Strategy.source 为准（持久数据，sync_followed_leaders 维护）：
+      source='B' → 模式2 镜像差分；'A'（或未标记）→ 模式1 公开差分。
+      ★ 不再用 fetch_followed_leaders 瞬时结果决定模式——登录会话抖动会让同一带单员
+      在 A/B 间跳变，A/B 基线互相污染产出乒乓假信号（开4平2→开2平4 循环）。
+      自动发现仍由 sync_followed_leaders（600s）负责：发现新跟单 → ensure_followed_strategy
+      写 source='B' → 下一轮差分自动转模式2，判定永不抖动。
+    """
+    from sqlalchemy import select
+
+    from api.models.bot import CopyBot
+    from api.models.signal import Strategy, Trader
+
+    rows = (
+        await db.execute(
+            select(Trader.trader_id, Strategy.source)
+            .join(Strategy, Strategy.trader_id == Trader.id)
+            .join(CopyBot, CopyBot.strategy_id == Strategy.id)
+            .where(CopyBot.status == "active")
+        )
+    ).all()
+    configured = set(get_settings().signal_follower_leader_ids)
+    leaders: dict[str, str] = {}
+    for tid, src in rows:
+        mode = "B" if (src == "B" or tid in configured) else "A"
+        # 同一交易员多策略：任一 B 即 B（宁镜像勿公开，防基线污染）
+        if leaders.get(tid) != "B":
+            leaders[tid] = mode
+    follower_ids = {tid for tid, m in leaders.items() if m == "B"}
+    return list(leaders), follower_ids
+
+
 async def _handle_events(db, events_map: dict[str, list], follower_ids: set[str] | None = None) -> int:
     """把差分事件统一落库 + 交给 CopyEngine 执行（_poll_live_round 与 _reconcile_once 共用）。
 
     ★ source_mode 按 leader_id 归属判定：∈ follower_ids → "B"（模式2 跟单），
        否则 "A"（模式1 公开）；side 取事件真实方向（模式2 镜像 long/short）。
-    ★ follower_ids 必须由调用方传入（配置+自动发现的完整集合）：本函数自行读静态配置
-       会与调用方的"配置+发现"集合不一致，自动发现的跟单 leader 被错标为模式 A。
+    ★ follower_ids 必须由调用方传入（_load_leader_modes 的持久判定结果）：
+       自行读静态配置会与调用方集合不一致，跟单 leader 被错标为模式 A。
     ★ 统一标记 "A"/"B"：风控引擎与 SignalStore 的延迟红线按 "A"/"B" 判定，历史
        "F" 标记会绕过全部延迟红线（风控裸奔）。
     """
@@ -277,6 +284,7 @@ async def _handle_events(db, events_map: dict[str, list], follower_ids: set[str]
         if _is_test_symbol(ev.symbol):  # ★ 测试符号兜底过滤
             logger.info("poll_live: drop test symbol %s", ev.symbol)
             continue
+        is_mode_b = ev.trader_id in follower_ids
         sig = SourceSignal(
             exchange="gate",
             source_trader_id=ev.trader_id,
@@ -284,9 +292,12 @@ async def _handle_events(db, events_map: dict[str, list], follower_ids: set[str]
             side=ev.side,  # ★ 模式2 真实方向；模式1 默认 long
             leverage=1,
             qty=0.0,
-            percent=ev.percent,  # ★ 带单员持仓占比，供 CopyEngine qty 换算
+            # ★ 模式A：带单员持仓占比∈[0,1]，供 CopyEngine qty 换算。
+            #   模式B：ev.percent 是跟单镜像张数（如 30 张）非占比——传入会被
+            #   _effective_percent clamp 成 1.0（100% 全仓），必须置 None。
+            percent=(ev.percent if not is_mode_b else None),
             action=ev.action,
-            source_mode="B" if ev.trader_id in follower_ids else "A",
+            source_mode="B" if is_mode_b else "A",
             opened_at=ev.at,
             received_at=datetime.now(timezone.utc),
             dedupe_key=f"feed-{ev.trader_id}-{ev.symbol}-{ev.action}-{int(ev.at.timestamp())}",
@@ -313,11 +324,7 @@ def reconcile_signals() -> str:
 
 
 async def _reconcile_once() -> str:
-    from sqlalchemy import select
-
     from api.db.session import get_session_factory
-    from api.models.bot import CopyBot
-    from api.models.signal import Strategy, Trader
     from api.services.signalfeed.service import IncrementalFeedService
 
     factory = get_session_factory()
@@ -329,30 +336,9 @@ async def _reconcile_once() -> str:
     feed = IncrementalFeedService(scraper=scraper)
     try:
         async with factory() as db:
-            leader_ids = (
-                (
-                    await db.execute(
-                        select(Trader.trader_id)
-                        .join(Strategy, Strategy.trader_id == Trader.id)
-                        .join(CopyBot, CopyBot.strategy_id == Strategy.id)
-                        .where(CopyBot.status == "active")
-                    )
-                )
-                .scalars()
-                .all()
-            )
+            leader_ids, follower_ids = await _load_leader_modes(db)
             if not leader_ids:
                 return "no active bots"
-            follower_ids = set(get_settings().signal_follower_leader_ids)
-            # ★ 与 poll_live 保持同一集合口径：配置为空时自动发现已跟单交易员并入，
-            #   否则对账会把自动发现的跟单 leader 当作模式 A 差分/标记。
-            if not follower_ids:
-                try:
-                    discovered = await scraper.fetch_followed_leaders()
-                    if discovered:
-                        follower_ids |= {lid for lid, _nick in discovered}
-                except Exception as exc:  # noqa: BLE001 自动发现失败不阻断对账
-                    logger.warning("reconcile 自动发现已跟单交易员失败: %s", exc)
             mode_a = [lid for lid in leader_ids if lid not in follower_ids]
             mode_f = [lid for lid in leader_ids if lid in follower_ids]
             # ★ 差分互斥：poll_live 正在差分时跳过本轮（下个周期再来），避免同一事件双发

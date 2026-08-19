@@ -298,9 +298,124 @@ class StrategyService:
 
         data = self._strategy_dict(strategy, trader, profile_payload)
         data["profile_state"] = profile_state
-        data["positions"] = []  # M3 接入实时持仓
-        data["recent_orders"] = []  # M3 接入交易记录
+        positions, recent_orders = await self._signal_replay(trader)
+        data["positions"] = positions
+        data["recent_orders"] = recent_orders
         return data
+
+    async def _signal_replay(self, trader: Trader | None, limit: int = 50) -> tuple[list[dict], list[dict]]:
+        """按时间重放该带单员信号流：正序推算当前持仓，倒序取最近交易记录。
+
+        positions 优先读信号差分基线（gate:feed:state:A:{tid}，轮询每秒更新，占比真实新鲜）；
+        无基线（未被监控的策略）退回信号重放兜底。qty 为仓位占比（%）；占比缺失
+        （旧批量信号 percent=NULL）或语义不符（模式B percent 是镜像张数非占比）时为 None。
+        recent_orders：最近 limit 条信号事件（时间/币对/动作/方向/占比）。
+        """
+        if trader is None:
+            return [], []
+        from api.models.signal import SourceSignal
+
+        rows = (
+            await self.db.execute(
+                select(SourceSignal)
+                .where(SourceSignal.source_trader_id == trader.trader_id, SourceSignal.dropped == False)  # noqa: E712
+                .order_by(SourceSignal.received_at.asc(), SourceSignal.id.asc())
+                .limit(2000)
+            )
+        ).scalars().all()
+
+        def pct(s) -> float | None:
+            """信号占比 → 百分比；None/0/超界（模式B张数混入）→ None。"""
+            p = getattr(s, "percent", None)
+            try:
+                p = float(p) if p is not None else None
+            except (TypeError, ValueError):
+                return None
+            if p is None or p <= 0 or p > 1:
+                return None
+            return round(p * 100, 2)
+
+        baseline = await self._read_baseline(trader.trader_id)
+        if baseline:
+            positions = [
+                {
+                    "symbol": sym,
+                    "side": "long",
+                    "qty": round(v * 100, 2),
+                    "entry_price": None,
+                    "mark_price": None,
+                    "unrealized_pnl": None,
+                    "notional_usdt": None,
+                    "leverage": None,
+                    "margin_usdt": None,
+                    "opened_at": None,
+                }
+                for sym, v in sorted(baseline.items(), key=lambda kv: -kv[1])
+            ]
+        else:
+            held: dict[str, dict] = {}
+            for s in rows:
+                if s.action == "close":
+                    held.pop(s.symbol, None)
+                else:
+                    held[s.symbol] = {
+                        "symbol": s.symbol,
+                        "side": s.side or "long",
+                        "qty": pct(s),
+                        "entry_price": None,
+                        "mark_price": None,
+                        "unrealized_pnl": None,
+                        "notional_usdt": None,
+                        "leverage": None,
+                        "margin_usdt": None,
+                        "opened_at": s.received_at.isoformat() if s.received_at else None,
+                    }
+            positions = list(held.values())
+        recent_orders = [
+            {
+                "id": s.id,
+                "symbol": s.symbol,
+                "action": s.action,
+                "side": s.side,
+                "qty": pct(s),
+                "price": None,
+                "pnl": None,
+                "status": "filled",
+                "executed_at": s.received_at.isoformat() if s.received_at else None,
+            }
+            for s in reversed(rows[-limit:])
+        ]
+        return positions, recent_orders
+
+    @staticmethod
+    async def _read_baseline(trader_id: str, max_age_s: float = 300) -> dict[str, float] | None:
+        """读模式A差分基线快照 {symbol: 占比}（Redis 故障/无基线/过期返回 None，退回信号重放）。
+
+        ★ 新鲜度校验：轮询每秒更新基线 ts；带单员转入模式B（镜像差分）后 A 基线不再
+        更新、冻结在旧快照——直接采用会展示过时持仓，必须按 max_age_s 过滤。
+        """
+        import time as _time
+
+        try:
+            import redis.asyncio as aioredis
+
+            from api.core.config import get_settings
+
+            r = aioredis.from_url(get_settings().redis_url, decode_responses=True)
+            try:
+                raw = await r.get(f"gate:feed:state:A:{trader_id}")
+            finally:
+                await r.aclose()
+            if not raw:
+                return None
+            d = json.loads(raw)
+            ts = d.get("ts")
+            if ts is not None and (_time.time() - float(ts)) > max_age_s:
+                return None
+            pos = d.get("pos")
+            return pos if isinstance(pos, dict) and pos else None
+        except Exception:  # noqa: BLE001 基线缺失不阻断详情
+            return None
 
     # ── 收益曲线（M6 前端补全：基于每日画像快照 roi_all 生成净值曲线）──
     async def get_equity_curve(self, strategy_id: int) -> dict:
@@ -346,7 +461,7 @@ class StrategyService:
             "win_rate_all": p.win_rate_all if p else 0,
             "max_drawdown": p.max_drawdown if p else 0,
             "trading_days": p.trading_days if p else 0,
-            "followers": 0,
+            "followers": (t.followers if t.followers else 0),
         }
 
     def _strategy_dict(self, s: Strategy, t: Trader | None, p: TraderProfile | None) -> dict:
@@ -366,6 +481,7 @@ class StrategyService:
             "win_rate_all": p.win_rate_all if p else 0,
             "max_drawdown": p.max_drawdown if p else 0,
             "trading_days": p.trading_days if p else 0,
-            "followers": 0,
+            "followers": (t.followers if t and t.followers else 0),
+            "source": s.source,
             "trader_id_external": t.trader_id if t else None,
         }

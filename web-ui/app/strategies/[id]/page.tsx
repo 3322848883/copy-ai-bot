@@ -28,7 +28,7 @@ type Detail = {
 type Position = {
   symbol: string;
   side: string;
-  qty: number;
+  qty: number | null;
   entry_price: number;
   mark_price: number;
   unrealized_pnl: number;
@@ -40,7 +40,7 @@ type Position = {
 type Order = {
   id: number;
   action: string;
-  qty: number;
+  qty: number | null;
   status: string;
   executed_at?: string | null;
   symbol?: string | null;
@@ -430,7 +430,7 @@ export default function StrategyDetailPage() {
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px" }}>
                     {[
-                      ["数量", `${p.qty}`],
+                      ["仓位占比", p.qty != null ? `${p.qty}%` : "—"],
                       ["杠杆", p.leverage != null ? `${p.leverage}×` : "—"],
                       ["开仓价", fmtPrice(p.entry_price)],
                       ["标记价", fmtPrice(p.mark_price)],
@@ -469,7 +469,7 @@ export default function StrategyDetailPage() {
               <thead>
                 <tr>
                   <th>时间</th><th>币对</th><th>动作</th><th>方向</th>
-                  <th className="num">数量</th><th className="num">价格</th><th className="num">盈亏</th>
+                  <th className="num">仓位占比</th><th className="num">价格</th><th className="num">盈亏</th>
                 </tr>
               </thead>
               <tbody>
@@ -490,7 +490,7 @@ export default function StrategyDetailPage() {
                         <td style={{ color: o.side === "long" ? "var(--success)" : o.side === "short" ? "var(--danger)" : "var(--muted)" }}>
                           {o.side === "long" ? "多" : o.side === "short" ? "空" : "—"}
                         </td>
-                        <td className="num">{o.qty}</td>
+                        <td className="num">{o.qty != null ? `${o.qty}%` : "—"}</td>
                         <td className="num">{fmtPrice(o.price)}</td>
                         <td className="num" style={{ color: o.pnl == null ? "var(--muted)" : o.pnl >= 0 ? "var(--success)" : "var(--danger)" }}>
                           {o.pnl == null ? "—" : `${o.pnl >= 0 ? "+" : ""}${fmtNum(o.pnl)}`}
