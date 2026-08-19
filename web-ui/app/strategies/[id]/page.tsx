@@ -29,12 +29,12 @@ type Position = {
   symbol: string;
   side: string;
   qty: number | null;
-  entry_price: number;
-  mark_price: number;
-  unrealized_pnl: number;
-  notional_usdt?: number;
-  leverage?: number;
-  margin_usdt?: number;
+  entry_price: number | null;
+  mark_price: number | null;
+  unrealized_pnl: number | null;
+  notional_usdt?: number | null;
+  leverage?: number | null;
+  margin_usdt?: number | null;
 };
 
 type Order = {
@@ -445,8 +445,8 @@ export default function StrategyDetailPage() {
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 10, borderTop: "1px solid rgba(51,65,85,0.4)" }}>
                     <span style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>未实现盈亏</span>
-                    <span style={{ fontFamily: "var(--font-geist-mono)", fontWeight: 600, color: p.unrealized_pnl >= 0 ? "var(--success)" : "var(--danger)" }}>
-                      {p.unrealized_pnl >= 0 ? "+" : ""}{fmtNum(p.unrealized_pnl)} USDT
+                    <span style={{ fontFamily: "var(--font-geist-mono)", fontWeight: 600, color: p.unrealized_pnl == null ? "var(--muted)" : p.unrealized_pnl >= 0 ? "var(--success)" : "var(--danger)" }}>
+                      {p.unrealized_pnl == null ? "—" : `${p.unrealized_pnl >= 0 ? "+" : ""}${fmtNum(p.unrealized_pnl)} USDT`}
                     </span>
                   </div>
                 </div>

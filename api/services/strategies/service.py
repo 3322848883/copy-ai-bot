@@ -434,7 +434,7 @@ class StrategyService:
             return {"points": [], "ranges": {"7d": [], "30d": [], "90d": [], "all": []}}
 
         points = [
-            {"date": p.snapshot_date.isoformat(), "value": round(p.roi_all, 2)}
+            {"date": p.snapshot_date.isoformat(), "value": round(p.roi_all or 0.0, 2)}
             for p in rows
         ]
         n = len(points)
@@ -453,14 +453,14 @@ class StrategyService:
             "exchange": t.exchange,
             "trader_id": t.trader_id,
             "name": format_display_name(t.name, t.trader_id),
-            "roi_7d": p.roi_7d if p else 0,
-            "roi_30d": p.roi_30d if p else 0,
-            "roi_90d": p.roi_90d if p else 0,
-            "roi_all": p.roi_all if p else 0,
-            "win_rate_30d": p.win_rate_30d if p else 0,
-            "win_rate_all": p.win_rate_all if p else 0,
-            "max_drawdown": p.max_drawdown if p else 0,
-            "trading_days": p.trading_days if p else 0,
+            "roi_7d": p.roi_7d or 0 if p else 0,
+            "roi_30d": p.roi_30d or 0 if p else 0,
+            "roi_90d": p.roi_90d or 0 if p else 0,
+            "roi_all": p.roi_all or 0 if p else 0,
+            "win_rate_30d": p.win_rate_30d or 0 if p else 0,
+            "win_rate_all": p.win_rate_all or 0 if p else 0,
+            "max_drawdown": p.max_drawdown or 0 if p else 0,
+            "trading_days": p.trading_days or 0 if p else 0,
             "followers": (t.followers if t.followers else 0),
         }
 
@@ -473,14 +473,14 @@ class StrategyService:
             "style": s.style,
             "risk_rating": s.risk_rating,
             "status": s.status,
-            "roi_7d": p.roi_7d if p else 0,
-            "roi_30d": p.roi_30d if p else 0,
-            "roi_90d": p.roi_90d if p else 0,
-            "roi_all": p.roi_all if p else 0,
-            "win_rate_30d": p.win_rate_30d if p else 0,
-            "win_rate_all": p.win_rate_all if p else 0,
-            "max_drawdown": p.max_drawdown if p else 0,
-            "trading_days": p.trading_days if p else 0,
+            "roi_7d": p.roi_7d or 0 if p else 0,
+            "roi_30d": p.roi_30d or 0 if p else 0,
+            "roi_90d": p.roi_90d or 0 if p else 0,
+            "roi_all": p.roi_all or 0 if p else 0,
+            "win_rate_30d": p.win_rate_30d or 0 if p else 0,
+            "win_rate_all": p.win_rate_all or 0 if p else 0,
+            "max_drawdown": p.max_drawdown or 0 if p else 0,
+            "trading_days": p.trading_days or 0 if p else 0,
             "followers": (t.followers if t and t.followers else 0),
             "source": s.source,
             "trader_id_external": t.trader_id if t else None,
