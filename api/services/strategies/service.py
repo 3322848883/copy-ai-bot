@@ -375,7 +375,7 @@ class StrategyService:
                         "notional_usdt": None,
                         "leverage": None,
                         "margin_usdt": None,
-                        "opened_at": s.received_at.isoformat() if s.received_at else None,
+                        "opened_at": (s.opened_at or s.received_at).isoformat() if (s.opened_at or s.received_at) else None,
                     }
             positions = list(held.values())
         recent_orders = [
@@ -388,7 +388,10 @@ class StrategyService:
                 "price": None,
                 "pnl": None,
                 "status": "filled",
-                "executed_at": s.received_at.isoformat() if s.received_at else None,
+                # ★ 真实交易时间 opened_at 优先：received_at 是入库时刻（refresh 批量
+                #   补拉历史记录时全批挤在同一秒），展示它会让交易记录时间与
+                #   带单员实际开仓时间完全对不上
+                "executed_at": (s.opened_at or s.received_at).isoformat() if (s.opened_at or s.received_at) else None,
             }
             for s in reversed(rows[-limit:])
         ]
@@ -446,11 +449,28 @@ class StrategyService:
             {"date": p.snapshot_date.isoformat(), "value": round(p.roi_all or 0.0, 2)}
             for p in rows
         ]
+
+        def _rel(sub: list[dict]) -> list[dict]:
+            """区间归一化：各点相对区间起点的收益变化（起点 0）。
+
+            原实现直接切片累计 roi_all 曲线——前端"区间收益"标签显示的是总收益
+            而非区间收益，且快照不足 7 条时四个 Tab 完全相同；归一化后各区间
+            值域 = 区间内真实涨跌，随快照积累自然分化。
+            """
+            if not sub:
+                return []
+            base = sub[0]["value"]
+            return [
+                {"date": pt["date"], "value": round(pt["value"] - base, 2)}
+                for pt in sub
+            ]
+
         n = len(points)
         ranges = {
-            "7d": points[-7:],
-            "30d": points[-30:],
-            "90d": points[-90:],
+            "7d": _rel(points[-7:]),
+            "30d": _rel(points[-30:]),
+            "90d": _rel(points[-90:]),
+            # 历史保留绝对累计曲线（带单员开户至今总收益形状）
             "all": points,
         }
         return {"points": points, "ranges": ranges, "total_points": n}
