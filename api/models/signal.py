@@ -57,6 +57,9 @@ class Strategy(TimestampMixin, Base):
     # ★ M6 T6.1 灰度发布：新策略默认 20%，按 user 哈希放量
     gray_pct: Mapped[int] = mapped_column(Integer, default=100)  # 0-100
     status: Mapped[str] = mapped_column(String(16), default="listed")  # listed / paused / delisted
+    # ★ 策略来源：A=公开广场采集/G04 审核上架（人工）；B=模式2 跟单同步自动上架。
+    #   delist_unfollowed 只下架 B——否则模式2 同步会把模式1 审核上架的策略全部误下架。
+    source: Mapped[str] = mapped_column(String(1), default="A", server_default="A")
 
 
 class TraderProfile(Base):

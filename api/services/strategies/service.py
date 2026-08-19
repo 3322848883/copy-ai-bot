@@ -223,6 +223,9 @@ class StrategyService:
         if existing:
             if existing.display_name != std_name:
                 existing.display_name = std_name
+            # ★ 重新跟单：模式2 管辖恢复（此前被 delist_unfollowed 下架的 B 类）
+            if existing.source != "B":
+                existing.source = "B"
             if existing.status != "listed":
                 existing.status = "listed"
                 await self.db.flush()
@@ -234,15 +237,22 @@ class StrategyService:
             style="trend",
             risk_rating="mid",
             status="listed",
+            source="B",
         )
         self.db.add(strategy)
         await self.db.flush()
         return strategy
 
     async def delist_unfollowed(self, followed_trader_ids: set[int]) -> int:
-        """把不再跟单的交易员策略自动下架（策略广场只保留我账户跟单的交易员）。"""
+        """把不再跟单的交易员策略自动下架（策略广场只保留我账户跟单的交易员）。
+
+        ★ 只下架 source='B'（跟单同步自动上架）的策略；'A'（公开广场 G04 审核上架）
+        是管理员人工决策，跟单关系变化不得自动下架——否则模式1 上架活不过一个同步周期。
+        """
         strategies = (
-            await self.db.execute(select(Strategy).where(Strategy.status == "listed"))
+            await self.db.execute(
+                select(Strategy).where(Strategy.status == "listed", Strategy.source == "B")
+            )
         ).scalars().all()
         count = 0
         for s in strategies:

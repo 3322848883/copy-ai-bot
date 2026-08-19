@@ -42,18 +42,33 @@ class GateAdapter(ExchangeAdapter):
             # dev mock: 默认只读+交易，无提现
             return {"read": True, "trade": True, "withdraw": False}
         # 生产：拉取期货账户，判定读写权限（期货 API Key 默认无提现权限）
+        # ★ 实测 /futures/usdt/accounts 返回的账户 ID 字段是 "user"（非 "user_id"）：
+        #   原判定恒为 False → 所有有效密钥被误报"缺少交易权限"，绑定从未成功过。
         data = await self._signed_get("/futures/usdt/accounts", api_key, api_secret) or {}
+        uid = bool(data.get("user") or data.get("user_id"))
         return {
-            "read": bool(data.get("user_id")),
-            "trade": bool(data.get("user_id")),
+            "read": uid,
+            "trade": uid,
             "withdraw": False,  # 期货 API Key 无提现权限；如需真实验证走钱包接口
         }
 
     # ── 交易 ──
+    @staticmethod
+    def _gate_symbol(symbol: str) -> str:
+        """★ 符号规范化：跟单/信号源接口用 'GUAUSDT'（无下划线），
+        期货交易接口（合约/下单/持仓/杠杆）用 'GUA_USDT'。已在期货交易路径统一转换。
+        """
+        s = (symbol or "").strip().upper()
+        if "_" in s:
+            return s
+        if s.endswith("USDT") and len(s) > 4:
+            return s[:-4] + "_USDT"
+        return s
+
     async def set_leverage(self, symbol: str, leverage: int, api_key: str, api_secret: str) -> None:
         if not self.mock:
             # ★ leverage 是 query 参数（body 传会 MISSING_REQUIRED_PARAM）
-            await self._signed_post(f"/futures/usdt/positions/{symbol}/leverage", api_key, api_secret, query=f"leverage={leverage}")
+            await self._signed_post(f"/futures/usdt/positions/{self._gate_symbol(symbol)}/leverage", api_key, api_secret, query=f"leverage={leverage}")
         logger.info("set_leverage(%s, %s)", symbol, leverage)
 
     async def set_margin_mode(self, symbol: str, mode: str, leverage: int, api_key: str, api_secret: str) -> None:
@@ -63,7 +78,7 @@ class GateAdapter(ExchangeAdapter):
         if not self.mock:
             lev = 0 if mode == "cross" else (leverage if leverage and leverage > 0 else 1)
             await self._signed_post(
-                f"/futures/usdt/positions/{symbol}/leverage",
+                f"/futures/usdt/positions/{self._gate_symbol(symbol)}/leverage",
                 api_key, api_secret,
                 payload={"leverage": lev},
             )
@@ -92,7 +107,7 @@ class GateAdapter(ExchangeAdapter):
                 raw={"mock": True},
             )
         payload: dict[str, Any] = {
-            "contract": symbol,
+            "contract": self._gate_symbol(symbol),
             "size": qty if side == "buy" else -qty,
             "price": str(price) if price else "0",
             "tif": "ioc" if price else "post_only",
@@ -110,7 +125,7 @@ class GateAdapter(ExchangeAdapter):
     async def get_position(self, symbol: str, api_key: str, api_secret: str) -> dict[str, Any] | None:
         if self.mock:
             return {"symbol": symbol, "size": 0.5, "entry_price": 96000.0, "mark_price": 96500.0, "unrealised_pnl": 250.0}
-        data = await self._signed_get(f"/futures/usdt/positions/{symbol}", api_key, api_secret)
+        data = await self._signed_get(f"/futures/usdt/positions/{self._gate_symbol(symbol)}", api_key, api_secret)
         if not data or float(data.get("size", 0)) == 0:
             return None
         return data
@@ -119,11 +134,17 @@ class GateAdapter(ExchangeAdapter):
         """★ G08 回退兜底；正常从 ContractSpec 表读取。"""
         if self.mock:
             return {"face_value_usdt": 1.0, "min_size": 0.1, "size_precision": 3}
-        data = await self._signed_get(f"/futures/usdt/contracts/{symbol}", "", "")
+        data = await self._signed_get(f"/futures/usdt/contracts/{self._gate_symbol(symbol)}", "", "")
+        if not data or not data.get("name"):
+            raise ValueError(f"Gate 合约不存在: {symbol}")
+        # ★ order_price_round 是价格 tick（'0.00001'），不是数量精度——误用 int() 直接炸
+        #   ValueError；数量精度取 order_size_min 的小数位（'1'→0，'0.01'→2）。
+        min_size = str(data.get("order_size_min") or "1")
+        decimals = len(min_size.split(".")[1]) if "." in min_size else 0
         return {
-            "face_value_usdt": float(data.get("quanto_multiplier", 1)),
-            "min_size": float(data.get("order_size_min", 0.1)),
-            "size_precision": int(data.get("order_price_round", 3)),
+            "face_value_usdt": float(data.get("quanto_multiplier") or 1),
+            "min_size": float(min_size),
+            "size_precision": decimals,
         }
 
     # ── 生产签名助手（Gate 官方 v4 规范）──

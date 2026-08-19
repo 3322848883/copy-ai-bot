@@ -17,7 +17,10 @@ from api.services.scraper.adapters.gate import GateScraper
 logger = logging.getLogger("signal-saas.signalfeed")
 
 STATE_TTL_S = 7 * 24 * 3600  # 状态保留 7 天
-STATE_PREFIX = "gate:feed:state:{trader_id}"
+# ★ 模式隔离键：同一交易员可能既有公开广场差分（A）又有跟单镜像差分（B），
+#   二者持仓视图完全不同（公开持仓 vs 我账户镜像仓位）——共用键会把彼此基线
+#   互相覆盖，产出"开4平2→开2平4"乒乓假信号。mode ∈ {"A","B"}。
+STATE_PREFIX = "gate:feed:state:{mode}:{trader_id}"
 
 
 @dataclass
@@ -60,16 +63,16 @@ class IncrementalFeedService:
         return self._redis
 
     @staticmethod
-    def _state_key(trader_id: str) -> str:
-        return STATE_PREFIX.format(trader_id=trader_id)
+    def _state_key(trader_id: str, mode: str) -> str:
+        return STATE_PREFIX.format(mode=mode, trader_id=trader_id)
 
-    async def get_state(self, trader_id: str) -> dict[str, Any] | None:
+    async def get_state(self, trader_id: str, mode: str = "A") -> dict[str, Any] | None:
         """返回上次状态；None 表示尚无基线（从未轮询）。
 
         结构：{"ts": float(上次轮询时刻), "pos": {sym: percent}}。
         """
         r = await self._redis_client()
-        raw = await r.get(self._state_key(trader_id))
+        raw = await r.get(self._state_key(trader_id, mode))
         if raw is None:
             return None
         try:
@@ -85,17 +88,17 @@ class IncrementalFeedService:
             return None
         return {"ts": ts, "pos": pos}
 
-    async def set_state(self, trader_id: str, state: dict[str, float], ts: float | None = None) -> None:
+    async def set_state(self, trader_id: str, state: dict[str, float], ts: float | None = None, mode: str = "A") -> None:
         r = await self._redis_client()
         await r.set(
-            self._state_key(trader_id),
+            self._state_key(trader_id, mode),
             json.dumps({"ts": ts if ts is not None else time.time(), "pos": state}),
             ex=STATE_TTL_S,
         )
 
-    async def clear_state(self, trader_id: str) -> None:
+    async def clear_state(self, trader_id: str, mode: str = "A") -> None:
         r = await self._redis_client()
-        await r.delete(self._state_key(trader_id))
+        await r.delete(self._state_key(trader_id, mode))
 
     # ── 持仓差分核心（poll 与 reconcile 共用）──
     @staticmethod
@@ -128,7 +131,7 @@ class IncrementalFeedService:
         if current_raw is None:
             logger.warning("gate feed: leader %s 接口失败，本轮跳过", trader_id)
             return []
-        return await self._poll_with_snapshot(trader_id, current_raw)
+        return await self._poll_with_snapshot(trader_id, current_raw, mode="A")
 
     async def poll_leaders_many(self, trader_ids: list[str]) -> dict[str, list[FeedEvent]]:
         """★ 页面池并发：批量轮询多个带单员持仓差分。
@@ -146,31 +149,8 @@ class IncrementalFeedService:
                 logger.warning("gate feed: leader %s 接口失败，本轮跳过", tid)
                 events_map[tid] = []
                 continue
-            events_map[tid] = await self._poll_with_snapshot(tid, current_raw)
+            events_map[tid] = await self._poll_with_snapshot(tid, current_raw, mode="A")
         return events_map
-
-    async def _poll_with_snapshot(self, trader_id: str, current_raw: dict[str, float]) -> list[FeedEvent]:
-        """给定持仓快照做差分（poll 与批量 poll 共用，避免重复取数）。"""
-        current = self._filter(current_raw)
-        state = await self.get_state(trader_id)
-        now = time.time()
-        events: list[FeedEvent] = []
-        if state is None:
-            # ★ 首次建立基线：存量持仓不执行（None 区分于真空仓 {}）
-            logger.info("gate feed: leader %s 首次建立基线（%d 个存量持仓跳过）", trader_id, len(current))
-            await self.set_state(trader_id, current, now)
-            return []
-        prev = state["pos"]
-        prev_ts = state.get("ts")
-        events = self._diff(trader_id, prev, current)
-        # ★ 全量对账：基线过旧说明可能漏采，强制重同步
-        if prev_ts and (now - prev_ts) > self.reconcile_interval:
-            logger.warning(
-                "gate feed: leader %s 距上次同步 %.0fs 超过对账间隔 %ds，执行全量对账",
-                trader_id, now - prev_ts, self.reconcile_interval,
-            )
-        await self.set_state(trader_id, current, now)
-        return events
 
     async def reconcile_leader(self, trader_id: str) -> list[FeedEvent]:
         """★ 全量对账：与当前持仓强制对齐，产出修正事件并重设基线。
@@ -185,16 +165,16 @@ class IncrementalFeedService:
             logger.warning("gate feed: reconcile %s 接口失败，跳过", trader_id)
             return []
         current = self._filter(current_raw)
-        state = await self.get_state(trader_id)
+        state = await self.get_state(trader_id, "A")
         now = time.time()
         if state is None:
             logger.info("gate feed: reconcile %s 无基线，建立基线", trader_id)
-            await self.set_state(trader_id, current, now)
+            await self.set_state(trader_id, current, now, mode="A")
             return []
         events = self._diff(trader_id, state["pos"], current)
         if events:
             logger.info("gate feed: reconcile %s 修正 %d 个事件", trader_id, len(events))
-        await self.set_state(trader_id, current, now)
+        await self.set_state(trader_id, current, now, mode="A")
         return events
 
     async def reconcile_leaders_many(self, trader_ids: list[str]) -> dict[str, list[FeedEvent]]:
@@ -214,17 +194,17 @@ class IncrementalFeedService:
                 events_map[tid] = []
                 continue
             current = self._filter(current_raw)
-            state = await self.get_state(tid)
+            state = await self.get_state(tid, "A")
             now = time.time()
             if state is None:
                 logger.info("gate feed: reconcile %s 无基线，建立基线", tid)
-                await self.set_state(tid, current, now)
+                await self.set_state(tid, current, now, mode="A")
                 events_map[tid] = []
                 continue
             events = self._diff(tid, state["pos"], current)
             if events:
                 logger.info("gate feed: reconcile %s 修正 %d 个事件", tid, len(events))
-            await self.set_state(tid, current, now)
+            await self.set_state(tid, current, now, mode="A")
             events_map[tid] = events
         return events_map
 
@@ -254,7 +234,7 @@ class IncrementalFeedService:
             current: dict[str, float] = {p.symbol: p.qty for p in poses}
             current = self._filter(current)
             side_map: dict[str, str] = {p.symbol: p.side for p in poses}
-            events_map[lid] = await self._poll_with_snapshot(lid, current, side_map)
+            events_map[lid] = await self._poll_with_snapshot(lid, current, side_map, mode="B")
         return events_map
 
     async def reconcile_followers_many(
@@ -274,20 +254,21 @@ class IncrementalFeedService:
             current: dict[str, float] = {p.symbol: p.qty for p in poses}
             current = self._filter(current)
             side_map: dict[str, str] = {p.symbol: p.side for p in poses}
-            events_map[lid] = await self._reconcile_with_snapshot(lid, current, side_map)
+            events_map[lid] = await self._reconcile_with_snapshot(lid, current, side_map, mode="B")
         return events_map
 
     async def _poll_with_snapshot(
-        self, trader_id: str, current_raw: dict[str, float], side_map: dict[str, str] | None = None
+        self, trader_id: str, current_raw: dict[str, float], side_map: dict[str, str] | None = None,
+        mode: str = "A",
     ) -> list[FeedEvent]:
         """给定持仓快照做差分（poll 路径共用，side_map 提供 open 方向）。"""
         current = self._filter(current_raw)
-        state = await self.get_state(trader_id)
+        state = await self.get_state(trader_id, mode)
         now = time.time()
         events: list[FeedEvent] = []
         if state is None:
             logger.info("gate feed: %s 首次建立基线（%d 个存量持仓跳过）", trader_id, len(current))
-            await self.set_state(trader_id, current, now)
+            await self.set_state(trader_id, current, now, mode=mode)
             return []
         prev = state["pos"]
         events = self._diff(trader_id, prev, current)
@@ -301,19 +282,20 @@ class IncrementalFeedService:
                 "gate feed: %s 距上次同步 %.0fs 超过对账间隔 %ds，执行全量对账",
                 trader_id, now - prev_ts, self.reconcile_interval,
             )
-        await self.set_state(trader_id, current, now)
+        await self.set_state(trader_id, current, now, mode=mode)
         return events
 
     async def _reconcile_with_snapshot(
-        self, trader_id: str, current_raw: dict[str, float], side_map: dict[str, str] | None = None
+        self, trader_id: str, current_raw: dict[str, float], side_map: dict[str, str] | None = None,
+        mode: str = "A",
     ) -> list[FeedEvent]:
         """全量对账差分（reconcile 路径共用，side_map 提供 open 方向）。"""
         current = self._filter(current_raw)
-        state = await self.get_state(trader_id)
+        state = await self.get_state(trader_id, mode)
         now = time.time()
         if state is None:
             logger.info("gate feed: reconcile %s 无基线，建立基线", trader_id)
-            await self.set_state(trader_id, current, now)
+            await self.set_state(trader_id, current, now, mode=mode)
             return []
         events = self._diff(trader_id, state["pos"], current)
         if side_map:
@@ -322,5 +304,5 @@ class IncrementalFeedService:
                     ev.side = side_map.get(ev.symbol, "long")
         if events:
             logger.info("gate feed: reconcile %s 修正 %d 个事件", trader_id, len(events))
-        await self.set_state(trader_id, current, now)
+        await self.set_state(trader_id, current, now, mode=mode)
         return events

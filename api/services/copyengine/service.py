@@ -20,6 +20,11 @@ from api.services.riskengine.service import OrderIntent, RiskEngine
 
 logger = logging.getLogger("signal-saas.copyengine")
 
+# ★ 合约规格进程内缓存（exchange, symbol → Contract）：contract_specs 表为空时靠
+#   G08 回退兜底逐单拉接口（~200ms/次）；worker 进程常驻，缓存后同符号零开销。
+#   不落库：并发插入撞唯一约束会毒化整轮事务。
+_CONTRACT_CACHE: dict[tuple[str, str], "Contract"] = {}
+
 
 class CopyEngine:
     """信号 → 活跃机器人 → 换算 → 风控 → 下单 → CopyOrder 落库。
@@ -160,7 +165,7 @@ class CopyEngine:
     async def _exec_open_add(self, bot: CopyBot, sig: SourceSignal, api_row, api_secret: str) -> CopyOrder:
         contract = await self._get_contract(sig.exchange, sig.symbol)
         if contract is None:
-            return self._fail_order(bot, sig, "symbol", f"合约规格缺失: {sig.symbol}")
+            return await self._fail_persist(bot, sig, "symbol", f"合约规格缺失: {sig.symbol}")
 
         balance = await self._get_free_balance(bot, api_row, api_secret)
         sizer = PositionSizer(contract)
@@ -173,9 +178,9 @@ class CopyEngine:
                 leverage=bot.leverage,
             )
         except InsufficientBalance as exc:
-            return self._fail_order(bot, sig, "balance", exc.message)
+            return await self._fail_persist(bot, sig, "balance", exc.message)
         except ValidationError as exc:
-            return self._fail_order(bot, sig, "min_size" if "名义" in exc.message else "other", exc.message)
+            return await self._fail_persist(bot, sig, "min_size" if "名义" in exc.message else "other", exc.message)
 
         # 风控
         risk_res = await self.risk.evaluate(
@@ -207,7 +212,7 @@ class CopyEngine:
         except Exception:  # noqa: BLE001
             pass
         if risk_res.rejected:
-            return self._fail_order(bot, sig, "risk", f"{risk_res.rule}: {risk_res.reason}", latency=risk_res.latency_ms)
+            return await self._fail_persist(bot, sig, "risk", f"{risk_res.rule}: {risk_res.reason}", latency=risk_res.latency_ms)
 
         side = "buy" if sig.side == "long" else "sell"
         exec_res = await self._execute_order(
@@ -221,7 +226,7 @@ class CopyEngine:
     async def _exec_reduce(self, bot: CopyBot, sig: SourceSignal, api_row, api_secret: str) -> CopyOrder:
         pos = await self._current_position(bot, api_row, api_secret, sig.symbol)
         if pos is None or pos["qty"] <= 0:
-            return self._fail_order(bot, sig, "other", "无持仓可减")
+            return await self._fail_persist(bot, sig, "other", "无持仓可减")
         reduce_qty = pos["qty"] * min(getattr(sig, "reduce_ratio", 0.5) or 0.5, 1.0)
         side = "sell" if sig.side == "long" else "buy"
         exec_res = await self._execute_order(
@@ -235,7 +240,7 @@ class CopyEngine:
     async def _exec_close(self, bot: CopyBot, sig: SourceSignal, api_row, api_secret: str) -> CopyOrder:
         pos = await self._current_position(bot, api_row, api_secret, sig.symbol)
         if pos is None or pos["qty"] <= 0:
-            return self._fail_order(bot, sig, "other", "无持仓可平")
+            return await self._fail_persist(bot, sig, "other", "无持仓可平")
         side = "sell" if sig.side == "long" else "buy"
         exec_res = await self._execute_order(
             bot=bot, sig=sig, side=side, qty=pos["qty"],
@@ -273,6 +278,14 @@ class CopyEngine:
             leverage=bot.leverage, required_margin_usdt=0, status="failed",
             failure_category=category, latency_ms=latency,
         )
+
+    async def _fail_persist(self, bot, sig, category: str, reason: str, latency: int = 0) -> CopyOrder:
+        """失败订单落库：_exec_* 路径的失败必须留痕（此前合约缺失等失败对象被静默丢弃，
+        copy_orders=0 但信号已消费——用户以为在跟单实际一笔未下）。"""
+        order = self._fail_order(bot, sig, category, reason, latency)
+        self.db.add(order)
+        await self.db.commit()
+        return order
 
     async def _finalize(self, bot, sig, qty: float, margin: float, exec_res: ExecResult, api_row) -> CopyOrder:
         status = "filled" if exec_res.success else "failed"
@@ -378,24 +391,31 @@ class CopyEngine:
             )
 
     async def _get_contract(self, exchange: str, symbol: str) -> Contract | None:
+        cached = _CONTRACT_CACHE.get((exchange, symbol))
+        if cached is not None:
+            return cached
         row = (
             await self.db.execute(
                 select(ContractSpec).where(ContractSpec.exchange == exchange, ContractSpec.symbol == symbol)
             )
         ).scalars().first()
-        if row is None:
-            # ★ G08 回退兜底：adapter.fetch_contract_spec
-            try:
-                adapter = get_adapter(exchange)
-                spec = await adapter.fetch_contract_spec(symbol)
-                return Contract(exchange=exchange, symbol=symbol, **spec)
-            except Exception:
-                return None
-        return Contract(
-            exchange=row.exchange, symbol=row.symbol,
-            face_value_usdt=row.face_value_usdt, min_size=row.min_size,
-            size_precision=row.size_precision,
-        )
+        if row is not None:
+            contract = Contract(
+                exchange=row.exchange, symbol=row.symbol,
+                face_value_usdt=row.face_value_usdt, min_size=row.min_size,
+                size_precision=row.size_precision,
+            )
+            _CONTRACT_CACHE[(exchange, symbol)] = contract
+            return contract
+        # ★ G08 回退兜底：adapter.fetch_contract_spec（成功后进程内缓存）
+        try:
+            adapter = get_adapter(exchange)
+            spec = await adapter.fetch_contract_spec(symbol)
+            contract = Contract(exchange=exchange, symbol=symbol, **spec)
+            _CONTRACT_CACHE[(exchange, symbol)] = contract
+            return contract
+        except Exception:
+            return None
 
     async def _get_free_balance(self, bot, api_row, api_secret: str) -> float:
         if getattr(bot, "paper", False):
