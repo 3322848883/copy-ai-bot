@@ -94,13 +94,22 @@ class Settings(BaseSettings):
     # ★ 方案B：公开爬虫独立 user_data_dir（与登录会话 signal_session_data_dir 彻底隔离）。
     #   公开接口(模式A)走此目录的浏览器；私有接口(模式B)走登录会话，互不争抢 Chrome profile 锁。
     scraper_data_dir: str = "data/scraper"
+    # ★ 批量任务（scrape_all/refresh_listed_profiles/reconcile）独立 user_data_dir：
+    #   poll_live 热循环几乎 100% 占用 data/scraper（Chromium ProcessSingleton 同一
+    #   profile 同时只允许一个实例），批量任务抢同目录必然锁冲突——实测 refresh
+    #   ensure_browser_ready 90s 全超时。独立 profile 后二者并行互不干扰，
+    #   批量任务也无需再持差分锁排他（poll 不再被致盲）。
+    scraper_bulk_data_dir: str = "data/scraper-bulk"
     # ★ 浏览器代理（gate.com 等被墙站点必须走代理；Chromium 不读环境变量，须显式传 launch(proxy=)）
     #   空=不走代理。容器内格式 http://host.docker.internal:<port>（本机 Clash 需中继/局域网监听）
     browser_proxy_url: str = ""
 
     # ── 实时信号轮询（★实测 2026-08：1 秒轮询公开接口 2000+ 请求 0 次 403）──
     signal_poll_interval: int = 1      # 轮询间隔(秒)；带单员分钟级交易，1 秒不丢单
-    signal_poll_loop_seconds: int = 60 # 单次任务连续运行时长(秒)，到点交还 celery 重踢
+    signal_poll_loop_seconds: int = 50 # 单次任务连续运行时长(秒)；beat 调度间隔
+    #   = 本值 + 15s 余量（celery_app.py）：任务总耗时 = 循环 + 浏览器启停开销(~5-10s)，
+    #   若调度间隔 == 循环时长，相邻两轮任务永久重叠互抢 user_data_dir
+    #   （ProcessSingleton 锁），各损 ~30 轮询
     signal_change_threshold: float = 0.005  # 持仓占比阈值：低于则视为噪音过滤(0.5%)
     signal_reconcile_interval: int = 600    # 全量对账间隔(秒)：强制重同步基线防漂移
     # ★ 公开广场采集覆盖数：signal.scrape_all 每轮抓取榜单前 N 名带单员

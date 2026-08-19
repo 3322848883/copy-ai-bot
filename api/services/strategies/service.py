@@ -316,13 +316,20 @@ class StrategyService:
         from api.models.signal import SourceSignal
 
         rows = (
-            await self.db.execute(
-                select(SourceSignal)
-                .where(SourceSignal.source_trader_id == trader.trader_id, SourceSignal.dropped == False)  # noqa: E712
-                .order_by(SourceSignal.received_at.asc(), SourceSignal.id.asc())
-                .limit(2000)
+            (
+                await self.db.execute(
+                    select(SourceSignal)
+                    .where(SourceSignal.source_trader_id == trader.trader_id, SourceSignal.dropped == False)  # noqa: E712
+                    .order_by(SourceSignal.received_at.desc(), SourceSignal.id.desc())
+                    .limit(2000)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
+        # ★ 取最近 2000 条后反转为正序（原 asc+limit 会截掉最新记录：信号量
+        #   超过 2000 的交易员，refresh 兜底的历史交易行永远进不了详情页）
+        rows = list(reversed(rows))
 
         def pct(s) -> float | None:
             """信号占比 → 百分比；None/0/超界（模式B张数混入）→ None。"""
@@ -388,11 +395,13 @@ class StrategyService:
         return positions, recent_orders
 
     @staticmethod
-    async def _read_baseline(trader_id: str, max_age_s: float = 300) -> dict[str, float] | None:
+    async def _read_baseline(trader_id: str, max_age_s: float = 2400) -> dict[str, float] | None:
         """读模式A差分基线快照 {symbol: 占比}（Redis 故障/无基线/过期返回 None，退回信号重放）。
 
-        ★ 新鲜度校验：轮询每秒更新基线 ts；带单员转入模式B（镜像差分）后 A 基线不再
-        更新、冻结在旧快照——直接采用会展示过时持仓，必须按 max_age_s 过滤。
+        ★ 新鲜度窗口 2400s：poll 监控的交易员基线每秒更新（远新鲜于窗口）；
+        无机器人监控的上架策略由 refresh_listed_profiles 每 30 分钟重写基线
+        （2026-08-20 详情数据兜底），窗口须 ≥ 刷新周期+容错。策略下架/转入
+        模式B镜像后基线停止更新，超窗自动退回信号重放，不展示冻结持仓。
         """
         import time as _time
 

@@ -5,7 +5,23 @@
 #
 # ★ 2026-08 修复：不再用 xvfb-run（其 wait+SIGUSR1 就绪机制在容器 PID1 环境下
 #   会卡死，导致业务命令永不执行）；改为显式后台启动 Xvfb + 导出 DISPLAY。
+#
+# ★ 2026-08-20 修复：残留 SingletonLock 清理改为无条件 + 覆盖全部三个浏览器
+#   profile 目录（signal_session / scraper / scraper-bulk）。原实现只在有头模式
+#   分支清理 signal_session——scraper-bulk 挂载 volume 后容器重启同样会残留指向
+#   已死进程的锁，Chrome 启动时弹「profile in use」对话框卡死采集任务。
 set -e
+
+# ★ 无条件清理残留浏览器锁（容器重启/重建后 user_data_dir 中可能残留 SingletonLock，
+#   指向已不存在的旧容器 hostname/pid——Chrome 有头模式遇到会弹确认框永久阻塞任务）
+for _dir in "${SIGNAL_SESSION_DATA_DIR:-/app/data/signal_session}" \
+            "${SCRAPER_DATA_DIR:-/app/data/scraper}" \
+            "${SCRAPER_BULK_DATA_DIR:-/app/data/scraper-bulk}"; do
+  if [ -d "${_dir}" ]; then
+    rm -f "${_dir}"/Singleton* "${_dir}"/.com.google.Chrome.* 2>/dev/null || true
+    echo "[entrypoint] cleaned stale browser locks in ${_dir}"
+  fi
+done
 
 if [ "${SCRAPER_HEADLESS}" = "false" ] || [ "${SCRAPER_HEADLESS}" = "0" ]; then
   echo "[entrypoint] SCRAPER_HEADLESS=false → start Xvfb virtual display (1440x900x24)"
@@ -19,12 +35,6 @@ if [ "${SCRAPER_HEADLESS}" = "false" ] || [ "${SCRAPER_HEADLESS}" = "0" ]; then
     sleep 0.2
   done
   sleep 0.5
-  # ★ 清理残留浏览器锁（容器重建后 user_data_dir 中可能残留 SingletonLock，
-  #   指向已不存在的旧进程 socket，导致 signal_session 启动崩溃）
-  if [ -n "${SIGNAL_SESSION_DATA_DIR:-}" ] && [ -d "${SIGNAL_SESSION_DATA_DIR}" ]; then
-    rm -f "${SIGNAL_SESSION_DATA_DIR}"/Singleton* 2>/dev/null || true
-    echo "[entrypoint] cleaned stale Singleton locks in ${SIGNAL_SESSION_DATA_DIR}"
-  fi
   echo "[entrypoint] DISPLAY=${DISPLAY} ready → exec $*"
   exec "$@"
 fi

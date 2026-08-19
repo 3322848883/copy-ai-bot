@@ -87,6 +87,7 @@ class GateScraper:
         headless: bool | None = None,
         headless_mode: str | None = None,
         page_pool_size: int | None = None,
+        data_dir: str | None = None,
     ) -> None:
         settings = get_settings()
         # dev 默认 mock；显式 SCRAPER_REAL=1 或 prod 走真实采集
@@ -95,8 +96,12 @@ class GateScraper:
         self.headless = headless if headless is not None else settings.scraper_headless
         # ★ 无头模式：new(现代无头，指纹难区分，推荐) / old(旧无头，易被检测)
         self.headless_mode = headless_mode or settings.scraper_headless_mode
-        # ★ 页面池并发：同一浏览器内并行页面数（并发拉取多个带单员）
+        # ★ 页面池并发：同一浏览器(context)内并行的页面数（并发拉取多个带单员）
         self.page_pool_size = max(1, page_pool_size or settings.scraper_page_pool_size)
+        # ★ 独立 profile 目录：默认 data/scraper（poll_live 热循环专用）；批量任务
+        #   （scrape_all/refresh/reconcile）传 scraper_bulk_data_dir 隔离，避免
+        #   Chromium ProcessSingleton 同 profile 抢锁互杀。
+        self._data_dir = data_dir or settings.scraper_data_dir
         self._browser = None
         self._context = None
         self._pages: list[Any] = []      # 页面池（共享同一会话/指纹）
@@ -126,8 +131,9 @@ class GateScraper:
         # ★ 方案B：公开爬虫用独立 user_data_dir（scraper_data_dir），与登录会话
         #   (signal_session_data_dir) 彻底隔离，互不争抢 Chrome profile 锁。
         #   公开接口(模式A)走此浏览器；私有接口(模式B)走 signal_session 登录会话。
-        persistent = bool(settings.scraper_data_dir)
-        data_dir = settings.scraper_data_dir
+        #   ★ 批量任务经 data_dir 参数指定 scraper_bulk_data_dir，与 poll 热循环隔离。
+        persistent = bool(self._data_dir)
+        data_dir = self._data_dir
         proxy = {"server": settings.browser_proxy_url} if settings.browser_proxy_url else None
         try:
             if persistent and self._context is None:
@@ -177,6 +183,39 @@ class GateScraper:
         self._pages = [await self._context.new_page() for _ in range(self.page_pool_size)]
         self._ready_pages.clear()
 
+    async def ensure_browser_ready(self, max_wait_s: float = 90.0) -> bool:
+        """带重试的浏览器就绪：poll_live / scrape_all / refresh 共用同一
+        user_data_dir，Chromium ProcessSingleton 同一时刻只允许一个实例。
+
+        抢锁失败（他任务正持有浏览器）按 2s 退避重试，直到成功或超时返回 False。
+        """
+        import asyncio
+        import time as _time
+
+        deadline = _time.time() + max_wait_s
+        while True:
+            try:
+                await self._ensure_browser()
+                return True
+            except Exception:  # noqa: BLE001 启动失败 → 清理后重试
+                if _time.time() >= deadline:
+                    return False
+                await self._cleanup_failed_launch()
+                await asyncio.sleep(2)
+
+    async def _cleanup_failed_launch(self) -> None:
+        """清理启动失败的 playwright 实例，防止重试时驱动进程泄漏。"""
+        try:
+            if self._playwright:
+                await self._playwright.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        self._playwright = None
+        self._browser = None
+        self._context = None
+        self._pages = []
+        self._ready_pages.clear()
+
     async def _close_browser(self) -> None:
         try:
             if self._browser:
@@ -194,14 +233,21 @@ class GateScraper:
         await self._close_browser()
 
     async def _ensure_page_ready(self, page: Any, idx: int) -> None:
-        """单页首次访问广场页建立会话 cookie；后续复用（高频轮询关键）。"""
+        """单页首次访问广场页建立会话 cookie；后续复用（高频轮询关键）。
+
+        ★ 冷 profile 首访常被 Akamai 挑战页拦截（容器重建后 profile 归零），
+          goto 失败静默 pass 会让本轮全部 fetch 连环失败——加 3 次退避重试，
+          通过挑战后 cookie 落盘，后续轮次直接复用。
+        """
         if idx in self._ready_pages:
             return
-        try:
-            await page.goto(f"{GATE_BASE}/zh/copytrading", wait_until="domcontentloaded", timeout=60_000)
-            self._ready_pages.add(idx)
-        except Exception:  # noqa: BLE001
-            pass
+        for attempt in range(3):
+            try:
+                await page.goto(f"{GATE_BASE}/zh/copytrading", wait_until="domcontentloaded", timeout=60_000)
+                self._ready_pages.add(idx)
+                return
+            except Exception:  # noqa: BLE001
+                await asyncio.sleep(2 * (attempt + 1))
 
     async def _api(self, path: str, params: dict[str, Any], page: Any | None = None) -> dict | None:
         """在浏览器上下文内 fetch（携带页面指纹/cookie），返回 JSON。
@@ -346,7 +392,10 @@ class GateScraper:
                         leverage=1,
                         qty=0.0,
                         entry_price=0.0,
-                        opened_at=datetime.now(timezone.utc),
+                        # ★ 占比接口无开仓时间：这是「持仓状态」非「交易事件」。
+                        #   opened_at=None 标记，调用方跳过信号入库（否则每次采集
+                        #   以 now() 生成新 dedupe_key，同一持仓每轮重复记 open）。
+                        opened_at=None,
                         raw=row,
                     )
                 )
@@ -417,6 +466,54 @@ class GateScraper:
                 continue
             snap[sym] = float(row.get("percent") or 0)
         return snap
+
+    async def fetch_trading_records(self, trader_id: str) -> list[RawPosition]:
+        """拉取交易记录行（trading_view 接口）—— refresh 兜底详情数据用。
+
+        与 fetch_live_positions（持仓状态）互补：这里返回真实开仓事件行，
+        opened_at=接口 data_time（秒级稳定）→ normalizer dedupe_key 跨轮去重，
+        重复轮次零噪音。无时间戳的行无法稳定去重，直接跳过。
+        """
+        positions: list[RawPosition] = []
+        if self.mock:
+            return positions
+        try:
+            lid = int(trader_id)
+        except ValueError:
+            return positions
+        resp = await self._api(
+            LEADER_TRADES_PATH,
+            {"leader_id": lid, "data_day": 0, "sub_website_id": 0},
+        )
+        if not resp or resp.get("code") != 0:
+            return positions
+        for row in (resp.get("data") or {}).get("trading_view") or []:
+            market = row.get("market", "")
+            if not market:
+                continue
+            sym = market.replace("_", "")
+            if self._is_test_symbol(sym):
+                continue
+            try:
+                ts = int(row.get("data_time", 0))
+                opened = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
+            except Exception:  # noqa: BLE001 时间戳异常按无时间戳处理
+                opened = None
+            if opened is None:
+                continue
+            positions.append(
+                RawPosition(
+                    trader_id=trader_id,
+                    symbol=sym,
+                    side="long",
+                    leverage=1,
+                    qty=0.0,
+                    entry_price=0.0,
+                    opened_at=opened,
+                    raw=row,
+                )
+            )
+        return positions
 
     async def fetch_live_positions_many(
         self, trader_ids: list[str]

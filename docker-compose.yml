@@ -107,6 +107,11 @@ services:
       ETH_RPC_URL: ${ETH_RPC_URL:-https://eth.llamarpc.com}
       SCRAPER_REAL: "1"
       SCRAPER_HEADLESS: "false"
+      # ★ 2026-08-20：爬虫 profile 持久化到宿主机（原容器内路径，容器重建即丢失
+      #   热状态 → bulk/scraper 冷 profile 首访被 Akamai 挑战，refresh/scrape_all
+      #   全量失败）。挂载后重启/重建容器保留已预热的会话 cookie。
+      SCRAPER_DATA_DIR: /app/data/scraper
+      SCRAPER_BULK_DATA_DIR: /app/data/scraper-bulk
       SIGNAL_SESSION_ENABLED: "true"
       SIGNAL_SESSION_HEADLESS: "false"
       SIGNAL_SESSION_DATA_DIR: /app/data/signal_session
@@ -117,6 +122,8 @@ services:
         condition: service_healthy
     volumes:
       - ./data/signal_session:/app/data/signal_session
+      - ./data/scraper:/app/data/scraper
+      - ./data/scraper-bulk:/app/data/scraper-bulk
     restart: unless-stopped
 
   beat:
