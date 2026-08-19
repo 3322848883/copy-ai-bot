@@ -17,7 +17,7 @@ def _is_test_symbol(symbol: str) -> bool:
     return any(mark in up for mark in settings.signal_test_symbols)
 
 
-async def run_scrape_all(limit: int = 8) -> dict[str, int]:
+async def run_scrape_all(limit: int | None = None) -> dict[str, int]:
     """采集核心（async）：排行榜 → 持仓 → 标准化 → 入库 → 画像快照。
 
     dev 环境用 mock 数据跑通全链路；生产接入 Playwright 适配器。
@@ -27,6 +27,8 @@ async def run_scrape_all(limit: int = 8) -> dict[str, int]:
     from api.services.scraper.service import ScraperService
     from api.services.signalstore.service import SignalStore
 
+    if limit is None:
+        limit = get_settings().signal_scrape_limit
     stats: dict[str, int] = {}
     factory = get_session_factory()
     async with factory() as db:
@@ -48,7 +50,7 @@ async def run_scrape_all(limit: int = 8) -> dict[str, int]:
 
 @celery_app.task(name="signal.scrape_all")
 def scrape_all_exchanges() -> str:
-    """触发 5 家交易所公开带单广场采集（模式 A，M2 T2.1）。"""
+    """触发公开带单广场采集（模式 A，当前已接入 Gate，其他交易所规划中）。"""
     import asyncio
 
     return f"scraped gate: {asyncio.run(run_scrape_all())}"
@@ -87,9 +89,14 @@ async def _poll_live_loop() -> str:
     deadline = time.time() + loop_seconds
     rounds = 0
     events_total = 0
-    # ★ 完全自动：每 60s 把「我账户跟单的交易员」同步为策略广场展示项
-    last_sync = 0.0
-    SYNC_INTERVAL = 60.0
+    # ★ 完全自动：把「我账户跟单的交易员」同步为策略广场展示项。
+    #   ★ 降频 60s→默认600s（可配 signal_follow_sync_interval）：同步需拉起登录会话浏览器，
+    #     与 admin 远程操作/搜索争抢 user_data_dir（ProcessSingleton 锁）；跟单关系变化
+    #     本身是低频事件，高频同步只会放大争抢窗口。
+    #   ★ 上次同步时间存 Redis（跨任务持久）：poll_live 每 60s 被 beat 重踢一次，
+    #     任务内变量每次归零会让每轮任务开头都同步——worker 浏览器常驻、admin 永远拉不起。
+    SYNC_INTERVAL = float(get_settings().signal_follow_sync_interval)
+    _SYNC_TS_KEY = "signal:follow_sync:last_ts"
     try:
         while time.time() < deadline:
             try:
@@ -97,10 +104,11 @@ async def _poll_live_loop() -> str:
             except Exception as exc:  # noqa: BLE001 单轮失败不中断循环
                 logger.error("signal.poll_live 单轮失败: %s", exc)
             rounds += 1
-            if time.time() - last_sync >= SYNC_INTERVAL:
+            last_sync = _redis_get_float(_SYNC_TS_KEY)
+            if last_sync is None or (time.time() - last_sync) >= SYNC_INTERVAL:
                 try:
                     await sync_followed_leaders(scraper=scraper)
-                    last_sync = time.time()
+                    _redis_set_float(_SYNC_TS_KEY, time.time())
                 except Exception as exc:  # noqa: BLE001 同步失败不中断轮询
                     logger.warning("sync_followed_leaders 失败: %s", exc)
             await asyncio.sleep(interval)
@@ -126,6 +134,30 @@ async def _poll_live_loop() -> str:
 #    共同读写同一 Redis 基线 gate:feed:state:{trader_id}——并发差分会把同一开/平仓
 #    事件各产出一次，导致重复真实下单（双倍买入/平仓）。二者必须互斥。──
 _DIFF_LOCK_KEY = "signal:diff:lock"
+
+
+def _redis_get_float(key: str) -> float | None:
+    """读 Redis float（跨任务持久状态）。Redis 故障返回 None（视为未记录）。"""
+    try:
+        import redis as _redis
+
+        r = _redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
+        v = r.get(key)
+        r.close()
+        return float(v) if v else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _redis_set_float(key: str, value: float) -> None:
+    try:
+        import redis as _redis
+
+        r = _redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
+        r.set(key, value)
+        r.close()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _acquire_diff_lock(holder: str, ttl_s: int) -> tuple[bool, str]:
@@ -216,25 +248,30 @@ async def _poll_live_round(feed) -> int:
                 events_map[tid] = evs
             for tid, evs in (await feed.poll_followers_many(mode_f)).items():
                 events_map[tid] = evs
-            total = await _handle_events(db, events_map)
+            total = await _handle_events(db, events_map, follower_ids)
             await db.commit()
         finally:
             _release_diff_lock(token)
     return total
 
 
-async def _handle_events(db, events_map: dict[str, list]) -> int:
+async def _handle_events(db, events_map: dict[str, list], follower_ids: set[str] | None = None) -> int:
     """把差分事件统一落库 + 交给 CopyEngine 执行（_poll_live_round 与 _reconcile_once 共用）。
 
-    ★ source_mode 按 leader_id 归属判定：∈ signal_follower_leader_ids → "F"（模式2 跟单），
+    ★ source_mode 按 leader_id 归属判定：∈ follower_ids → "B"（模式2 跟单），
        否则 "A"（模式1 公开）；side 取事件真实方向（模式2 镜像 long/short）。
+    ★ follower_ids 必须由调用方传入（配置+自动发现的完整集合）：本函数自行读静态配置
+       会与调用方的"配置+发现"集合不一致，自动发现的跟单 leader 被错标为模式 A。
+    ★ 统一标记 "A"/"B"：风控引擎与 SignalStore 的延迟红线按 "A"/"B" 判定，历史
+       "F" 标记会绕过全部延迟红线（风控裸奔）。
     """
     from datetime import datetime, timezone
 
     from api.models.signal import SourceSignal
     from api.services.copyengine.service import CopyEngine
 
-    follower_ids = set(get_settings().signal_follower_leader_ids)
+    if follower_ids is None:
+        follower_ids = set(get_settings().signal_follower_leader_ids)
     total = 0
     for ev in [e for evs in events_map.values() for e in evs]:
         if _is_test_symbol(ev.symbol):  # ★ 测试符号兜底过滤
@@ -249,7 +286,7 @@ async def _handle_events(db, events_map: dict[str, list]) -> int:
             qty=0.0,
             percent=ev.percent,  # ★ 带单员持仓占比，供 CopyEngine qty 换算
             action=ev.action,
-            source_mode="F" if ev.trader_id in follower_ids else "A",
+            source_mode="B" if ev.trader_id in follower_ids else "A",
             opened_at=ev.at,
             received_at=datetime.now(timezone.utc),
             dedupe_key=f"feed-{ev.trader_id}-{ev.symbol}-{ev.action}-{int(ev.at.timestamp())}",
@@ -307,6 +344,15 @@ async def _reconcile_once() -> str:
             if not leader_ids:
                 return "no active bots"
             follower_ids = set(get_settings().signal_follower_leader_ids)
+            # ★ 与 poll_live 保持同一集合口径：配置为空时自动发现已跟单交易员并入，
+            #   否则对账会把自动发现的跟单 leader 当作模式 A 差分/标记。
+            if not follower_ids:
+                try:
+                    discovered = await scraper.fetch_followed_leaders()
+                    if discovered:
+                        follower_ids |= {lid for lid, _nick in discovered}
+                except Exception as exc:  # noqa: BLE001 自动发现失败不阻断对账
+                    logger.warning("reconcile 自动发现已跟单交易员失败: %s", exc)
             mode_a = [lid for lid in leader_ids if lid not in follower_ids]
             mode_f = [lid for lid in leader_ids if lid in follower_ids]
             # ★ 差分互斥：poll_live 正在差分时跳过本轮（下个周期再来），避免同一事件双发
@@ -320,7 +366,7 @@ async def _reconcile_once() -> str:
                     events_map[tid] = evs
                 for tid, evs in (await feed.reconcile_followers_many(mode_f)).items():
                     events_map[tid] = evs
-                total = await _handle_events(db, events_map)
+                total = await _handle_events(db, events_map, follower_ids)
                 await db.commit()
             finally:
                 _release_diff_lock(token)
@@ -483,9 +529,13 @@ async def _refresh_listed_profiles() -> dict[str, int]:
                     if leader is None:
                         stats["missing"] += 1
                         continue
-                    await store.upsert_trader("gate", trader.trader_id, name=leader.get("nick") or trader.name,
+                    # ★ detail 接口的 nick 恒为 "Leader{id}" 占位符（无昵称字段），
+                    #   传入会覆盖 fetch_followed_leaders 已写入的真实昵称——不传 name。
+                    await store.upsert_trader("gate", trader.trader_id,
                                               followers=int(leader.get("followers") or 0))
-                    await _save_profile(store, trader)
+                    # ★ 写「拉到的 leader dict」（_save_profile 读 ORM trader 属性恒为 0，
+                    #   曾把全部已上架画像周期性清零）
+                    await _save_followed_profile(store, trader, leader)
                     stats["updated"] += 1
                 except Exception as exc:  # noqa: BLE001 单个失败不阻断
                     stats["failed"] += 1

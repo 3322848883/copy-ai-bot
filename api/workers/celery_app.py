@@ -44,9 +44,12 @@ celery_app.conf.update(
             "options": {"expires": 60 * 10},
         },
         # ★ 需求补充：信号源详情(画像)定时刷新——所有已上架策略画像按日 upsert，保证策略广场数据新鲜
+        #   ★ 错峰修复：原 1800s 固定间隔与 scrape_all（同为 1800s）从 beat 启动同刻起算，
+        #     每 30 分钟同时触发争抢 data/scraper 浏览器目录（SingletonLock 冲突实锤）。
+        #     改为每小时 17/47 分（间隔 30 分钟），与整点采集错开 ≥17 分钟。
         "signal-refresh-listed-profiles": {
             "task": "signal.refresh_listed_profiles",
-            "schedule": settings.signal_profile_refresh_interval,
+            "schedule": crontab(minute="17,47"),
             "options": {"expires": max(settings.signal_profile_refresh_interval, 60)},
         },
         # ★ 实时信号轮询（任务内按 signal_poll_interval 连续轮询，beat 每 loop_seconds 重踢一次）

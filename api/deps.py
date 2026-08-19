@@ -91,6 +91,21 @@ async def get_current_admin(db: DbDep, authorization: str = Depends(get_bearer))
         raise AuthError("管理员不存在或已停用")
     if user.is_frozen:
         raise AuthError("账号已被冻结")
+    # ★ 改密/降权后旧令牌即刻作废（iat 早于 reauth 时间点即拒绝；Redis 不可用时降级放行）
+    from api.core.errors import AuthError as _AuthError
+
+    try:
+        from redis import Redis
+
+        changed = Redis.from_url(get_settings().redis_url, decode_responses=True).get(
+            f"admin:reauth:{admin_id}"
+        )
+        if changed and float(payload.get("iat") or 0) < float(changed):
+            raise _AuthError("凭证已变更，请重新登录")
+    except _AuthError:
+        raise
+    except Exception:
+        pass
     return {"id": admin_id, "role": role}
 
 

@@ -51,6 +51,11 @@ class SessionStatus:
 # 供无浏览器的进程（如 admin /status）据此展示 logged_in（绿点），避免一直"连接中"。
 _LOGIN_MARKER = ".loginstate.json"
 
+# ★ 管理员操作独占标志（Redis）：admin 通过 /start 拉起浏览器远程操作期间，
+#   worker 的 fetch_api 不得强制拉起浏览器争抢同一 user_data_dir（ProcessSingleton
+#   冲突会让 admin 的会话崩溃）。worker 各采集点调用前须检查此标志。
+_ADMIN_HOLD_KEY = "signal_session:admin_hold"
+
 
 class SignalSession:
     """单例：模式2 持久化浏览器会话。
@@ -98,6 +103,57 @@ class SignalSession:
 
     def _has_persisted_dir(self) -> bool:
         return os.path.isdir(get_settings().signal_session_data_dir)
+
+    # ── 管理员操作独占标志（Redis，跨进程） ──
+    @staticmethod
+    def acquire_admin_hold(ttl_s: int = 900) -> bool:
+        """admin 拉起远程浏览器时占用（TTL 兜底防忘记释放）。已占用返回 False。"""
+        try:
+            import redis
+
+            r = redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
+            ok = r.set(_ADMIN_HOLD_KEY, "1", nx=True, ex=ttl_s)
+            r.close()
+            return bool(ok)
+        except Exception:  # noqa: BLE001 Redis 不可用不阻断 admin 操作
+            return True
+
+    @staticmethod
+    def release_admin_hold() -> None:
+        try:
+            import redis
+
+            r = redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
+            r.delete(_ADMIN_HOLD_KEY)
+            r.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    @staticmethod
+    def refresh_admin_hold(ttl_s: int = 900) -> None:
+        """续期独占标志（仅已存在时）：admin 远程视图的截图轮询作为心跳。"""
+        try:
+            import redis
+
+            r = redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
+            if r.get(_ADMIN_HOLD_KEY):
+                r.expire(_ADMIN_HOLD_KEY, ttl_s)
+            r.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    @staticmethod
+    def admin_hold_active() -> bool:
+        """worker 采集点调用 signal_session 前检查：admin 正在远程操作则跳过本轮。"""
+        try:
+            import redis
+
+            r = redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
+            v = r.get(_ADMIN_HOLD_KEY)
+            r.close()
+            return bool(v)
+        except Exception:  # noqa: BLE001 Redis 故障放行 worker（保持采集可用）
+            return False
 
     # ── 生命周期 ──
     async def start_login(self, force_launch: bool = False) -> SessionStatus:
@@ -163,11 +219,43 @@ class SignalSession:
             if ok:
                 self._state = "logged_in"
                 self._write_marker(True, count, "自动识别：复用已持久化登录态")
+            else:
+                # ★ 自愈历史假标记：检测失败必须回写 false，否则假 logged_in 标记
+                #   会让 /status 永远显示绿点、误导管理员
+                self._write_marker(False, 0, "登录态已失效，请在视图中重新登录")
             return self.status()
         except Exception as exc:  # noqa: BLE001
             logger.exception("signal session start_login failed")
+            # ★ 泄漏根治：拉起失败（典型 TargetClosedError=目录被其他容器僵尸 chrome 持锁）
+            #   必须清理本进程已 spawn 的 playwright/chrome，否则每次失败泄漏一组进程。
+            try:
+                await self.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._kill_stale_chrome(exc)
             self._state = "idle"
             return SessionStatus("idle", message=f"启动失败: {exc}")
+
+    @staticmethod
+    def _kill_stale_chrome(exc: Exception) -> None:
+        """拉起失败时清理本容器残留 chrome 进程（TargetClosedError 场景）。
+
+        Chrome 主进程可能已 spawn 但 playwright 连接失败即放弃，进程树成为孤儿
+        （容器无 init 时永久残留，并持有 user_data_dir 的 SingletonLock——
+        之后本容器及其他容器共享该目录的浏览器全部拉不起来，模式2 整链路瘫痪）。
+        """
+        import subprocess
+
+        try:
+            r = subprocess.run(
+                ["pkill", "-9", "-f", "chrome"], capture_output=True, timeout=15
+            )
+            logger.warning(
+                "gate signal session: 拉起失败(%s)，已清理残留 chrome 进程 (rc=%s)",
+                type(exc).__name__, r.returncode,
+            )
+        except Exception as cleanup_exc:  # noqa: BLE001 清理失败不影响返回
+            logger.warning("gate signal session: 清理残留 chrome 失败: %s", cleanup_exc)
 
     async def screenshot(self) -> bytes | None:
         """返回当前浏览器页面 PNG 字节（后台管理轮询显示）。会话未激活返回 None。"""
@@ -233,18 +321,38 @@ class SignalSession:
         )
 
     async def _check_logged_in(self) -> tuple[bool, int]:
-        """在页面内 fetch 跟单账户接口，判断登录态；返回 (是否登录, 跟单交易员数)。"""
+        """在页面内 fetch 跟单账户接口，判断登录态；返回 (是否登录, 跟单交易员数)。
+
+        ★ 严格校验（三层）：
+          1. 页面 URL 含 /login → Gate 已重定向到登录页，必为未登录；
+          2. fetch 需 HTTP 200 且业务 code===200；
+          3. evaluate 异常/返回非法值一律视为未登录。
+          （follower/position 接口对匿名会话也可能返回 code 200 空数据，
+            仅靠接口返回判定会写出假登录标记，导致 /start 短路死锁。）
+        """
         if self._page is None:
+            return False, 0
+        # ★ URL 兜底：跳转到登录页 = 未登录
+        try:
+            url = self._page.url or ""
+            if "/login" in url:
+                return False, 0
+        except Exception:  # noqa: BLE001
             return False, 0
         try:
             js = (
                 f"fetch('{GATE_BASE}{_CHECK_PATH}?trader_name=&market=&page=1&page_size=100&sub_website_id=0',"
-                "{credentials:'include'}).then(r=>r.status===200?r.json():null)"
+                "{credentials:'include'}).then(r=>r.status===200?r.json().then(d=>"
+                "({ok:d&&d.code===200,n:d&&d.data?d.data.length:0})"
+                ").catch(()=>null):null).catch(()=>null)"
             )
-            resp = await self._page.evaluate(
-                f"({js}).then(d=>d&&d.code===200?d.data.length:0).catch(()=>0)"
-            )
-            count = int(resp or 0)
+            resp = await self._page.evaluate(f"({js})")
+            if not isinstance(resp, dict) or resp.get("ok") is not True:
+                return False, 0
+            try:
+                count = int(resp.get("n") or 0)
+            except (TypeError, ValueError):
+                count = 0
             return True, count
         except Exception:  # noqa: BLE001
             return False, 0
@@ -258,11 +366,27 @@ class SignalSession:
         - 返回 JSON dict；未登录/失败返回 None。
         """
         if self._page is None:
+            # ★ admin 远程操作期间（独占标志有效）跳过强制拉起：worker 进程此时
+            #   启动浏览器会与 admin 的浏览器争抢 user_data_dir（ProcessSingleton 崩溃）。
+            if self.admin_hold_active():
+                logger.info("gate signal session: fetch_api 跳过（admin 远程操作独占中）")
+                return None
             # ★ 会话未启动时自动拉起持久化会话（复用已落盘登录态），避免要求手动先启动。
             #   force_launch=True：即使标记已确认登录也必须真正拉起浏览器，
             #   否则 fetch 需要真实页面会永远失败（worker close 后标记仍为 logged_in）。
+            #   ★ 拉起失败重试：双容器共享目录时 worker 侧浏览器可能正持有锁
+            #     （TargetClosedError），等待其 60s 轮询周期结束释放后重试。
             logger.info("gate signal session: fetch_api 会话未启动，强制拉起持久化会话")
             await self.start_login(force_launch=True)
+            if self._page is None:
+                for attempt in range(2):
+                    import asyncio as _asyncio
+
+                    await _asyncio.sleep(12)
+                    logger.info("gate signal session: fetch_api 拉起重试 %s/2（等待锁释放窗口）", attempt + 1)
+                    await self.start_login(force_launch=True)
+                    if self._page is not None:
+                        break
         if self._page is None:
             logger.warning("gate signal session: fetch_api 无可用页面（强制拉起失败，请检查浏览器/登录态）")
             return None
@@ -284,10 +408,16 @@ class SignalSession:
             if s != 200:
                 logger.warning("gate signal session: fetch_api %s -> %s", path, s)
                 return None
-            # ★ 接口 200 即证明登录态有效：置 logged_in 并落盘标记，供 uvicorn 看板显示绿点
-            self._state = "logged_in"
-            self._write_marker(True, 0, "会话有效（fetch_api 200）")
-            return json.loads(t)
+            data = json.loads(t)
+            # ★ 严格校验业务 code：Gate 私有接口未登录时 HTTP 同样可能 200（错误在
+            #   body code 里）。★ 成功码两种：多数接口 200，leader/search 等为 0
+            #   （2026-08 实测）——其他值视为失败。
+            if not isinstance(data, dict) or data.get("code") not in (0, 200):
+                logger.warning("gate signal session: fetch_api %s -> biz code %s", path, data.get("code") if isinstance(data, dict) else "?")
+                return None
+            # ★ 不在此写登录标记：fetch_api 代理的接口多为公开接口（leader 搜索等），
+            #   成功不代表登录态。登录判定唯一权威入口是 _check_logged_in（URL+接口双层校验）。
+            return data
         except Exception as exc:  # noqa: BLE001
             logger.warning("gate signal session: fetch_api fail %s: %s", path, exc)
             return None
@@ -301,6 +431,13 @@ class SignalSession:
                 await self._browser.close()
         except Exception:  # noqa: BLE001
             pass
+        # ★ playwright driver 是独立 node 子进程：不 stop() 会随每次会话泄漏
+        pw = self._playwright
+        if pw is not None:
+            try:
+                await pw.stop()
+            except Exception:  # noqa: BLE001
+                pass
         self._context = None
         self._browser = None
         self._page = None

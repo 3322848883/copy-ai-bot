@@ -94,7 +94,7 @@ export default function AdminExchangeInvitesPage() {
       {/* 页头 */}
       <div className="page-hdr">
         <div>
-          <div className="page-eyebrow">EXCHANGE INVITE CODES · ★G27</div>
+          <div className="page-eyebrow">EXCHANGE INVITE CODES</div>
           <h1 className="page-title">交易所邀请码<small>每所多码 · 注册核实 · 合作归属</small></h1>
         </div>
         <div className="page-actions">
@@ -113,7 +113,7 @@ export default function AdminExchangeInvitesPage() {
       <div className="panel">
         <div className="panel-hdr">
           <div className="panel-title"><span className="sec-dot"></span>{ex === "全部" ? "全部邀请码" : `${ex} 邀请码列表`}</div>
-          <span className="panel-sub">/admin/v1/exchange-invites · 用户注册时按此核实（G27）</span>
+          <span className="panel-sub">/admin/v1/exchange-invites · 用户注册时按此核实</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="ftx-table">
@@ -143,7 +143,7 @@ export default function AdminExchangeInvitesPage() {
           </table>
         </div>
         <div style={{ marginTop: 16, padding: 12, borderRadius: 4, background: "rgba(234,179,8,0.06)", border: "1px solid rgba(234,179,8,0.25)", fontSize: 12, color: "var(--warning)" }}>
-          ℹ 用户注册选所后必须填写对应交易所邀请码（G27 强制），后端调用 <span style={{ fontFamily: "var(--font-geist-mono), monospace" }}>verify_and_bind</span> 核实：码存在 + 启用 + 未达上限 + 属于所选所，任一不满足即拒绝并提示具体原因。
+          ℹ 用户注册选所后必须填写对应交易所邀请码，后端调用 <span style={{ fontFamily: "var(--font-geist-mono), monospace" }}>verify_and_bind</span> 核实：码存在 + 启用 + 未达上限 + 属于所选所，任一不满足即拒绝并提示具体原因。
         </div>
       </div>
 

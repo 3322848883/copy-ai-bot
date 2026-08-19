@@ -103,10 +103,16 @@ class Settings(BaseSettings):
     signal_poll_loop_seconds: int = 60 # 单次任务连续运行时长(秒)，到点交还 celery 重踢
     signal_change_threshold: float = 0.005  # 持仓占比阈值：低于则视为噪音过滤(0.5%)
     signal_reconcile_interval: int = 600    # 全量对账间隔(秒)：强制重同步基线防漂移
+    # ★ 公开广场采集覆盖数：signal.scrape_all 每轮抓取榜单前 N 名带单员
+    signal_scrape_limit: int = 8
+    # ★ 已跟单交易员自动同步间隔(秒)：同步需拉起登录会话浏览器，与 admin 远程
+    #   操作争抢 user_data_dir；跟单关系低频变化，默认 10 分钟足够。
+    signal_follow_sync_interval: int = 600
     # ★ 测试符号过滤：真实数据中曾混入 TESTUSDT，symbol 含任一标记即丢弃
     signal_test_symbols: tuple[str, ...] = ("TEST", "DEMO", "FAKE")
     # ★ 模式2 信号源：通过这些「跟单账户 leader_id」监控（JSON 数组格式，如 ["32801","24264"]）。
     #   模式2 只监控「自己已跟单」的镜像仓位，按 leader_id 精确对应；未跟单的带单员无法监控。
+    #   ★ 留空时由 fetch_followed_leaders 自动发现（推荐：mock 时期的默认值已清除）。
     signal_follower_leader_ids: tuple[str, ...] = ()
     # ★ 需求补充：信号源详情(画像)定时刷新间隔(秒)。无论模式一/模式二，已上架(listed)
     #   策略的带单员画像都要定期刷新，保证策略广场数据新鲜（不只依赖每日快照）。

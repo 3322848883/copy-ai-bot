@@ -137,9 +137,9 @@ export default function AdminRiskPage() {
     }
   }
 
-  function openEdit(key: string, val: number | boolean) {
+  function openEdit(key: string, val: number | boolean | undefined) {
     setEditKey(key);
-    setEditVal(String(val));
+    setEditVal(String(val ?? ""));
   }
 
   function confirmEdit() {
@@ -191,13 +191,13 @@ export default function AdminRiskPage() {
           <div className="param-card">
             <div className="param-name">跟单延迟红线</div>
             <div className="param-desc">信号处理超过阈值即丢弃（模式 A / 模式 B）</div>
-            <div className="param-row"><span className="param-label">模式 A</span><span className="param-val">{fmt(rules.delay_red_line_a, "s")}</span><button className="edit-btn" onClick={() => openEdit("delay_red_line_a", rules.delay_red_line_a ?? 10)}>编辑</button></div>
-            <div className="param-row"><span className="param-label">模式 B（V2）</span><span className="param-val">{fmt(rules.delay_red_line_b, "s")}</span><button className="edit-btn" onClick={() => openEdit("delay_red_line_b", rules.delay_red_line_b ?? 5)}>编辑</button></div>
+            <div className="param-row"><span className="param-label">模式 A</span><span className="param-val">{fmt(rules.delay_red_line_a, "s")}</span><button className="edit-btn" onClick={() => openEdit("delay_red_line_a", rules.delay_red_line_a)}>编辑</button></div>
+            <div className="param-row"><span className="param-label">模式 B（V2）</span><span className="param-val">{fmt(rules.delay_red_line_b, "s")}</span><button className="edit-btn" onClick={() => openEdit("delay_red_line_b", rules.delay_red_line_b)}>编辑</button></div>
           </div>
           <div className="param-card">
             <div className="param-name">单机器人名义上限</div>
             <div className="param-desc">单 bot 名义价值上限（USDT）</div>
-            <div className="param-row"><span className="param-label">默认上限</span><span className="param-val">{fmt(rules.notional_limit, "")}</span><button className="edit-btn" onClick={() => openEdit("notional_limit", rules.notional_limit ?? 10000)}>编辑</button></div>
+            <div className="param-row"><span className="param-label">默认上限</span><span className="param-val">{fmt(rules.notional_limit, "")}</span><button className="edit-btn" onClick={() => openEdit("notional_limit", rules.notional_limit)}>编辑</button></div>
             <div className="param-row">
               <span className="param-label">白名单豁免</span>
               <span className="param-val">{fmt(rules.whitelist_exempt, "")}</span>
@@ -206,10 +206,10 @@ export default function AdminRiskPage() {
           </div>
           <div className="param-card">
             <div className="param-name">提现风控</div>
-            <div className="param-desc">G13 门槛 + G11 邀请风控</div>
-            <div className="param-row"><span className="param-label">最低提现</span><span className="param-val">{fmt(rules.min_withdrawal, " USDT")}</span><button className="edit-btn" onClick={() => openEdit("min_withdrawal", rules.min_withdrawal ?? 10)}>编辑</button></div>
-            <div className="param-row"><span className="param-label">手续费</span><span className="param-val">{fmt(rules.withdrawal_fee, " USDT")}</span><button className="edit-btn" onClick={() => openEdit("withdrawal_fee", rules.withdrawal_fee ?? 1)}>编辑</button></div>
-            <div className="param-row"><span className="param-label">批量邀请核实</span><span className="param-val">{fmt(rules.batch_invite_verify_hours, "h")}</span><button className="edit-btn" onClick={() => openEdit("batch_invite_verify_hours", rules.batch_invite_verify_hours ?? 48)}>编辑</button></div>
+            <div className="param-desc">提现门槛 + 邀请风控</div>
+            <div className="param-row"><span className="param-label">最低提现</span><span className="param-val">{fmt(rules.min_withdrawal, " USDT")}</span><button className="edit-btn" onClick={() => openEdit("min_withdrawal", rules.min_withdrawal)}>编辑</button></div>
+            <div className="param-row"><span className="param-label">手续费</span><span className="param-val">{fmt(rules.withdrawal_fee, " USDT")}</span><button className="edit-btn" onClick={() => openEdit("withdrawal_fee", rules.withdrawal_fee)}>编辑</button></div>
+            <div className="param-row"><span className="param-label">批量邀请核实</span><span className="param-val">{fmt(rules.batch_invite_verify_hours, "h")}</span><button className="edit-btn" onClick={() => openEdit("batch_invite_verify_hours", rules.batch_invite_verify_hours)}>编辑</button></div>
           </div>
           <div className="param-card">
             <div className="param-name">跨所拦截</div>

@@ -391,7 +391,7 @@ export default function AdminStrategiesPage() {
       {/* G26 运维看板 */}
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title"><span className="sec-dot"></span>运维看板（★G26）</div>
+          <div className="panel-title"><span className="sec-dot"></span>运维看板</div>
           <span className="panel-sub">信号源采集会话 · 模式 A</span>
         </div>
         <div className="ops-grid">

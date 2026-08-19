@@ -23,10 +23,11 @@ services:
   api:
     environment:
       # ★ 本地生产测试：强制 prod 以触发 fail-fast 校验（.env 的 dev 会绕过）
+      #   密钥无回退默认值——必须由 .env.prod-local 显式提供（:? 缺失即启动失败）
       APP_ENV: prod
       DEBUG: "false"
-      JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
-      VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set via --env-file}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:?VAULT_KEY_HEX must be set via --env-file}
       # 本地生产测试：显式放行本地 web/web-admin 跨源（prod 默认拒绝 localhost，需 CORS_ALLOW_LOCAL_TEST=1）
       CORS_ALLOW_LOCAL_TEST: "1"
       CORS_ORIGINS: http://localhost:3002,http://127.0.0.1:3002,http://localhost:3001,http://127.0.0.1:3001
@@ -50,8 +51,8 @@ services:
     environment:
       APP_ENV: prod
       DEBUG: "false"
-      JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
-      VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set via --env-file}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:?VAULT_KEY_HEX must be set via --env-file}
       CORS_ALLOW_LOCAL_TEST: "1"
       CORS_ORIGINS: http://localhost:3002,http://127.0.0.1:3002,http://localhost:3001,http://127.0.0.1:3001
       SMTP_HOST: smtp-capture
@@ -71,8 +72,8 @@ services:
     environment:
       APP_ENV: prod
       DEBUG: "false"
-      JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
-      VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set via --env-file}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:?VAULT_KEY_HEX must be set via --env-file}
       CORS_ALLOW_LOCAL_TEST: "1"
       CORS_ORIGINS: http://localhost:3002,http://127.0.0.1:3002,http://localhost:3001,http://127.0.0.1:3001
       SMTP_HOST: smtp-capture
@@ -85,8 +86,8 @@ services:
     environment:
       APP_ENV: prod
       DEBUG: "false"
-      JWT_SECRET: ${JWT_SECRET:-prod-local-test-secret-0123456789abcdef}
-      VAULT_KEY_HEX: ${VAULT_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set via --env-file}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:?VAULT_KEY_HEX must be set via --env-file}
       CORS_ALLOW_LOCAL_TEST: "1"
       CORS_ORIGINS: http://localhost:3002,http://127.0.0.1:3002,http://localhost:3001,http://127.0.0.1:3001
       SMTP_HOST: smtp-capture

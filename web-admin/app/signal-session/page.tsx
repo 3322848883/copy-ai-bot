@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch, tokenStore } from "@/lib/api";
+import { API_BASE, apiFetch, tokenStore } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 
 /** 模式2 信号源 · Gate 登录会话（后台「信号源登录」，★G26 运维看板）。
@@ -33,7 +33,8 @@ type Leader = {
 
 const REMOTE_W = 1440;
 const REMOTE_H = 900;
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+// 信号源登录页地址（Gate 改版或换源时改这一处即可）
+const SIGNAL_LOGIN_URL = process.env.NEXT_PUBLIC_SIGNAL_LOGIN_URL || "https://www.gate.com/login";
 
 const STATE_META: Record<string, { label: string; cls: string; hint: string }> = {
   idle: { label: "空闲", cls: "ws-offline", hint: "未启动远程浏览器" },
@@ -50,6 +51,8 @@ export default function AdminSignalSessionPage() {
   const [text, setText] = useState("");
   const [msg, setMsg] = useState("");
   const [polling, setPolling] = useState(false);
+  // 204（无浏览器画面）与加载中区分：避免"正在加载远程画面…"永久转圈
+  const [noFeed, setNoFeed] = useState(false);
   const viewRef = useRef<HTMLDivElement>(null);
   const lastMouse = useRef<{ x: number; y: number } | null>(null);
   // 鼠标交互期间暂停截图刷帧，避免画面抖动干扰精确定位（交互结束约 0.8s 后恢复）
@@ -84,7 +87,14 @@ export default function AdminSignalSessionPage() {
     loadStatus();
   }, [loadStatus, router]);
 
-  // 截图轮询：仅当会话非 idle 时持续拉取远程画面
+  // 切回浏览器标签页时自动刷新状态（登录态可能被 worker/其他进程更新）
+  useEffect(() => {
+    const onFocus = () => loadStatus();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [loadStatus]);
+
+  // 截图轮询：仅当远程浏览器实际拉起（polling）时持续拉取画面
   useEffect(() => {
     if (!polling) return;
     let alive = true;
@@ -95,9 +105,13 @@ export default function AdminSignalSessionPage() {
         const r = await fetch(`${API_BASE}/admin/v1/signal-session/screenshot`, {
           headers: { Authorization: `Bearer ${tokenStore.adminAccess}` },
         });
+        if (r.status === 204) {
+          if (alive) { setImgSrc(null); setNoFeed(true); }
+          return;
+        }
         if (r.ok) {
           const blob = await r.blob();
-          if (alive) setImgSrc(URL.createObjectURL(blob));
+          if (alive) { setNoFeed(false); setImgSrc(URL.createObjectURL(blob)); }
         }
       } catch { /* ignore */ }
     };
@@ -111,6 +125,13 @@ export default function AdminSignalSessionPage() {
     try {
       const r = await apiFetch<Status>("/admin/v1/signal-session/start", { method: "POST" }, tokenStore.adminAccess);
       setStatus(r);
+      if (r.state === "idle") {
+        // 拉起失败（浏览器崩溃/依赖缺失）：不进入远程视图，避免 204 空转
+        setMsg(r.message || "启动失败：远程浏览器未能拉起");
+        toast("error", r.message || "启动失败：远程浏览器未能拉起");
+        return;
+      }
+      setNoFeed(false);
       setMsg(r.message || "已启动远程浏览器，请在视图中完成 Gate 登录");
       setPolling(true);
       toast("info", "远程浏览器已启动，请完成登录");
@@ -126,8 +147,9 @@ export default function AdminSignalSessionPage() {
       setStatus(r);
       setMsg(r.message || (r.logged_in ? "登录成功，会话已持久化" : "未检测到有效登录"));
       if (r.logged_in) {
-        setPolling(false);
-        toast("success", "登录成功，会话已持久化");
+        // ★ 登录成功后保持远程视图开启：管理员还需在 Gate 页面完成「跟单交易员」操作，
+        //   完成后点「关闭会话」释放浏览器（否则无法继续跟单操作）
+        toast("success", "登录成功，可继续在画面中搜索并跟单交易员");
       } else {
         toast("warn", "尚未检测到有效登录");
       }
@@ -227,7 +249,7 @@ export default function AdminSignalSessionPage() {
       {/* 页头 */}
       <div className="page-hdr">
         <div>
-          <div className="page-eyebrow">SIGNAL SOURCE LOGIN · ★G26</div>
+          <div className="page-eyebrow">SIGNAL SOURCE LOGIN</div>
           <h1 className="page-title">信号源登录<small>模式2 · Gate 持久化会话 · 登录态复用</small></h1>
         </div>
         <div className="page-actions">
@@ -317,28 +339,33 @@ export default function AdminSignalSessionPage() {
           </div>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            {!active && (
-              <button className="btn btn-primary" onClick={doStart}>开始登录</button>
+            {!polling && (
+              <button className="btn btn-primary" onClick={doStart}>
+                {status.logged_in ? "打开远程浏览器（跟单操作）" : "开始登录"}
+              </button>
             )}
-            {active && (
+            {polling && (
               <>
-                <button className="btn btn-primary" onClick={doComplete}>完成登录</button>
-                <button className="btn btn-secondary" onClick={doClose}>关闭会话</button>
+                <button className="btn btn-primary" onClick={doComplete}>完成登录校验</button>
+                <button className="btn btn-secondary" onClick={doClose}>关闭会话（释放浏览器）</button>
               </>
-            )}
-            {!active && status.has_persisted && (
-              <button className="btn btn-secondary" onClick={doStart}>重新拉起（复用登录态）</button>
             )}
             <span style={{ color: "var(--muted)", fontSize: 12 }}>
               当前页面：<code style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{status.url || "—"}</code>
             </span>
           </div>
+          {!polling && status.logged_in && (
+            <div style={{ color: "var(--accent)", fontSize: 12, marginTop: 10 }}>
+              ★ 登录态有效但远程浏览器未运行（采集端复用登录态）。如需在 Gate 页面搜索/跟单交易员，
+              点击「打开远程浏览器（跟单操作）」。
+            </div>
+          )}
           {msg && <div style={{ color: "var(--accent)", fontSize: 13, marginTop: 12 }}>{msg}</div>}
         </div>
       )}
 
-      {/* 远程浏览器视图 */}
-      {status?.enabled && active && (
+      {/* 远程浏览器视图：仅浏览器实际拉起（polling）时显示 */}
+      {status?.enabled && polling && (
         <div className="panel">
           <div className="panel-hdr">
             <div className="panel-title"><span className="sec-dot"></span>远程浏览器视图</div>
@@ -355,6 +382,10 @@ export default function AdminSignalSessionPage() {
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={imgSrc} alt="远程浏览器" style={{ width: "100%", height: "100%", objectFit: "fill", imageRendering: "auto" }} draggable={false} />
+            </div>
+          ) : noFeed ? (
+            <div style={{ color: "var(--muted)", padding: 40, textAlign: "center" }}>
+              远程浏览器暂无画面（可能已被关闭或启动失败）——点「刷新状态」确认，或重新拉起。
             </div>
           ) : (
             <div style={{ color: "var(--muted)", padding: 40, textAlign: "center" }}>正在加载远程画面…</div>
@@ -374,7 +405,7 @@ export default function AdminSignalSessionPage() {
             <button className="btn btn-secondary" onClick={() => sendEvent({ type: "press", key: "Enter" })}>回车</button>
             <button className="btn btn-secondary" onClick={() => sendEvent({ type: "press", key: "Tab" })}>Tab</button>
             <button className="btn btn-secondary" onClick={() => sendEvent({ type: "press", key: "Escape" })}>Esc</button>
-            <button className="btn btn-secondary" onClick={() => sendEvent({ type: "navigate", url: "https://www.gate.com/login" })}>回登录页</button>
+            <button className="btn btn-secondary" onClick={() => sendEvent({ type: "navigate", url: SIGNAL_LOGIN_URL })}>回登录页</button>
           </div>
           <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>
             操作方式：先在画面中点击定位光标，再在下方输入框填文本后点「输入」；验证码 / 滑块请直接在画面中用鼠标完成。

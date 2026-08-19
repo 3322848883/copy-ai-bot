@@ -349,7 +349,10 @@ async def sync_profiles(body: SyncIn, db: DbDep = None, admin=Depends(require_ad
         after={"trader_id": body.trader_id},
     )
     if body.trader_id:
-        result = run_sync_one_sync(body.trader_id)
+        try:
+            result = await run_sync_one_sync(body.trader_id)
+        except Exception as exc:  # noqa: BLE001 单个失败返回原因，不炸接口
+            result = {"trader_id": body.trader_id, "updated": False, "reason": str(exc)}
         return {"mode": "one", "result": result}
     # 全量：优先投递 Celery 后台任务；broker 不可用时降级同步执行 top 50
     try:

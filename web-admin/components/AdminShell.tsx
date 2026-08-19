@@ -37,6 +37,7 @@ const MENU_GROUPS: { group: string; items: MenuItem[] }[] = [
     group: "风控",
     items: [
       { href: "/risk", label: "风控中心", icon: "◉", badge: "risk" },
+      { href: "/admins", label: "管理员管理", icon: "🛡" },
       { href: "/settings", label: "系统设置", icon: "⚙" },
       { href: "/audit", label: "审计日志", icon: "☰" },
       { href: "/signal-session", label: "信号源登录", icon: "🔐" },

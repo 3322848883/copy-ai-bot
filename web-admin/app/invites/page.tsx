@@ -94,7 +94,7 @@ export default function AdminInvitesPage() {
         <div className="kpi-card">
           <div className="kpi-l">风控冻结</div>
           <div className="kpi-v" style={{ color: "var(--danger)" }}>{kpi?.frozen_count ?? 0}</div>
-          <div className="kpi-s">笔 · 48h 延长（G11）</div>
+          <div className="kpi-s">笔 · 48h 延长</div>
         </div>
       </div>
 
@@ -103,7 +103,7 @@ export default function AdminInvitesPage() {
         <div className="risk-alert">
           <span style={{ fontSize: 16, color: "#f87171" }}>⚠</span>
           <div>
-            <div className="ra-title">检测到批量邀请滥用（G11 detect_batch_abuse）</div>
+            <div className="ra-title">检测到批量邀请滥用</div>
             <div className="ra-desc">
               {abuse.items.map((u) => (
                 <span key={u.inviter_id} style={{ marginRight: 16 }}>

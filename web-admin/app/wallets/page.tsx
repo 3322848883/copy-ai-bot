@@ -108,7 +108,7 @@ export default function AdminWalletsPage() {
     { label: "可提现", val: summary?.available_usdt, sub: "USDT", color: "var(--success)" },
     { label: "提现中", val: summary?.withdrawing_usdt, sub: "USDT", color: "#60a5fa" },
     { label: "已提现", val: summary?.paid_usdt, sub: "USDT" },
-    { label: "冻结", val: summary?.frozen_usdt, sub: "USDT · 48h 风控（G11）", color: "var(--danger)" },
+    { label: "冻结", val: summary?.frozen_usdt, sub: "USDT · 48h 风控", color: "var(--danger)" },
   ];
 
   return (

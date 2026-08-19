@@ -1,6 +1,7 @@
 ﻿# 模式2 信号源·Gate 登录会话路由（后台管理「登录 Gate」）
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, Response
@@ -40,19 +41,40 @@ async def session_status(_: Any = Depends(get_current_admin)) -> dict:
 
 
 @router.post("/start")
-async def session_start(_: Any = Depends(get_current_admin)) -> dict:
-    """启动持久化浏览器并打开 Gate 登录/跟单页（后台远程操作起点）。"""
+async def session_start(force: bool = False, _: Any = Depends(get_current_admin)) -> dict:
+    """启动持久化浏览器并打开 Gate 登录/跟单页（后台远程操作起点）。
+
+    ★ 管理员点击「开始登录/重新拉起」必须真正拉起浏览器（force_launch=True），
+      否则登录标记存在时直接短路返回 logged_in——远程视图无法打开、无法操作
+      Gate 页面完成跟单（登录界面卡死根因）。force 参数保留兜底用途。
+    """
     settings = get_settings()
     if not settings.signal_session_enabled:
         raise AuthError("signal_session 功能未启用")
-    st = await get_signal_session().start_login()
+    # ★ 独占标志：admin 远程操作期间 worker 不得拉起浏览器争抢 user_data_dir
+    get_signal_session().acquire_admin_hold()
+    svc = get_signal_session()
+    st = await svc.start_login(force_launch=True)
+    # ★ 锁窗口重试：worker 侧浏览器可能正持有 user_data_dir（ProcessSingleton 锁，
+    #   TargetClosedError）；设 hold 后 worker 60s 轮询周期结束会释放，等待重试。
+    if st.state != "logged_in" and st.state != "active":
+        for _ in range(3):
+            await asyncio.sleep(10)
+            st = await svc.start_login(force_launch=True)
+            if st.state in ("logged_in", "active"):
+                break
     # ★ enabled 必须随响应返回：前端以 status.enabled 控制核心 UI 渲染，缺省会误判为"功能未启用"整块塌陷
     return {"enabled": True, **st.__dict__}
 
 
 @router.get("/screenshot")
 async def session_screenshot(_: Any = Depends(get_current_admin)) -> Response:
-    """返回当前远程浏览器页面 PNG（前端轮询显示，坐标按 1440x900 换算）。"""
+    """返回当前远程浏览器页面 PNG（前端轮询显示，坐标按 1440x900 换算）。
+
+    ★ 截图轮询同时作为独占标志的心跳续期：admin 长时间操作浏览器期间
+      worker 不会因 TTL 过期而拉起浏览器争抢 user_data_dir。
+    """
+    get_signal_session().refresh_admin_hold()
     png = await get_signal_session().screenshot()
     if png is None:
         return Response(status_code=204)
@@ -92,6 +114,8 @@ async def session_complete(_: Any = Depends(get_current_admin)) -> dict:
 async def session_close(_: Any = Depends(get_current_admin)) -> dict:
     """关闭浏览器（保留 user_data_dir 登录态，供信号源复用）。"""
     await get_signal_session().close()
+    # ★ 释放独占标志：worker 可恢复 signal_session 采集
+    get_signal_session().release_admin_hold()
     return {"ok": True}
 
 
@@ -114,9 +138,14 @@ async def search_leaders(
         return {"ok": False, "message": "signal_session 功能未启用", "items": []}
     from api.services.scraper.adapters.gate import GateScraper
 
+    svc = get_signal_session()
+    # ★ 远程操作期间（hold 有效）浏览器归 admin 会话所有，搜完不关；
+    #   否则搜索会临时拉起浏览器，用完必须关闭——否则常驻占住 user_data_dir，
+    #   worker 的定时自动同步（600s 周期）将永远拉不起来（ProcessSingleton 锁）。
+    held = svc.admin_hold_active()
     scraper = GateScraper(headless=False, mock=False)
     # ★ 复用持久化登录会话的 fetch，避免每次搜索新建浏览器争抢同一 user_data_dir
-    fetcher = get_signal_session().fetch_api
+    fetcher = svc.fetch_api
     kw = keyword.strip()
     try:
         if kw.isdigit():
@@ -128,7 +157,11 @@ async def search_leaders(
                     "source": "detail"}
         items = await scraper.search_leaders(kw, page, min(page_size, 50), fetcher=fetcher)
     finally:
-        pass
+        if not held:
+            try:
+                await svc.close()
+            except Exception:  # noqa: BLE001
+                pass
     if items is None:
         return {"ok": False, "message": "搜索接口失败或未登录（请先在「登录 Gate」页完成登录）", "items": []}
     return {"ok": True, "keyword": kw, "items": items, "page": page, "page_size": page_size,

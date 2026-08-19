@@ -289,7 +289,8 @@ class GateScraper:
                 {"page": 1, "page_size": min(max(len(traders), 20), 50), "status": "running", "order_by": "follow_profit", "sort_by": "desc", "cycle": "week", "sub_website_id": 0},
             )
             if resp7 and resp7.get("code") == 0:
-                week_map = {str(it["leader_id"]): float(it.get("profit_rate") or 0) * 100 for it in resp7["data"]["list"]}
+                week_map = {str(it["leader_id"]): self._rate_or_zero(it.get("profit_rate"))
+                            for it in resp7["data"]["list"]}
                 for t in traders:
                     t.roi_7d = week_map.get(t.trader_id, t.roi_7d)
         except Exception:  # noqa: BLE001
@@ -536,7 +537,7 @@ class GateScraper:
             out.append({
                 "leader_id": it.get("leader_id"),
                 "nick": user.get("nick") or user.get("nickname") or "",
-                "roi_30d": self._to_pct(it.get("profit_rate")),
+                "roi_30d": self._rate_or_zero(it.get("profit_rate")),
                 "win_rate_all": self._to_pct(it.get("win_rate")),
                 "max_drawdown": self._to_pct(it.get("max_drawdown")),
                 "followers": it.get("curr_follow_num") or 0,
@@ -552,6 +553,21 @@ class GateScraper:
             return round(float(v) * 100, 2)
         except (TypeError, ValueError):
             return 0.0
+
+    @classmethod
+    def _rate_or_zero(cls, v, fallback=None) -> float:
+        """★ Gate 收益率字段哨兵值处理：-1 表示「收益已重置/无数据」（实测 12221：
+        profit_rate=-1 但 profit=+5121U、胜率/带单天数均正常）。盲目 ×100 会把健康
+        交易员显示成 -100% 全亏。哨兵 → 回退备用字段，备用也无效则 0（未知）。
+        """
+        pct = cls._to_pct(v)
+        if pct > -99.99:
+            return pct
+        if fallback is not None:
+            fb = cls._to_pct(fallback)
+            if fb > -99.99:
+                return fb
+        return 0.0
 
     async def get_leader_by_id(self, leader_id: str, fetcher=None) -> dict | None:
         """★ 按 ID 精确查带单员画像（★ 兜底：search 只按昵称匹配，纯数字 ID 返回空）。
@@ -591,11 +607,13 @@ class GateScraper:
         return {
             "leader_id": str(config.get("leader_id") or leader_id),
             "nick": f"Leader{leader_id}",
-            # ★ 详情接口多周期字段：7d/30d/90d/all 均为小数比例(×100 转百分数)
-            "roi_7d": self._to_pct(profit.get("seven_profit_rate")),
-            "roi_30d": self._to_pct(profit.get("month_profit_rate")),
-            "roi_90d": self._to_pct(profit.get("three_month_profit_rate")),
-            "roi_all": self._to_pct(profit.get("profit_rate")),  # 全周期累计收益率（接口返回比例值，×100）
+            # ★ 详情接口多周期字段：7d/30d/90d/all 均为小数比例(×100 转百分数)；
+            #   -1 哨兵（收益重置/无数据）→ 0，roi_all 回退 simple_profit_rate
+            "roi_7d": self._rate_or_zero(profit.get("seven_profit_rate")),
+            "roi_30d": self._rate_or_zero(profit.get("month_profit_rate")),
+            "roi_90d": self._rate_or_zero(profit.get("three_month_profit_rate")),
+            "roi_all": self._rate_or_zero(profit.get("profit_rate"),
+                                          fallback=profit.get("simple_profit_rate")),
             "win_rate_30d": self._to_pct(profit.get("month_win_rate")),
             "win_rate_all": round(win_num / total * 100, 1) if total else 0.0,
             "max_drawdown": self._to_pct(profit.get("max_drawdown")),  # 全周期回撤
@@ -750,7 +768,8 @@ class GateScraper:
         user = it.get("user_info") or {}
         # ★ 排行榜接口 cycle=month 只返回「月周期」数据：只填 30d 字段，
         #   7d/90d/all 由 fetch_top_traders 补拉 week 周期与 detail 接口填充，避免字段复制失真
-        month_roi = float(it.get("profit_rate") or 0) * 100
+        #   ★ profit_rate -1 哨兵（收益重置/无数据）→ 0，防显示 -100%
+        month_roi = GateScraper._rate_or_zero(it.get("profit_rate"))
         return RawTrader(
             trader_id=str(it["leader_id"]),
             name=user.get("nick") or user.get("nickname") or f"Leader{it['leader_id']}",

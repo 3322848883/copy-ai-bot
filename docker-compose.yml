@@ -1,4 +1,4 @@
-# M6 T6.4：一键部署（api + web + db + redis + celery worker/beat + mailhog）
+﻿# M6 T6.4：一键部署（api + web + db + redis + celery worker/beat + mailhog）
 services:
   # ★ 邮件捕获（SMTP 1025 / Web UI + JSON API 8025），prod 模式注册验证码读取
   mailhog:
@@ -68,7 +68,8 @@ services:
       SIGNAL_SESSION_ENABLED: "true"
       SIGNAL_SESSION_HEADLESS: "false"
       SIGNAL_SESSION_DATA_DIR: /app/data/signal_session
-      SIGNAL_FOLLOWER_LEADER_IDS: "${SIGNAL_FOLLOWER_LEADER_IDS:-[\"32801\",\"24264\"]}"
+      # ★ SIGNAL_FOLLOWER_LEADER_IDS 已移除：留空走 fetch_followed_leaders 自动发现
+      #   （旧默认 ["32801","24264"] 为 mock 数据；显式指定时需设 JSON 数组且不能为空串）
     depends_on:
       db:
         condition: service_healthy
@@ -85,6 +86,9 @@ services:
     build: .
     image: ai-api:latest
     command: celery -A api.workers.celery_app:celery_app worker --loglevel=info
+    # ★ init 进程回收孤儿 chrome：playwright 拉起失败时 chrome 进程树会孤儿化
+    #   （无 init 时永久残留并持有 user_data_dir 的 SingletonLock，跨容器锁死浏览器）
+    init: true
     environment:
       APP_ENV: ${APP_ENV:-prod}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
@@ -106,7 +110,6 @@ services:
       SIGNAL_SESSION_ENABLED: "true"
       SIGNAL_SESSION_HEADLESS: "false"
       SIGNAL_SESSION_DATA_DIR: /app/data/signal_session
-      SIGNAL_FOLLOWER_LEADER_IDS: "${SIGNAL_FOLLOWER_LEADER_IDS:-[\"32801\",\"24264\"]}"
     depends_on:
       db:
         condition: service_healthy
@@ -133,7 +136,6 @@ services:
       SCRAPER_REAL: "1"
       SIGNAL_SESSION_ENABLED: "true"
       SIGNAL_SESSION_DATA_DIR: /app/data/signal_session
-      SIGNAL_FOLLOWER_LEADER_IDS: "${SIGNAL_FOLLOWER_LEADER_IDS:-[\"32801\",\"24264\"]}"
     depends_on:
       db:
         condition: service_healthy
@@ -156,7 +158,6 @@ services:
       DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_saas
       REDIS_URL: redis://redis:6379/0
       SCRAPER_REAL: "1"
-      SIGNAL_FOLLOWER_LEADER_IDS: "${SIGNAL_FOLLOWER_LEADER_IDS:-[\"32801\",\"24264\"]}"
     depends_on:
       db:
         condition: service_healthy
