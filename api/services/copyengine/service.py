@@ -226,7 +226,9 @@ class CopyEngine:
     async def _exec_reduce(self, bot: CopyBot, sig: SourceSignal, api_row, api_secret: str) -> CopyOrder:
         pos = await self._current_position(bot, api_row, api_secret, sig.symbol)
         if pos is None or pos["qty"] <= 0:
-            return await self._fail_persist(bot, sig, "other", "无持仓可减")
+            return await self._fail_persist(
+                bot, sig, "no_position", f"无持仓可减: {sig.symbol}（带单员减仓时本账户无该仓位，常见于中途开始跟单）"
+            )
         reduce_qty = pos["qty"] * min(getattr(sig, "reduce_ratio", 0.5) or 0.5, 1.0)
         side = "sell" if sig.side == "long" else "buy"
         exec_res = await self._execute_order(
@@ -240,7 +242,9 @@ class CopyEngine:
     async def _exec_close(self, bot: CopyBot, sig: SourceSignal, api_row, api_secret: str) -> CopyOrder:
         pos = await self._current_position(bot, api_row, api_secret, sig.symbol)
         if pos is None or pos["qty"] <= 0:
-            return await self._fail_persist(bot, sig, "other", "无持仓可平")
+            return await self._fail_persist(
+                bot, sig, "no_position", f"无持仓可平: {sig.symbol}（带单员平仓时本账户无该仓位，常见于中途开始跟单）"
+            )
         side = "sell" if sig.side == "long" else "buy"
         exec_res = await self._execute_order(
             bot=bot, sig=sig, side=side, qty=pos["qty"],
@@ -276,7 +280,7 @@ class CopyEngine:
         return CopyOrder(
             bot_id=bot.id, signal_id=sig.id, action=sig.action, qty=0,
             leverage=bot.leverage, required_margin_usdt=0, status="failed",
-            failure_category=category, latency_ms=latency,
+            failure_category=category, fail_reason=reason[:255], latency_ms=latency,
         )
 
     async def _fail_persist(self, bot, sig, category: str, reason: str, latency: int = 0) -> CopyOrder:
@@ -293,6 +297,7 @@ class CopyEngine:
             bot_id=bot.id, signal_id=sig.id, action=sig.action, qty=qty,
             leverage=bot.leverage, required_margin_usdt=margin, status=status,
             failure_category=None if exec_res.success else (exec_res.failure_category or "other"),
+            fail_reason=None if exec_res.success else (exec_res.reason or "")[:255],
             latency_ms=exec_res.latency_ms,
             executed_at=datetime.now(timezone.utc) if exec_res.success else None,
         )
@@ -321,6 +326,7 @@ class CopyEngine:
                 "qty": order.qty,
                 "status": order.status,
                 "failure_category": order.failure_category,
+                "fail_reason": order.fail_reason,
                 "latency_ms": order.latency_ms,
             },
         )

@@ -32,6 +32,7 @@ type Order = {
   qty: number;
   status: string;
   failure_category: string | null;
+  fail_reason?: string | null;
   latency_ms: number | null;
   executed_at: string | null;
 };
@@ -135,12 +136,12 @@ export default function Home() {
 
   // ── WS 实时：bot.order 下单结果 ──
   useWsChannel("bot.order", (raw) => {
-    const payload = raw as { action?: string; symbol?: string; status?: string; failure_category?: string | null };
+    const payload = raw as { action?: string; symbol?: string; status?: string; failure_category?: string | null; fail_reason?: string | null };
     const act = payload.action ? ACTION_LABEL[payload.action] ?? payload.action : "";
     const ok = payload.status === "filled";
     pushToast(
       ok ? "success" : "error",
-      ok ? `${payload.symbol} ${act} 已成交（WS bot.order）` : `${payload.symbol} ${act} 失败：${payload.failure_category ?? "?"}`
+      ok ? `${payload.symbol} ${act} 已成交（WS bot.order）` : `${payload.symbol} ${act} 失败：${payload.fail_reason || payload.failure_category || "?"}`
     );
     load();
   });
@@ -487,7 +488,12 @@ export default function Home() {
                             {o.status === "filled" ? (
                               <span style={{ color: "var(--success)" }}>已成交{o.latency_ms != null ? ` (${o.latency_ms}ms)` : ""}</span>
                             ) : (
-                              <span style={{ color: "var(--danger)" }}>失败: {o.failure_category ?? "?"}</span>
+                              <span
+                                style={{ color: "var(--danger)" }}
+                                title={o.fail_reason || o.failure_category || ""}
+                              >
+                                失败: {o.fail_reason || o.failure_category || "?"}
+                              </span>
                             )}
                           </td>
                         </tr>

@@ -25,7 +25,7 @@ type Bot = {
 };
 
 type Position = { symbol: string; side: string; qty: number; entry_price: number; mark_price: number; unrealized_pnl: number };
-type Order = { id: number; action: string; qty: number; status: string; failure_category: string | null; latency_ms: number };
+type Order = { id: number; action: string; qty: number; status: string; failure_category: string | null; fail_reason?: string | null; latency_ms: number };
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
   active: { label: "运行中", color: "#28c464" },
@@ -430,7 +430,12 @@ export default function MyBotsPage() {
                               orders.map((o) => (
                                 <div key={o.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--rule)" }}>
                                   <span>{o.action.toUpperCase()} {o.qty}</span>
-                                  <span>{o.status === "filled" ? `成交 (${o.latency_ms}ms)` : `失败: ${o.failure_category || "?"}`}</span>
+                                  <span
+                                    style={o.status === "failed" ? { color: "var(--danger)" } : undefined}
+                                    title={o.status === "failed" ? o.fail_reason || o.failure_category || "" : undefined}
+                                  >
+                                    {o.status === "filled" ? `成交 (${o.latency_ms}ms)` : `失败: ${o.fail_reason || o.failure_category || "?"}`}
+                                  </span>
                                 </div>
                               ))
                             )}

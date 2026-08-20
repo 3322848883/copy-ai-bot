@@ -214,6 +214,7 @@ class BotService:
                 "required_margin_usdt": o.required_margin_usdt,
                 "status": o.status,
                 "failure_category": o.failure_category,
+                "fail_reason": o.fail_reason,
                 "latency_ms": o.latency_ms,
                 "executed_at": o.executed_at.isoformat() if o.executed_at else None,
             }

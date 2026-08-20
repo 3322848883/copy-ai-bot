@@ -8,8 +8,8 @@ import { useToast } from "@/components/Toast";
 type OrderRow = {
   id: number; user_email: string; strategy_name: string; action: string; action_label: string;
   symbol: string; side: string; leverage: number; qty: number; required_margin_usdt: number;
-  status: string; status_label: string; failure_category: string | null; latency_ms: number | null;
-  executed_at: string | null;
+  status: string; status_label: string; failure_category: string | null; fail_reason?: string | null;
+  latency_ms: number | null; executed_at: string | null;
 };
 type Kpi = { total: number; filled: number; failed: number; risk_blocked: number; fill_rate: number; avg_latency_ms: number | null };
 type Failure = { kpi: Kpi; breakdown: Record<string, number> };
@@ -22,11 +22,13 @@ const ACTION_LABEL: Record<string, string> = { "": "全部", open: "开仓", add
 const STATUSES = ["filled", "failed", "pending"];
 const STATUS_LABEL: Record<string, string> = { filled: "已成交", failed: "已失败", pending: "待执行" };
 
-/** 设计稿失败归类报表：failure_category 九种枚举（risk 由 KPI「风控拦截」单独展示）。 */
-const FAIL_CATS = ["balance", "permission", "leverage", "symbol", "min_size", "network", "price_deviation", "slippage", "other"];
+/** 设计稿失败归类报表：failure_category 枚举（risk 由 KPI「风控拦截」单独展示；
+ *  no_position=带单员平/减仓时本账户无该仓位，2026-08-20 从 other 拆出——常见于中途开始跟单，属预期状态不匹配）。 */
+const FAIL_CATS = ["balance", "permission", "leverage", "symbol", "min_size", "network", "price_deviation", "slippage", "no_position", "other"];
 const FAIL_NAMES: Record<string, string> = {
   balance: "余额不足", permission: "权限", leverage: "杠杆", symbol: "币对", min_size: "最小量",
-  network: "网络", price_deviation: "价格偏差", slippage: "滑点", risk: "风控", other: "其他",
+  network: "网络", price_deviation: "价格偏差", slippage: "滑点", risk: "风控",
+  no_position: "无持仓", other: "其他",
 };
 
 /** 动作标签配色（对齐设计稿 act-open/add/reduce/close）。 */
@@ -244,6 +246,16 @@ export default function AdminOrdersPage() {
                     {statusBadge(o)}
                     {o.status === "failed" && o.failure_category && (
                       <div className="sub-ref">{FAIL_NAMES[o.failure_category] || o.failure_category}</div>
+                    )}
+                    {/* ★ 具体失败原因（2026-08-20）：交易所原始报错/风控规则/校验消息，悬停看全文 */}
+                    {o.status === "failed" && o.fail_reason && (
+                      <div
+                        className="sub-ref"
+                        style={{ maxWidth: 260, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                        title={o.fail_reason}
+                      >
+                        {o.fail_reason}
+                      </div>
                     )}
                   </td>
                 </tr>

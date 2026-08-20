@@ -43,7 +43,10 @@ class CopyOrder(Base):
     required_margin_usdt: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(16), default="pending")
     failure_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # balance / permission / leverage / symbol / min_size / network / price_deviation / slippage / risk / other
+    # balance / permission / leverage / symbol / min_size / network / price_deviation / slippage / risk / no_position / other
+    # ★ 失败原因文本（2026-08-20）：category 只是 11 值枚举，管理员要看具体原因——
+    #   ExecResult.reason / 风控规则名 / sizer 校验消息原样落库（截断 255）
+    fail_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

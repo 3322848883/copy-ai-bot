@@ -62,6 +62,7 @@ async def list_orders(
                 "status": o.status,
                 "status_label": STATUS_LABEL.get(o.status, o.status),
                 "failure_category": o.failure_category or "",
+                "fail_reason": o.fail_reason or "",
                 "latency_ms": o.latency_ms,
                 "executed_at": o.executed_at.isoformat() if o.executed_at else None,
             }

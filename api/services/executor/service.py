@@ -99,8 +99,19 @@ class OrderRouter:
                 avg_price=result.avg_price,
                 latency_ms=latency,
             )
+        # ★ 拒绝原因带交易所原始报错（raw.label/message）——只有状态码的话
+        #   后台只能显示"其他"，带原文管理员才能定位（IOC 未成交=cancelled 也在此路径）
+        raw = result.raw or {}
+        detail = " ".join(
+            str(x) for x in (raw.get("label"), raw.get("message")) if x
+        )
+        reason = f"order rejected: {result.status}"
+        if detail:
+            reason = f"{reason} ({detail})"
+        if result.status == "cancelled":
+            reason = f"IOC 未成交自动撤销: {detail or '无对手盘/超出滑点保护'}"
         return ExecResult(
-            False, "other", f"order rejected: {result.status}",
+            False, "other", reason,
             order_id=result.order_id, latency_ms=latency,
         )
 
