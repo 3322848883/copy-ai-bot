@@ -63,7 +63,9 @@ celery_app.conf.update(
         #     ProcessSingleton 锁（实测每轮损失 ~30 轮询）；留余量后干净交接。
         "signal-poll-live": {
             "task": "signal.poll_live",
-            "schedule": settings.signal_poll_loop_seconds + 15,
+            # ★ 余量 15→10s（2026-08-20）：实测浏览器启停开销 ~1s，10s 足够；
+            #   任务循环时长 110s（config signal_poll_loop_seconds），空窗 10s/120s ≈ 8%
+            "schedule": settings.signal_poll_loop_seconds + 10,
             # ★ 修复：expires 放宽至 2 倍，防任务慢跑导致消息队列过期形成轮询空窗
             "options": {"expires": max(settings.signal_poll_loop_seconds * 2, 60)},
         },

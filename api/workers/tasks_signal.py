@@ -680,7 +680,12 @@ LIVE_POS_TTL = 40 * 60  # 覆盖 refresh 30min 周期 + 容错
 
 
 async def _write_live_positions(scraper, trader_ids: list[str]) -> int:
-    """批量拉实时持仓写 Redis（详情页直读，不落库）。失败静默（详情页回退基线）。"""
+    """批量拉实时持仓写 Redis（详情页直读，不落库）。失败静默（详情页回退基线）。
+
+    ★ 按交易员节流 10s（2026-08-20）：详情页展示 10s 新鲜度足够；原实现每轮差分
+      后串行拉全部交易员（每个 ~1.4s），把差分轮询从 ~1s 拖到 ~5s——信号延迟红线
+      A=10s，展示缓存不该吃掉轮询预算。节流后差分轮回到 ~2s/轮。
+    """
     if not trader_ids or scraper.mock:
         return 0
     import json
@@ -693,14 +698,20 @@ async def _write_live_positions(scraper, trader_ids: list[str]) -> int:
     try:
         for tid in trader_ids:
             try:
+                last = await r.get(f"gate:leader:live_pos:ts:{tid}")
+                if last and (_time.time() - float(last)) < 10:
+                    continue
                 positions = await scraper.fetch_leader_positions_live(tid)
             except Exception:  # noqa: BLE001 单个失败不阻断
                 continue
-            await r.set(
+            pipe = r.pipeline()
+            pipe.set(
                 LIVE_POS_KEY.format(tid=tid),
                 json.dumps({"ts": _time.time(), "positions": positions}),
                 ex=LIVE_POS_TTL,
             )
+            pipe.set(f"gate:leader:live_pos:ts:{tid}", str(_time.time()), ex=120)
+            await pipe.execute()
             written += 1
     finally:
         await r.aclose()
