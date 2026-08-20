@@ -27,13 +27,29 @@ class SignalStore:
         self.settings = get_settings()
         self.redis = redis or aioredis.from_url(self.settings.redis_url, decode_responses=True)
 
-    async def upsert_trader(self, exchange: str, trader_id: str, name: str | None = None, followers: int = 0) -> Trader:
-        """确保 Trader 存在（幂等），并记录带单员昵称/跟单人数（真实信号源）。"""
+    async def upsert_trader(
+        self,
+        exchange: str,
+        trader_id: str,
+        name: str | None = None,
+        followers: int = 0,
+        hide_position: bool | None = None,
+    ) -> Trader:
+        """确保 Trader 存在（幂等），并记录带单员昵称/跟单人数（真实信号源）。
+
+        hide_position（Gate config.is_hide）：None=未知不覆盖；True/False 均更新。
+        """
         trader = await self.db.scalar(
             select(Trader).where(Trader.exchange == exchange, Trader.trader_id == trader_id)
         )
         if trader is None:
-            trader = Trader(exchange=exchange, trader_id=trader_id, name=name, followers=followers)
+            trader = Trader(
+                exchange=exchange,
+                trader_id=trader_id,
+                name=name,
+                followers=followers,
+                hide_position=hide_position,
+            )
             self.db.add(trader)
             await self.db.flush()
         else:
@@ -43,6 +59,9 @@ class SignalStore:
                 changed = True
             if followers and trader.followers != followers:
                 trader.followers = followers
+                changed = True
+            if hide_position is not None and trader.hide_position != hide_position:
+                trader.hide_position = hide_position
                 changed = True
             if changed:
                 await self.db.flush()

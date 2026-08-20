@@ -116,6 +116,8 @@ async def pending_list(exchange: str = Query(""), db: DbDep = None, _admin=Depen
                 "max_drawdown": profile.max_drawdown if profile else 0,
                 "trading_days": profile.trading_days if profile else 0,
                 "followers": trader.followers or 0,
+                # ★ 仓位公开状态（Gate is_hide）：True=隐藏（公开采集拿不到仓位，上架只能模式B）
+                "hide_position": trader.hide_position,
                 # ★ M6 T8：仅 Gate 具备信号源采集适配器，其余所标记“待接入采集”
                 "collector_ready": COLLECTOR_READY_EXCHANGES.get(trader.exchange, False),
             }
@@ -190,6 +192,8 @@ async def list_strategies(
                 "risk_rating": s.risk_rating,
                 "status": s.status,
                 "followers": trader.followers if trader else 0,
+                # ★ 仓位公开状态（Gate is_hide）：True=隐藏（公开采集拿不到仓位，仅模式B 可跟）
+                "hide_position": trader.hide_position if trader else None,
                 "roi_7d": profile.roi_7d if profile else 0,
                 "roi_30d": profile.roi_30d if profile else 0,
                 "roi_all": profile.roi_all if profile else 0,

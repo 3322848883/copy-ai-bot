@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base, TimestampMixin
@@ -41,6 +41,9 @@ class Trader(Base):
     trader_id: Mapped[str] = mapped_column(String(64))
     name: Mapped[str | None] = mapped_column(String(64), nullable=True)  # ★ 真实信号源：带单员昵称
     followers: Mapped[int] = mapped_column(Integer, default=0)  # ★ 真实信号源：跟单人数
+    # ★ 带单员是否隐藏当前持仓（Gate config.is_hide）：True → 公开采集拿不到仓位，
+    #   上架只能走模式B（API 镜像跟单）；None=尚未采集到（detail 未拉过）
+    hide_position: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     __table_args__ = (UniqueConstraint("exchange", "trader_id", name="uq_trader_exchange_id"),)
 

@@ -56,6 +56,9 @@ class RawTrader:
     win_rate_all: float = 0.0
     max_drawdown: float = 0.0
     trading_days: int = 0
+    # ★ 带单员是否隐藏当前持仓（detail config.is_hide）：决定上架模式——
+    #   公开仓位→模式A（公开广场采集跟单）；隐藏→模式B（绑定 API 镜像跟单）
+    hide_position: bool | None = None
     raw: dict = field(default_factory=dict)
 
 
@@ -362,6 +365,7 @@ class GateScraper:
                         t.max_drawdown = detail.get("max_drawdown") or t.max_drawdown
                         t.followers = detail.get("followers") or t.followers
                         t.trading_days = detail.get("trading_days") or t.trading_days
+                        t.hide_position = detail.get("hide_position")
                 except Exception:  # noqa: BLE001 单个失败不阻断
                     logger.warning("gate detail fetch fail: %s", t.trader_id)
                 await asyncio.sleep(random.uniform(SCRAPE_MIN_INTERVAL_S, SCRAPE_MAX_INTERVAL_S))
@@ -786,7 +790,8 @@ class GateScraper:
                     "max_drawdown": 34.77, "followers": 1, "trading_days": 120,
                     "is_follow": False, "is_full": False, "style": "high-frequence|short-line",
                     "abstract": "市场永远是对的，做市场的朋友，顺势而为！",
-                    "min_follow_amount": "10", "max_follow_amount": "50000"}
+                    "min_follow_amount": "10", "max_follow_amount": "50000",
+                    "hide_position": False}
         path = LEADER_DETAIL_PATH.format(leader_id=str(leader_id).strip())
         resp = await fetcher(
             path, {"sub_website_id": 0},
@@ -820,6 +825,9 @@ class GateScraper:
             "trading_days": int(profit.get("duration_day") or 0),  # 带单天数
             "is_follow": bool(config.get("is_self")) or False,
             "is_full": bool(profit.get("is_full")) or False,
+            # ★ 是否隐藏当前持仓（config.is_hide）：True=带单员关闭持仓公开，
+            #   公开采集(trader/position/占比接口)拿不到其仓位 → 上架只能走模式B
+            "hide_position": bool(config.get("is_hide")) if config.get("is_hide") is not None else None,
             "style": config.get("style") or "",
             "abstract": config.get("abstract") or "",
             "markets": [m.get("market") for m in (config.get("markets") or [])][:15],

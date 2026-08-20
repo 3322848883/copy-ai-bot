@@ -54,7 +54,8 @@ async def run_scrape_all(limit: int | None = None) -> dict[str, int]:
                 )).scalars().all()
             )
             async for trader, positions in scraper.scrape_all_traders(limit=limit):
-                await store.upsert_trader("gate", trader.trader_id, trader.name, trader.followers)
+                await store.upsert_trader("gate", trader.trader_id, trader.name, trader.followers,
+                                          hide_position=trader.hide_position)
                 # ★ 交易事件行（有真实 data_time）纯展示入库（不走 ingest 执行管道：
                 #   延迟红线会把历史行全部误标 dropped——scrape_all 30 分钟一轮的
                 #   trading_view 行从设计上就不具执行资格，入库仅为详情页/信号重放）
@@ -539,6 +540,10 @@ async def sync_followed_leaders(scraper=None) -> dict:
                 leader = await scraper.get_leader_by_id(str(lid), fetcher=fetcher)
                 if leader:
                     await _save_followed_profile(store, trader, leader)
+                    # 顺带同步仓位公开状态（admin 模式判断参考；模式B 本身不依赖公开仓位）
+                    await store.upsert_trader("gate", str(lid),
+                                              followers=int(leader.get("followers") or 0),
+                                              hide_position=leader.get("hide_position"))
             except Exception as exc:  # noqa: BLE001 画像失败不阻断同步
                 logger.warning("sync_followed_leaders 画像同步失败 %s: %s", lid, exc)
             await svc.ensure_followed_strategy(trader.id, nick or str(lid))
@@ -803,7 +808,8 @@ async def _refresh_listed_profiles() -> dict[str, int]:
                     # ★ detail 接口的 nick 恒为 "Leader{id}" 占位符（无昵称字段），
                     #   传入会覆盖 fetch_followed_leaders 已写入的真实昵称——不传 name。
                     await store.upsert_trader("gate", trader.trader_id,
-                                              followers=int(leader.get("followers") or 0))
+                                              followers=int(leader.get("followers") or 0),
+                                              hide_position=leader.get("hide_position"))
                     # ★ 写「拉到的 leader dict」（_save_profile 读 ORM trader 属性恒为 0，
                     #   曾把全部已上架画像周期性清零）
                     await _save_followed_profile(store, trader, leader)

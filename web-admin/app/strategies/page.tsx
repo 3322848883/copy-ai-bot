@@ -10,16 +10,19 @@ type Strategy = {
   id: number; trader_id: number; exchange: string; display_name: string; style: string; risk_rating: string;
   status: string; followers: number; roi_30d: number; roi_all: number; win_rate_30d: number; win_rate_all: number;
   max_drawdown: number; trading_days: number; collector_ready?: boolean;
+  hide_position?: boolean | null;
   is_follow?: boolean; created_at?: string;
 };
 type Trader = {
   id: number; exchange: string; trader_id: string; name: string; roi_7d: number; roi_30d: number; roi_all: number;
   win_rate_all: number; max_drawdown: number; trading_days: number; followers: number; collector_ready?: boolean;
+  hide_position?: boolean | null;
 };
 type SearchResult = {
   leader_id: number | string; nick: string; roi_30d: number; win_rate_all: number; max_drawdown: number;
   followers: number; is_follow: boolean; is_full: boolean; style?: string; abstract?: string;
   markets?: string[]; min_follow_amount?: string; max_follow_amount?: string;
+  hide_position?: boolean | null;
 };
 
 const EXCHANGES = ["全部", "GATE", "BINANCE", "OKX", "BYBIT", "BITGET"];
@@ -44,6 +47,14 @@ function gateFailures(t: { win_rate_all: number; max_drawdown: number; trading_d
   if (t.max_drawdown > 30) out.push("回撤超标");
   if (t.trading_days < 30) out.push("天数不足");
   return out;
+}
+
+/** 仓位公开状态徽章：公开→模式A 可用；隐藏→仅模式B（API 镜像跟单）；null→未采集 */
+function PosBadge({ hide }: { hide?: boolean | null }) {
+  if (hide === true)
+    return <span className="badge badge-warn" title="带单员隐藏当前持仓：公开采集拿不到仓位，上架请使用模式B（绑定API镜像跟单）">隐藏</span>;
+  if (hide === false) return <span className="badge badge-ok" title="当前持仓公开：模式A（广场采集）可用">公开</span>;
+  return <span className="badge badge-muted" title="尚未采集到持仓公开状态（detail 未拉过）">未知</span>;
 }
 
 /** M5 T5.4 信号源审核：交易所 Tab + G04 门槛 + 上架/强制上架 + G26 运维看板。 */
@@ -272,16 +283,16 @@ export default function AdminStrategiesPage() {
       <div className="panel">
         <div className="panel-hdr">
           <div className="panel-title"><span className="sec-dot"></span>待选池（候选带单员）</div>
-          <span className="panel-sub">/admin/v1/signals/pending · 门槛：胜率≥55% · 回撤≤30% · 带单≥30天（G04）</span>
+          <span className="panel-sub">/admin/v1/signals/pending · 门槛：胜率≥55% · 回撤≤30% · 带单≥30天（G04） · 仓位：公开→模式A可用，隐藏→仅模式B</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="ftx-table">
             <thead>
-              <tr><th>带单员</th><th className="num">胜率</th><th className="num">最大回撤</th><th className="num">带单天数</th><th>门槛</th><th className="num">跟单人数</th><th>操作</th></tr>
+              <tr><th>带单员</th><th>仓位</th><th className="num">胜率</th><th className="num">最大回撤</th><th className="num">带单天数</th><th>门槛</th><th className="num">跟单人数</th><th>操作</th></tr>
             </thead>
             <tbody>
               {pendingFiltered.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)" }}>暂无待选带单员</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)" }}>暂无待选带单员</td></tr>
               )}
               {pendingFiltered.map((t) => {
                 const passed = gatePassed(t);
@@ -295,6 +306,7 @@ export default function AdminStrategiesPage() {
                       </span>
                       {collectorTag(t)}
                     </td>
+                    <td><PosBadge hide={t.hide_position} /></td>
                     <td className="num" style={{ color: t.win_rate_all >= 55 ? "var(--success)" : "#f87171" }}>{t.win_rate_all.toFixed(1)}%</td>
                     <td className="num" style={{ color: t.max_drawdown > 30 ? "#f87171" : undefined }}>{t.max_drawdown.toFixed(1)}%</td>
                     <td className="num" style={{ color: t.trading_days < 30 ? "#f87171" : undefined }}>{t.trading_days}</td>
@@ -352,11 +364,11 @@ export default function AdminStrategiesPage() {
         <div style={{ overflowX: "auto" }}>
           <table className="ftx-table">
             <thead>
-              <tr><th>策略名</th><th>风格</th><th>风险</th><th className="num">30日收益</th><th className="num">跟单人数</th><th>状态</th><th>操作</th></tr>
+              <tr><th>策略名</th><th>仓位</th><th>风格</th><th>风险</th><th className="num">30日收益</th><th className="num">跟单人数</th><th>状态</th><th>操作</th></tr>
             </thead>
             <tbody>
               {listedFiltered.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)" }}>暂无已上架策略</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)" }}>暂无已上架策略</td></tr>
               )}
               {listedFiltered.map((s) => (
                 <tr key={s.id}>
@@ -365,6 +377,7 @@ export default function AdminStrategiesPage() {
                     {s.is_follow && <span className="badge badge-ok" style={{ marginLeft: 8, fontSize: 10 }}>已跟单</span>}
                     {collectorTag(s)}
                   </td>
+                  <td><PosBadge hide={s.hide_position} /></td>
                   <td>{STYLE_OPTIONS.find((o) => o.v === s.style)?.label || s.style}</td>
                   <td>{riskBadge(s.risk_rating)}</td>
                   <td className="num" style={{ color: s.roi_30d >= 0 ? "var(--success)" : "#f87171" }}>{s.roi_30d >= 0 ? "+" : ""}{s.roi_30d.toFixed(1)}%</td>
@@ -433,7 +446,7 @@ export default function AdminStrategiesPage() {
           <div style={{ overflowX: "auto" }}>
             <table className="ftx-table">
               <thead>
-                <tr><th>leader_id</th><th>昵称</th><th className="num">30日收益</th><th className="num">胜率</th><th className="num">回撤</th><th className="num">跟单人数</th><th>状态</th><th>操作</th></tr>
+                <tr><th>leader_id</th><th>昵称</th><th>仓位</th><th className="num">30日收益</th><th className="num">胜率</th><th className="num">回撤</th><th className="num">跟单人数</th><th>状态</th><th>操作</th></tr>
               </thead>
               <tbody>
                 {searchResults.map((r) => (
@@ -441,6 +454,7 @@ export default function AdminStrategiesPage() {
                     <tr>
                       <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{r.leader_id}</td>
                       <td style={{ fontWeight: 600 }}>{r.nick}</td>
+                      <td><PosBadge hide={r.hide_position} /></td>
                       <td className="num">{r.roi_30d.toFixed(2)}%</td>
                       <td className="num">{r.win_rate_all.toFixed(1)}%</td>
                       <td className="num">{r.max_drawdown.toFixed(1)}%</td>
@@ -456,7 +470,7 @@ export default function AdminStrategiesPage() {
                     </tr>
                     {r.style && (
                       <tr style={{ background: "rgba(255,255,255,0.015)" }}>
-                        <td colSpan={8} style={{ color: "var(--muted)", paddingTop: 6, paddingBottom: 6 }}>
+                        <td colSpan={9} style={{ color: "var(--muted)", paddingTop: 6, paddingBottom: 6 }}>
                           <div style={{ lineHeight: 1.7 }}>
                             <div><b style={{ color: "var(--fg)" }}>风格</b>：{r.style.replace(/\|/g, " / ")}　<b style={{ color: "var(--fg)" }}>跟单区间</b>：{r.min_follow_amount || "-"} ~ {r.max_follow_amount || "-"} USDT</div>
                             {r.abstract && <div style={{ marginTop: 2 }}><b style={{ color: "var(--fg)" }}>简介</b>：{r.abstract}</div>}
@@ -489,6 +503,15 @@ export default function AdminStrategiesPage() {
               ) : (
                 <><strong style={{ color: "#f87171" }}>{listTarget.name}</strong> 未通过门槛校验（{gateFailures(listTarget).join(" / ")}）。强制上架必须填写原因，并将写入审计日志。</>
               )}
+              <div style={{ marginTop: 6 }}>
+                {listTarget.hide_position === true ? (
+                  <span style={{ color: "var(--warning)" }}>⚠ 该带单员隐藏当前持仓：模式A（公开广场采集）拿不到其仓位信号，上架后仅支持模式B（绑定API镜像跟单）。</span>
+                ) : listTarget.hide_position === false ? (
+                  <span style={{ color: "var(--success)" }}>✓ 该带单员公开当前持仓：模式A（公开广场采集）可用。</span>
+                ) : (
+                  <span>仓位公开状态未知（尚未采集）。</span>
+                )}
+              </div>
             </div>
             {!gatePassed(listTarget) && (
               <div className="warn-note"><span>⚠</span><span>强制上架绕过 G04 门槛，将承担额外的信号质量风险，请审慎操作</span></div>
