@@ -25,6 +25,13 @@ LEADER_SEARCH_PATH = "/apiw/v2/copy/leader/search"
 LEADER_DETAIL_PATH = "/api/copytrade/copy_trading/trader/detail/{leader_id}"
 LEADER_POSITION_PATH = "/api/copytrade/copy_trading/trader/position_composition"
 LEADER_TRADES_PATH = "/apiw/v2/copy/api/leader/trading_view"
+# ★ 带单员实时持仓（2026-08-20 详情页抓包确认：含 side/entry_price/mark_price/unrealised_pnl/margin）。
+#   区别于 position_composition（仅持仓占比统计）：这是当前真实仓位行，方向真实。
+#   带单员隐藏持仓（config.is_hide=1）或当前空仓时 data=[]。
+LEADER_LIVE_POSITION_PATH = "/api/copytrade/copy_trading/trader/position"
+# ★ 带单员每日收益序列（2026-08-20 详情页抓包确认：网页收益走势图数据源，data_type=month 返回近30天）。
+#   每行 profit_rate 为累计收益率小数（与 detail.simple_profit_rate 同口径），create_time 为当日时间戳。
+LEADER_PROFIT_CHART_PATH = "/apiw/v2/copy/leader/profit_chart"
 # ★ 模式2 信号源：跟单账户持仓（监控自己跟单的交易员镜像仓位，★需登录会话）
 #   由「我的跟单」页 https://www.gate.com/zh/copytrading/mine?mode=futures&type=copy 调用。
 #   区别于模式1 公开接口：返回的是已跟单交易员的镜像仓位，方向真实(long/short)、数量按跟单比例缩放。
@@ -515,6 +522,98 @@ class GateScraper:
             )
         return positions
 
+    async def fetch_leader_positions_live(self, trader_id: str) -> list[dict]:
+        """带单员实时持仓行（trader/position 接口）—— 详情页持仓卡片数据源。
+
+        ★ 2026-08-20 详情页抓包确认（与网页"当前持仓"同源）：
+          - side: long/short（方向真实，position_composition 无方向）
+          - qty: 实际数量（= size × quanto_multiplier，负=空）
+          - entry_price/mark_price/unrealised_pnl/margin/position_price(名义价值)
+        返回精简 dict 列表；带单员隐藏持仓（is_hide）或空仓 → []。
+        """
+        out: list[dict] = []
+        if self.mock:
+            return out
+        try:
+            lid = int(trader_id)
+        except ValueError:
+            return out
+        resp = await self._api(
+            LEADER_LIVE_POSITION_PATH,
+            {"leader_id": lid, "sub_website_id": 0},
+        )
+        if not resp or resp.get("code") != 200:
+            return out
+        for row in resp.get("data") or []:
+            market = row.get("market", "")
+            if not market:
+                continue
+            sym = market.replace("_", "")
+            if self._is_test_symbol(sym):
+                continue
+            try:
+                qty = float(row.get("qty") or 0)
+            except (TypeError, ValueError):
+                qty = 0.0
+
+            def _f(key: str) -> float | None:
+                v = row.get(key)
+                if v in (None, "", "0"):
+                    return None if v in (None, "") else 0.0
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return None
+
+            ts = int(row.get("update_time") or 0)
+            out.append({
+                "symbol": sym,
+                "side": str(row.get("side") or ("long" if qty >= 0 else "short")),
+                "qty": abs(qty),
+                "entry_price": _f("entry_price"),
+                "mark_price": _f("mark_price"),
+                "unrealized_pnl": _f("unrealised_pnl"),
+                "notional_usdt": abs(_f("position_price") or 0.0) or None,
+                "margin_usdt": _f("margin"),
+                "leverage": None,
+                "opened_at": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else None,
+                "update_time": ts,
+            })
+        return out
+
+    async def fetch_profit_chart(self, trader_id: str) -> list[dict]:
+        """带单员每日累计收益序列（profit_chart 接口，网页收益走势图同源）。
+
+        data_type=month → 近 30 天每日一行，profit_rate 为累计收益率小数
+        （simple_profit_rate 口径，与 roi_all 卡片统一）。返回升序
+        [{date, roi_all, create_time}]；接口失败 → []。
+        """
+        out: list[dict] = []
+        if self.mock:
+            return out
+        try:
+            lid = int(trader_id)
+        except ValueError:
+            return out
+        resp = await self._api(
+            LEADER_PROFIT_CHART_PATH,
+            {"leader_id": lid, "data_type": "month", "sub_website_id": 0},
+        )
+        if not resp or resp.get("code") != 0:
+            return out
+        for row in (resp.get("data") or {}).get("list") or []:
+            ts = int(row.get("create_time") or 0)
+            if not ts:
+                continue
+            try:
+                rate = float(row.get("profit_rate") or 0)
+            except (TypeError, ValueError):
+                continue
+            d = datetime.fromtimestamp(ts, tz=timezone.utc).date()
+            out.append({"date": d, "roi_all": round(rate * 100, 2), "create_time": ts})
+        out.sort(key=lambda r: r["create_time"])
+        return out
+
     async def fetch_live_positions_many(
         self, trader_ids: list[str]
     ) -> dict[str, dict[str, float] | None]:
@@ -704,13 +803,16 @@ class GateScraper:
         return {
             "leader_id": str(config.get("leader_id") or leader_id),
             "nick": f"Leader{leader_id}",
-            # ★ 详情接口多周期字段：7d/30d/90d/all 均为小数比例(×100 转百分数)；
-            #   -1 哨兵（收益重置/无数据）→ 0，roi_all 回退 simple_profit_rate
+            # ★ 详情接口多周期字段：7d/30d/90d 均为小数比例(×100 转百分数)；
+            #   -1 哨兵（收益重置/无数据）→ 0
             "roi_7d": self._rate_or_zero(profit.get("seven_profit_rate")),
             "roi_30d": self._rate_or_zero(profit.get("month_profit_rate")),
             "roi_90d": self._rate_or_zero(profit.get("three_month_profit_rate")),
-            "roi_all": self._rate_or_zero(profit.get("profit_rate"),
-                                          fallback=profit.get("simple_profit_rate")),
+            # ★ roi_all 用 simple_profit_rate 口径（2026-08-20 与 profit_chart 曲线终点
+            #   实测对齐）：profit.profit_rate 是含跟随者分成口径（27714 实测 728% vs
+            #   网页收益曲线/simple 口径 169%），卡片与曲线不同口径会造成割裂。
+            "roi_all": self._rate_or_zero(profit.get("simple_profit_rate"),
+                                          fallback=profit.get("profit_rate")),
             "win_rate_30d": self._to_pct(profit.get("month_win_rate")),
             "win_rate_all": round(win_num / total * 100, 1) if total else 0.0,
             "max_drawdown": self._to_pct(profit.get("max_drawdown")),  # 全周期回撤

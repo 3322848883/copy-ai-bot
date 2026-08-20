@@ -298,21 +298,23 @@ class StrategyService:
 
         data = self._strategy_dict(strategy, trader, profile_payload)
         data["profile_state"] = profile_state
-        positions, recent_orders = await self._signal_replay(trader)
+        positions, recent_orders, pos_source = await self._signal_replay(trader)
         data["positions"] = positions
+        data["positions_source"] = pos_source  # live=实时持仓(数量) / baseline=占比 / replay=信号重放
         data["recent_orders"] = recent_orders
         return data
 
-    async def _signal_replay(self, trader: Trader | None, limit: int = 50) -> tuple[list[dict], list[dict]]:
+    async def _signal_replay(self, trader: Trader | None, limit: int = 50) -> tuple[list[dict], list[dict], str]:
         """按时间重放该带单员信号流：正序推算当前持仓，倒序取最近交易记录。
 
-        positions 优先读信号差分基线（gate:feed:state:A:{tid}，轮询每秒更新，占比真实新鲜）；
-        无基线（未被监控的策略）退回信号重放兜底。qty 为仓位占比（%）；占比缺失
-        （旧批量信号 percent=NULL）或语义不符（模式B percent 是镜像张数非占比）时为 None。
+        positions 数据源优先级（2026-08-20）：
+        1. live：实时持仓缓存（trader/position 接口，qty 为真实数量，方向/价格/盈亏真实）
+        2. baseline：占比基线（gate:feed:state:A:{tid}，qty 为仓位占比%，无方向）
+        3. replay：信号重放推算（qty 为占比%，多数字段 None）
         recent_orders：最近 limit 条信号事件（时间/币对/动作/方向/占比）。
         """
         if trader is None:
-            return [], []
+            return [], [], "replay"
         from api.models.signal import SourceSignal
 
         rows = (
@@ -343,7 +345,17 @@ class StrategyService:
             return round(p * 100, 2)
 
         baseline = await self._read_baseline(trader.trader_id)
-        if baseline:
+        live = await self._read_live_positions(trader.trader_id)
+        pos_source = "replay"
+        if live is not None:
+            # ★ 实时持仓缓存优先（trader/position 接口，与 Gate 网页"当前持仓"同源）：
+            #   真实方向（long/short）/数量/开仓均价/标记价/未实现盈亏全有——
+            #   占比基线无方向（side 恒 long）、无价格盈亏，只能作退化兜底。
+            #   有跟单策略 poll 每轮(~50s)刷新；无跟单策略 refresh 每 30 分钟兜底。
+            positions = live
+            pos_source = "live"
+        elif baseline:
+            pos_source = "baseline"
             positions = [
                 {
                     "symbol": sym,
@@ -395,7 +407,38 @@ class StrategyService:
             }
             for s in reversed(rows[-limit:])
         ]
-        return positions, recent_orders
+        return positions, recent_orders, pos_source
+
+    @staticmethod
+    async def _read_live_positions(trader_id: str, max_age_s: float = 2400) -> list[dict] | None:
+        """读实时持仓缓存 gate:leader:live_pos:{tid}（poll ~50s / refresh 30min 写入）。
+
+        返回非空持仓列表（真实方向/价格/盈亏）；空列表/缺失/过期/Redis 故障 → None
+        （回退占比基线——空列表多为带单员隐藏持仓 is_hide，占比视图比空白更友好）。
+        """
+        import json
+        import time as _time
+
+        try:
+            import redis.asyncio as aioredis
+
+            from api.core.config import get_settings
+
+            r = aioredis.from_url(get_settings().redis_url, decode_responses=True)
+            try:
+                raw = await r.get(f"gate:leader:live_pos:{trader_id}")
+            finally:
+                await r.aclose()
+            if not raw:
+                return None
+            d = json.loads(raw)
+            ts = d.get("ts")
+            if ts is not None and (_time.time() - float(ts)) > max_age_s:
+                return None
+            pos = d.get("positions")
+            return pos if isinstance(pos, list) and pos else None
+        except Exception:  # noqa: BLE001 缓存缺失不阻断详情
+            return None
 
     @staticmethod
     async def _read_baseline(trader_id: str, max_age_s: float = 2400) -> dict[str, float] | None:

@@ -22,6 +22,7 @@ type Detail = {
   followers: number;
   profile_state: { is_stale: boolean; placeholder: boolean };
   positions: Position[];
+  positions_source?: "live" | "baseline" | "replay";
   recent_orders: Order[];
 };
 
@@ -408,7 +409,13 @@ export default function StrategyDetailPage() {
               <span className="sec-dot" />实时持仓
               <span className="badge badge-muted" style={{ fontSize: 10 }}>{detail.positions.length}</span>
             </div>
-            <span className="panel-sub">WS · bot.position 实时推送</span>
+            <span className="panel-sub">
+              {detail.positions_source === "live"
+                ? "实时持仓 · 与交易所同步"
+                : detail.positions_source === "baseline"
+                  ? "仓位分布（约 30 分钟更新）"
+                  : "信号推算持仓"}
+            </span>
           </div>
           {detail.positions.length === 0 ? (
             <div style={{ color: "var(--muted)", fontSize: 13, padding: "16px 0" }}>数据同步中，请稍后查看</div>
@@ -430,7 +437,10 @@ export default function StrategyDetailPage() {
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px" }}>
                     {[
-                      ["仓位占比", p.qty != null ? `${p.qty}%` : "—"],
+                      // live=实时持仓接口（qty 为真实数量）；baseline/replay=占比推算（qty 为仓位占比%）
+                      detail.positions_source === "live"
+                        ? ["数量", p.qty != null ? fmtNum(p.qty, 4) : "—"]
+                        : ["仓位占比", p.qty != null ? `${p.qty}%` : "—"],
                       ["杠杆", p.leverage != null ? `${p.leverage}×` : "—"],
                       ["开仓价", fmtPrice(p.entry_price)],
                       ["标记价", fmtPrice(p.mark_price)],

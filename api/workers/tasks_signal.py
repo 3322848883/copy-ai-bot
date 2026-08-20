@@ -282,6 +282,13 @@ async def _poll_live_round(feed) -> int:
                 events_map[tid] = evs
             total = await _handle_events(db, events_map, follower_ids)
             await db.commit()
+            # ★ 详情页实时持仓缓存（2026-08-20）：有跟单的策略 poll 每轮（~50s）刷新
+            #   trader/position（真实方向/均价/标记价/未实现盈亏），无跟单策略由
+            #   refresh 每 30 分钟兜底。失败静默——详情页回退占比基线。
+            try:
+                await _write_live_positions(feed.scraper, leader_ids)
+            except Exception as exc:  # noqa: BLE001 缓存失败不影响差分主流程
+                logger.warning("live_pos cache refresh fail: %s", exc)
         finally:
             _release_diff_lock(token)
     return total
@@ -660,6 +667,84 @@ async def _ingest_trading_records(db, trader_id: str, records: list) -> int:
     return n
 
 
+# ── ★ 详情页实时持仓缓存（2026-08-20）：trader/position 接口含真实方向/均价/
+#    标记价/未实现盈亏，详情页 positions 优先读它（替代占比基线的 null 字段+方向缺失）。
+#    写入方：poll_live 每轮（有跟单策略 ~50s 实时）/ refresh 每 30 分钟（无跟单兜底）。──
+LIVE_POS_KEY = "gate:leader:live_pos:{tid}"
+LIVE_POS_TTL = 40 * 60  # 覆盖 refresh 30min 周期 + 容错
+
+
+async def _write_live_positions(scraper, trader_ids: list[str]) -> int:
+    """批量拉实时持仓写 Redis（详情页直读，不落库）。失败静默（详情页回退基线）。"""
+    if not trader_ids or scraper.mock:
+        return 0
+    import json
+    import time as _time
+
+    import redis.asyncio as aioredis
+
+    r = aioredis.from_url(get_settings().redis_url, decode_responses=True)
+    written = 0
+    try:
+        for tid in trader_ids:
+            try:
+                positions = await scraper.fetch_leader_positions_live(tid)
+            except Exception:  # noqa: BLE001 单个失败不阻断
+                continue
+            await r.set(
+                LIVE_POS_KEY.format(tid=tid),
+                json.dumps({"ts": _time.time(), "positions": positions}),
+                ex=LIVE_POS_TTL,
+            )
+            written += 1
+    finally:
+        await r.aclose()
+    return written
+
+
+async def _backfill_profit_chart(db, trader_db_id: int, gate_trader_id: str, scraper) -> int:
+    """profit_chart 每日累计收益序列回填 trader_profiles（收益曲线历史）。
+
+    ★ 解决"7d/30d 曲线无历史"：系统上线仅数天，按日快照最多 2-3 行，区间曲线无意义。
+      profit_chart（网页收益走势图同源）提供近 30 天每日累计收益率——按日期 upsert，
+      曲线立即成型且与 Gate 网页一致（simple_profit_rate 口径）。
+    已存在日期行：仅更新 roi_all（profit_chart 口径更权威，修正上线首日 profit_rate
+    含分成口径混入的脏值）；新日期行：插入（roi_all 之外字段为 0，卡片只读最新行）。
+    """
+    from datetime import date as _date
+
+    from sqlalchemy import select
+
+    from api.models.signal import TraderProfile
+
+    try:
+        chart = await scraper.fetch_profit_chart(gate_trader_id)
+    except Exception:  # noqa: BLE001 拉取失败不阻断 refresh 主流程
+        return 0
+    if not chart:
+        return 0
+    dates = [row["date"] for row in chart]
+    existing = {
+        p.snapshot_date: p
+        for p in (await db.execute(
+            select(TraderProfile).where(
+                TraderProfile.trader_id == trader_db_id,
+                TraderProfile.snapshot_date.in_(dates),
+            )
+        )).scalars().all()
+    }
+    n = 0
+    for row in chart:
+        d: _date = row["date"]
+        p = existing.get(d)
+        if p is not None:
+            p.roi_all = row["roi_all"]
+        else:
+            db.add(TraderProfile(trader_id=trader_db_id, snapshot_date=d, roi_all=row["roi_all"]))
+        n += 1
+    return n
+
+
 # ── ★ 需求补充：定时刷新所有已上架(listed)策略画像，保证策略广场数据新鲜 ──
 async def _refresh_listed_profiles() -> dict[str, int]:
     """遍历 status='listed' 的策略，逐一带单员拉最新详情并 upsert 当日画像。
@@ -690,7 +775,7 @@ async def _refresh_listed_profiles() -> dict[str, int]:
     from api.services.signalstore.service import SignalStore
 
     factory = get_session_factory()
-    stats = {"updated": 0, "missing": 0, "failed": 0, "pos_events": 0, "trade_rows": 0}
+    stats = {"updated": 0, "missing": 0, "failed": 0, "pos_events": 0, "trade_rows": 0, "chart_rows": 0}
     scraper = GateScraper(data_dir=get_settings().scraper_bulk_data_dir)
     try:
         if not scraper.mock and not await scraper.ensure_browser_ready(90):
@@ -748,6 +833,21 @@ async def _refresh_listed_profiles() -> dict[str, int]:
                         stats["trade_rows"] += await _ingest_trading_records(
                             db, trader.trader_id, records
                         )
+                    # ★ 详情页实时持仓缓存（2026-08-20）：无跟单策略的 30 分钟兜底
+                    #   （有跟单的由 poll 每轮覆盖，此处重复写幂等无害）
+                    try:
+                        await _write_live_positions(scraper, [trader.trader_id])
+                    except Exception as exc:  # noqa: BLE001 缓存失败不阻断
+                        logger.warning("live_pos cache %s fail: %s", trader.trader_id, exc)
+                    # ★ 收益曲线历史回填（2026-08-20）：profit_chart 近 30 天每日累计
+                    #   收益率 upsert 进 trader_profiles——上线首日快照只有 1-2 行，
+                    #   7d/30d 区间曲线无意义；回填后与 Gate 网页走势图一致。
+                    try:
+                        stats["chart_rows"] += await _backfill_profit_chart(
+                            db, trader.id, trader.trader_id, scraper
+                        )
+                    except Exception as exc:  # noqa: BLE001 回填失败不阻断
+                        logger.warning("profit_chart %s fail: %s", trader.trader_id, exc)
                     # ★ 逐交易员提交（原最后统一提交）：ingest 撞重复 key 的 rollback
                     #   会把事务里攒着的画像/差分信号一并回滚，逐个提交互不影响
                     await db.commit()
