@@ -71,21 +71,30 @@ class SignalStore:
         """入库单条标准化信号。
 
         - dedupe_key 已存在（DB 唯一约束）→ 丢弃
-        - ★ 模式 A 延迟 >10s → 丢弃（dropped=true + drop_reason）
+        - 延迟红线：模式 A >10s / 模式 B >5s → 丢弃（dropped=true + drop_reason）
+          ★ close/reduce（风险释放动作）豁免红线——迟到开仓是追价风险该拒，
+          迟到平仓仍是风险释放，拒掉会造成 bot 持仓无人关闭的无界敞口
         - 成功 → SourceSignal 入库 + Redis Pub/Sub `signal.new`
         """
         dk = ns.dedupe_key()
         age_ms = (datetime.now(timezone.utc) - ns.opened_at).total_seconds() * 1000
 
         # ★ 异常丢弃：模式 A 延迟红线 10s（设计蓝本 §2.4）
-        if ns.source_mode == "A" and age_ms > self.settings.delay_redline_mode_a_ms:
-            sig = await self._insert_dropped(ns, dk, f"mode A age {age_ms:.0f}ms > {self.settings.delay_redline_mode_a_ms}ms")
-            await self.redis.publish(TOPIC_SIGNAL_NEW, json.dumps({"dropped": True, "reason": sig.drop_reason}, ensure_ascii=False))
-            return sig
-        if ns.source_mode == "B" and age_ms > self.settings.delay_redline_mode_b_ms:
-            sig = await self._insert_dropped(ns, dk, f"mode B age {age_ms:.0f}ms > {self.settings.delay_redline_mode_b_ms}ms")
-            await self.redis.publish(TOPIC_SIGNAL_NEW, json.dumps({"dropped": True, "reason": sig.drop_reason}, ensure_ascii=False))
-            return sig
+        # ★ 风险释放动作（close/reduce）豁免延迟红线（2026-08-20）：红线拦的是
+        #   「迟到开仓=追价风险」；平仓/减仓是风险释放，迟到的平仓好过永不平仓。
+        #   若开仓已跟单而平仓被红线丢弃（浏览器重启/轮询间隙时信号延迟超阈值），
+        #   bot 持仓将无人关闭——无界风险敞口。无持仓时平仓在 copyengine 落
+        #   no_position 失败留痕，无害。
+        risk_releasing = ns.action in ("close", "reduce")
+        if not risk_releasing:
+            if ns.source_mode == "A" and age_ms > self.settings.delay_redline_mode_a_ms:
+                sig = await self._insert_dropped(ns, dk, f"mode A age {age_ms:.0f}ms > {self.settings.delay_redline_mode_a_ms}ms")
+                await self.redis.publish(TOPIC_SIGNAL_NEW, json.dumps({"dropped": True, "reason": sig.drop_reason}, ensure_ascii=False))
+                return sig
+            if ns.source_mode == "B" and age_ms > self.settings.delay_redline_mode_b_ms:
+                sig = await self._insert_dropped(ns, dk, f"mode B age {age_ms:.0f}ms > {self.settings.delay_redline_mode_b_ms}ms")
+                await self.redis.publish(TOPIC_SIGNAL_NEW, json.dumps({"dropped": True, "reason": sig.drop_reason}, ensure_ascii=False))
+                return sig
 
         sig = SourceSignal(
             exchange=ns.exchange,

@@ -132,13 +132,18 @@ class RiskEngine:
             )
 
         # ★ 延迟红线：模式 A >10s / 模式 B >5s（后台「风控中心」delay_red_line_a/b 可配置，秒单位）
+        # ★ close/reduce（风险释放动作）豁免延迟规则（2026-08-20，与 signalstore 红线豁免
+        #   口径一致）：迟到开仓是追价风险该拒；迟到平仓仍是风险释放——若开仓已跟单
+        #   而平仓被延迟规则拒绝（消费队列积压/received_at 距今超阈值），
+        #   bot 持仓将无人关闭（无界敞口）。其余规则（亏损上限/紧急制动等）不豁免。
         age_ms = (datetime.now(timezone.utc) - intent.signal_received_at).total_seconds() * 1000
         delay_a_s = settings_svc.risk_rule_float("delay_red_line_a", self.settings.delay_redline_mode_a_ms / 1000.0)
         delay_b_s = settings_svc.risk_rule_float("delay_red_line_b", self.settings.delay_redline_mode_b_ms / 1000.0)
-        if intent.source_mode == "A" and age_ms > delay_a_s * 1000:
-            return _decide(RiskDecision.REJECTED, rule="delay", reason=f"mode A age {age_ms:.0f}ms > {delay_a_s:g}s")
-        if intent.source_mode == "B" and age_ms > delay_b_s * 1000:
-            return _decide(RiskDecision.REJECTED, rule="delay", reason=f"mode B age {age_ms:.0f}ms > {delay_b_s:g}s")
+        if intent.action not in ("close", "reduce"):
+            if intent.source_mode == "A" and age_ms > delay_a_s * 1000:
+                return _decide(RiskDecision.REJECTED, rule="delay", reason=f"mode A age {age_ms:.0f}ms > {delay_a_s:g}s")
+            if intent.source_mode == "B" and age_ms > delay_b_s * 1000:
+                return _decide(RiskDecision.REJECTED, rule="delay", reason=f"mode B age {age_ms:.0f}ms > {delay_b_s:g}s")
 
         # 4. 当日亏损上限
         if intent.today_realized_pnl < intent.daily_loss_limit:
