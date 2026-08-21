@@ -215,7 +215,12 @@ class WithdrawalService:
         return wd
 
     async def _release_funds(self, wd: Withdrawal) -> None:
-        """拒绝/退还：释放归属该提现单的 withdrawing 资金 → available。"""
+        """拒绝/退还：释放归属该提现单的 withdrawing 资金 → available。
+
+        ★ 拆分行合并回原 available 行后删除：直接把拆分行置 available 会与
+        同 source_order 的原行同时落入 ix_rewards_source_order 部分唯一索引，
+        触发 UniqueViolation。合并语义也更准确——回到"一订单一可用奖励行"。
+        """
         rewards = (
             await self.db.execute(
                 select(Reward).where(
@@ -225,9 +230,29 @@ class WithdrawalService:
                 )
             )
         ).scalars().all()
+        by_order: dict[int, list[Reward]] = {}
         for r in rewards:
-            r.status = "available"
-            r.withdrawal_id = None
+            by_order.setdefault(r.source_payment_order_id, []).append(r)
+        for source_order_id, group in by_order.items():
+            anchor = (
+                await self.db.execute(
+                    select(Reward).where(
+                        Reward.source_payment_order_id == source_order_id,
+                        Reward.status == "available",
+                        Reward.withdrawal_id.is_(None),
+                    )
+                )
+            ).scalars().first()
+            if anchor is None:
+                anchor = group[0]
+                anchor.status = "available"
+                anchor.withdrawal_id = None
+                rest = group[1:]
+            else:
+                rest = group
+            for r in rest:
+                anchor.amount_usdt = round(anchor.amount_usdt + r.amount_usdt, 2)
+                await self.db.delete(r)
 
     async def _mark_paid(self, wd: Withdrawal) -> None:
         """发放成功：归属该提现单的 withdrawing 资金 → paid。"""
