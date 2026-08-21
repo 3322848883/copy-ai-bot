@@ -104,5 +104,12 @@ celery_app.conf.update(
             "task": "reminder.subscription_expiring",
             "schedule": 3600.0,
         },
+        # ★ 数据保留期清理（每日凌晨 03:00 UTC = 北京 11:00）：
+        #   删除超期的 source_signals（默认 90 天）和已关闭的老 position_snapshots（默认 30 天），
+        #   防止信号表/快照表无限增长拖慢查询性能。
+        "signal-vacuum-retention": {
+            "task": "signal.vacuum_retention",
+            "schedule": crontab(hour="3", minute="0"),
+        },
     },
 )

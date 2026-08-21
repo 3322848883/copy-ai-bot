@@ -128,6 +128,12 @@ class Settings(BaseSettings):
     # ★ 需求补充：信号源详情(画像)定时刷新间隔(秒)。无论模式一/模式二，已上架(listed)
     #   策略的带单员画像都要定期刷新，保证策略广场数据新鲜（不只依赖每日快照）。
     signal_profile_refresh_interval: int = 1800
+    # ★ 源信号保留期（天）：超期的 source_signals 记录由每日清理任务删除，
+    #   防止信号表无限增长导致查询性能退化。默认 90 天，约覆盖 1 个季度的信号追溯。
+    signal_retention_days: int = 90
+    # ★ 持仓快照保留期（天）：超期且已关闭(is_open=False)的 position_snapshots
+    #   由每日清理任务删除。当前 open 的仓位不受影响。默认 30 天。
+    position_snapshot_retention_days: int = 30
 
     # ── 模式2 信号源·持久化浏览器会话（后台管理「登录 Gate」）──
     #   服务器端维护一个持久化 Chrome(user_data_dir)，登录态自动落盘，

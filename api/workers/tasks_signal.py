@@ -896,3 +896,55 @@ def refresh_listed_profiles() -> str:
     except Exception as exc:  # noqa: BLE001 任务失败不导致 beat 崩溃
         logger.exception("refresh_listed_profiles failed: %s", exc)
         raise
+
+
+@celery_app.task(name="signal.vacuum_retention")
+def vacuum_retention() -> str:
+    """数据保留期清理：删除超期的源信号、已关闭的老持仓快照。
+
+    - source_signals：超过 signal_retention_days 的记录全部删除
+    - position_snapshots：超过 position_snapshot_retention_days 且 is_open=False 的记录删除
+    每日凌晨执行，避免表无限增长拖慢查询。
+    """
+    import asyncio
+
+    try:
+        return asyncio.run(_vacuum_retention_async())
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("vacuum_retention failed: %s", exc)
+        raise
+
+
+async def _vacuum_retention_async() -> str:
+    """async 核心：按保留期批量清理过期数据。"""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import delete
+
+    from api.db.session import get_session_factory
+    from api.models.bot import PositionSnapshot
+    from api.models.signal import SourceSignal
+
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    signal_cutoff = now - timedelta(days=settings.signal_retention_days)
+    snapshot_cutoff = now - timedelta(days=settings.position_snapshot_retention_days)
+
+    factory = get_session_factory()
+    async with factory() as db:
+        # 1. 清理超期源信号
+        r_sig = await db.execute(
+            delete(SourceSignal).where(SourceSignal.received_at < signal_cutoff)
+        )
+        # 2. 清理超期且已关闭的持仓快照
+        r_snap = await db.execute(
+            delete(PositionSnapshot).where(
+                PositionSnapshot.is_open.is_(False),
+                PositionSnapshot.created_at < snapshot_cutoff,
+            )
+        )
+        await db.commit()
+        return (
+            f"vacuum: deleted {r_sig.rowcount} signals (>{settings.signal_retention_days}d), "
+            f"{r_snap.rowcount} closed snapshots (>{settings.position_snapshot_retention_days}d)"
+        )
