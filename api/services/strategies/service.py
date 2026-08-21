@@ -98,12 +98,17 @@ class StrategyService:
     async def list_listed_strategies(
         self, exchange: str | None = None, status: str | None = None
     ) -> tuple[list[dict], int]:
-        """已添加池策略（上架后）。返回全量列表 + 总数，筛选/排序/分页由路由层完成。"""
+        """已添加池策略（上架后）。返回全量列表 + 总数，筛选/排序/分页由路由层完成。
+
+        ★ 用户端列表默认只展示 listed：delisted 策略曾漏出到策略广场。
+        """
         stmt = select(Strategy).order_by(Strategy.id.desc())
         if exchange:
             stmt = stmt.where(Strategy.source_exchange == exchange)
-        if status:
+        if status in ("listed", "paused"):
             stmt = stmt.where(Strategy.status == status)
+        else:
+            stmt = stmt.where(Strategy.status == "listed")
         strategies = (await self.db.execute(stmt)).scalars().all()
 
         rows: list[dict] = []
@@ -269,6 +274,9 @@ class StrategyService:
         strategy = await self.db.get(Strategy, strategy_id)
         if strategy is None:
             raise NotFoundError("策略不存在")
+        # ★ 已下架策略详情页 404：delisted 不再对外暴露（paused 保留，存量跟单仍可见）
+        if strategy.status == "delisted":
+            raise NotFoundError("策略已下架")
         trader = await self.db.get(Trader, strategy.trader_id)
 
         today = None
