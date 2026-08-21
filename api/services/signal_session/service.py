@@ -179,6 +179,14 @@ class SignalSession:
         settings = get_settings()
         self._data_dir = settings.signal_session_data_dir
         self._state = "launching"
+        # ★ 启动前清理跨容器遗留的 SingletonLock（双容器共享 volume 时必现）
+        for _lock in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+            _lp = os.path.join(self._data_dir, _lock)
+            try:
+                if os.path.islink(_lp) or os.path.exists(_lp):
+                    os.unlink(_lp)
+            except Exception:  # noqa: BLE001
+                pass
         try:
             from playwright.async_api import async_playwright
 
@@ -238,11 +246,15 @@ class SignalSession:
 
     @staticmethod
     def _kill_stale_chrome(exc: Exception) -> None:
-        """拉起失败时清理本容器残留 chrome 进程（TargetClosedError 场景）。
+        """拉起失败时清理本容器残留 chrome 进程 + 跨容器遗留的 SingletonLock。
 
         Chrome 主进程可能已 spawn 但 playwright 连接失败即放弃，进程树成为孤儿
         （容器无 init 时永久残留，并持有 user_data_dir 的 SingletonLock——
         之后本容器及其他容器共享该目录的浏览器全部拉不起来，模式2 整链路瘫痪）。
+
+        ★ 补充：pkill 只能杀本容器进程，共享 volume 上 worker 容器遗留的锁文件
+        不会被清理。杀进程后必须显式删除 SingletonLock/Cookie/Socket 三个符号链接，
+        否则下次 launch 仍然报 ProcessSingleton 冲突。
         """
         import subprocess
 
@@ -256,6 +268,16 @@ class SignalSession:
             )
         except Exception as cleanup_exc:  # noqa: BLE001 清理失败不影响返回
             logger.warning("gate signal session: 清理残留 chrome 失败: %s", cleanup_exc)
+
+        data_dir = get_settings().signal_session_data_dir
+        for lock_name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+            lock_path = os.path.join(data_dir, lock_name)
+            try:
+                if os.path.islink(lock_path) or os.path.exists(lock_path):
+                    os.unlink(lock_path)
+                    logger.info("gate signal session: 已清理遗留锁文件 %s", lock_name)
+            except Exception:  # noqa: BLE001
+                pass
 
     async def screenshot(self) -> bytes | None:
         """返回当前浏览器页面 PNG 字节（后台管理轮询显示）。会话未激活返回 None。"""
