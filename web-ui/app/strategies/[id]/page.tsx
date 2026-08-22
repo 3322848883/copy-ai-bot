@@ -24,6 +24,7 @@ type Detail = {
   positions: Position[];
   positions_source?: "live" | "baseline" | "replay";
   recent_orders: Order[];
+  closed_trades?: ClosedTrade[];
 };
 
 type Position = {
@@ -48,6 +49,23 @@ type Order = {
   side?: string | null;
   price?: number | null;
   pnl?: number | null;
+};
+
+/** 已平仓记录（Gate close_position 接口采集）：真实方向/已实现盈亏/开平仓均价。 */
+type ClosedTrade = {
+  id: number;
+  symbol: string;
+  side: string;
+  action: string;
+  qty: number | null;
+  entry_price: number | null;
+  close_price: number | null;
+  price?: number | null;
+  pnl: number | null;
+  profit_rate: number | null;
+  leverage: number | null;
+  opened_at: string | null;
+  executed_at: string | null;
 };
 
 const STYLE_LABEL: Record<string, string> = { trend: "趋势", range: "震荡", momentum: "动量" };
@@ -215,7 +233,11 @@ export default function StrategyDetailPage() {
       .catch(() => setEquity(null));
   }, [params.id]);
 
-  const orders = detail?.recent_orders ?? [];
+  // ★ 已平仓记录优先（close_position 接口：真实方向/已实现盈亏/开平仓均价），
+  //   无数据回退信号重放（无价格无盈亏的旧数据源）
+  const closedTrades = detail?.closed_trades ?? [];
+  const orders = closedTrades.length > 0 ? closedTrades : detail?.recent_orders ?? [];
+  const useClosedView = closedTrades.length > 0;
   const totalOrderPages = Math.max(1, Math.ceil(orders.length / ORDER_PAGE_SIZE));
   const pageOrders = orders.slice((orderPage - 1) * ORDER_PAGE_SIZE, orderPage * ORDER_PAGE_SIZE);
 
@@ -465,52 +487,87 @@ export default function StrategyDetailPage() {
           )}
         </div>
 
-        {/* 最近交易记录（7 列 + action-tag 四色 + 分页） */}
+        {/* 最近交易记录：已平仓记录优先（真实方向/盈亏/开平仓价），回退信号重放 7 列 */}
         <div className="panel">
           <div className="panel-hdr">
             <div className="panel-title">
               <span className="sec-dot" />最近交易记录
               <span className="badge badge-muted" style={{ fontSize: 10 }}>{orders.length}</span>
             </div>
-            <span className="panel-sub">动作含开仓/加仓/减仓/平仓</span>
+            <span className="panel-sub">{useClosedView ? "已平仓记录 · 含真实方向与已实现盈亏" : "动作含开仓/加仓/减仓/平仓"}</span>
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table className="ftx-table" style={{ minWidth: 760 }}>
-              <thead>
-                <tr>
-                  <th>时间</th><th>币对</th><th>动作</th><th>方向</th>
-                  <th className="num">仓位占比</th><th className="num">价格</th><th className="num">盈亏</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageOrders.length === 0 ? (
+            {useClosedView ? (
+              <table className="ftx-table" style={{ minWidth: 860 }}>
+                <thead>
                   <tr>
-                    <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: "28px 0" }}>数据同步中，请稍后查看</td>
+                    <th>平仓时间</th><th>币对</th><th>方向</th>
+                    <th className="num">数量</th><th className="num">开仓均价</th><th className="num">平仓均价</th>
+                    <th className="num">收益率</th><th className="num">已实现盈亏</th>
                   </tr>
-                ) : (
-                  pageOrders.map((o) => {
-                    const act = ACTION_TAG[o.action];
+                </thead>
+                <tbody>
+                  {pageOrders.map((o) => {
+                    const t = o as ClosedTrade;
                     return (
-                      <tr key={o.id}>
-                        <td className="num">{fmtTime(o.executed_at)}</td>
-                        <td>{o.symbol ?? "—"}</td>
-                        <td>
-                          <span className={`action-tag ${act?.cls ?? ""}`}>{act?.label ?? o.action}</span>
+                      <tr key={t.id}>
+                        <td className="num">{fmtTime(t.executed_at)}</td>
+                        <td>{t.symbol ?? "—"}</td>
+                        <td style={{ color: t.side === "long" ? "var(--success)" : t.side === "short" ? "var(--danger)" : "var(--muted)", fontWeight: 600 }}>
+                          {t.side === "long" ? "做多" : t.side === "short" ? "做空" : "—"}
                         </td>
-                        <td style={{ color: o.side === "long" ? "var(--success)" : o.side === "short" ? "var(--danger)" : "var(--muted)" }}>
-                          {o.side === "long" ? "多" : o.side === "short" ? "空" : "—"}
+                        <td className="num">{t.qty != null ? fmtNum(t.qty, t.qty >= 100 ? 0 : 2) : "—"}</td>
+                        <td className="num">{fmtPrice(t.entry_price)}</td>
+                        <td className="num">{fmtPrice(t.close_price)}</td>
+                        <td className="num" style={{ color: t.profit_rate == null ? "var(--muted)" : t.profit_rate >= 0 ? "var(--success)" : "var(--danger)" }}>
+                          {t.profit_rate == null ? "—" : `${t.profit_rate >= 0 ? "+" : ""}${fmtNum(t.profit_rate * 100)}%`}
                         </td>
-                        <td className="num">{o.qty != null ? `${o.qty}%` : "—"}</td>
-                        <td className="num">{fmtPrice(o.price)}</td>
-                        <td className="num" style={{ color: o.pnl == null ? "var(--muted)" : o.pnl >= 0 ? "var(--success)" : "var(--danger)" }}>
-                          {o.pnl == null ? "—" : `${o.pnl >= 0 ? "+" : ""}${fmtNum(o.pnl)}`}
+                        <td className="num" style={{ color: t.pnl == null ? "var(--muted)" : t.pnl >= 0 ? "var(--success)" : "var(--danger)" }}>
+                          {t.pnl == null ? "—" : `${t.pnl >= 0 ? "+" : ""}${fmtNum(t.pnl)}`}
                         </td>
                       </tr>
                     );
-                  })
-                )}
-              </tbody>
-            </table>
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <table className="ftx-table" style={{ minWidth: 760 }}>
+                <thead>
+                  <tr>
+                    <th>时间</th><th>币对</th><th>动作</th><th>方向</th>
+                    <th className="num">仓位占比</th><th className="num">价格</th><th className="num">盈亏</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: "28px 0" }}>数据同步中，请稍后查看</td>
+                    </tr>
+                  ) : (
+                    pageOrders.map((o) => {
+                      const act = ACTION_TAG[o.action];
+                      return (
+                        <tr key={o.id}>
+                          <td className="num">{fmtTime(o.executed_at)}</td>
+                          <td>{o.symbol ?? "—"}</td>
+                          <td>
+                            <span className={`action-tag ${act?.cls ?? ""}`}>{act?.label ?? o.action}</span>
+                          </td>
+                          <td style={{ color: o.side === "long" ? "var(--success)" : o.side === "short" ? "var(--danger)" : "var(--muted)" }}>
+                            {o.side === "long" ? "多" : o.side === "short" ? "空" : "—"}
+                          </td>
+                          <td className="num">{o.qty != null ? `${o.qty}%` : "—"}</td>
+                          <td className="num">{fmtPrice(o.price)}</td>
+                          <td className="num" style={{ color: o.pnl == null ? "var(--muted)" : o.pnl >= 0 ? "var(--success)" : "var(--danger)" }}>
+                            {o.pnl == null ? "—" : `${o.pnl >= 0 ? "+" : ""}${fmtNum(o.pnl)}`}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
           {orders.length > ORDER_PAGE_SIZE && (
             <div className="pagination" style={{ justifyContent: "center", marginTop: 16 }}>

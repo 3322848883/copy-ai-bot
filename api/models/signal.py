@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base, TimestampMixin
@@ -63,6 +63,34 @@ class Strategy(TimestampMixin, Base):
     # ★ 策略来源：A=公开广场采集/G04 审核上架（人工）；B=模式2 跟单同步自动上架。
     #   delist_unfollowed 只下架 B——否则模式2 同步会把模式1 审核上架的策略全部误下架。
     source: Mapped[str] = mapped_column(String(1), default="A", server_default="A")
+
+
+class ClosedPosition(Base):
+    """带单员已平仓记录（Gate close_position 接口）—— 策略详情页交易记录展示。
+
+    纯展示数据，不入信号执行管道（区别于 source_signals）。
+    ★ 对隐藏持仓交易员同样采集（历史平仓不受 is_hide 屏蔽），方向真实。
+    gate_order_id 为 Gate 接口返回的平仓记录 id，跨轮去重键。
+    """
+
+    __tablename__ = "trader_closed_positions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trader_id: Mapped[int] = mapped_column(ForeignKey("traders.id"), index=True)
+    gate_order_id: Mapped[int] = mapped_column(BigInteger)
+    symbol: Mapped[str] = mapped_column(String(32))
+    side: Mapped[str] = mapped_column(String(8))  # long / short（真实方向）
+    profit: Mapped[float | None] = mapped_column(Float, nullable=True)  # 已实现盈亏 USDT
+    profit_rate: Mapped[float | None] = mapped_column(Float, nullable=True)  # 收益率（小数）
+    entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    close_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    qty: Mapped[float | None] = mapped_column(Float, nullable=True)
+    leverage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    margin: Mapped[float | None] = mapped_column(Float, nullable=True)
+    open_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    close_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (UniqueConstraint("trader_id", "gate_order_id", name="uq_closed_pos_order"),)
 
 
 class TraderProfile(Base):

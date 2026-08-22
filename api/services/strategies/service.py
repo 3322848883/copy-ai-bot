@@ -310,7 +310,49 @@ class StrategyService:
         data["positions"] = positions
         data["positions_source"] = pos_source  # live=实时持仓(数量) / baseline=占比 / replay=信号重放
         data["recent_orders"] = recent_orders
+        # ★ 已平仓记录（close_position 接口采集）：真实方向/已实现盈亏/开平仓均价，
+        #   数据质量远高于信号重放（无价格无盈亏）；对隐藏交易员同样有数据
+        data["closed_trades"] = await self._closed_trades(trader)
         return data
+
+    async def _closed_trades(self, trader: Trader | None, limit: int = 50) -> list[dict]:
+        """已平仓记录（Gate close_position 采集入库，按平仓时间倒序）。"""
+        if trader is None:
+            return []
+        from api.models.signal import ClosedPosition
+
+        rows = (
+            (
+                await self.db.execute(
+                    select(ClosedPosition)
+                    .where(ClosedPosition.trader_id == trader.id)
+                    .order_by(ClosedPosition.close_time.desc().nullslast(), ClosedPosition.id.desc())
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "symbol": r.symbol,
+                "side": r.side,
+                "action": "close",
+                "qty": r.qty,
+                "price": r.close_price,
+                "entry_price": r.entry_price,
+                "close_price": r.close_price,
+                "pnl": r.profit,
+                "profit": r.profit,
+                "profit_rate": r.profit_rate,
+                "leverage": r.leverage,
+                "margin_usdt": r.margin,
+                "opened_at": r.open_time.isoformat() if r.open_time else None,
+                "executed_at": r.close_time.isoformat() if r.close_time else None,
+            }
+            for r in rows
+        ]
 
     async def _signal_replay(self, trader: Trader | None, limit: int = 50) -> tuple[list[dict], list[dict], str]:
         """按时间重放该带单员信号流：正序推算当前持仓，倒序取最近交易记录。

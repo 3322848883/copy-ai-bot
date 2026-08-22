@@ -32,6 +32,12 @@ LEADER_LIVE_POSITION_PATH = "/api/copytrade/copy_trading/trader/position"
 # ★ 带单员每日收益序列（2026-08-20 详情页抓包确认：网页收益走势图数据源，data_type=month 返回近30天）。
 #   每行 profit_rate 为累计收益率小数（与 detail.simple_profit_rate 同口径），create_time 为当日时间戳。
 LEADER_PROFIT_CHART_PATH = "/apiw/v2/copy/leader/profit_chart"
+# ★ 带单员已平仓记录（2026-08-22 详情页"历史带单"抓包确认）：每行含真实方向
+#   side(long/short)/已实现盈亏 profit/收益率 profit_rate/开平仓均价/时间——
+#   区别于 trading_view（无方向无价格）：详情页交易记录的最佳数据源。
+#   ★ 对隐藏持仓（is_hide）交易员同样完整返回（27714 实测 475 条，含 side=short 行）：
+#     历史平仓记录不受 is_hide 屏蔽，是隐藏交易员公开可得的唯一带方向数据。
+LEADER_CLOSED_POSITION_PATH = "/apiw/v2/copy/leader/close_position"
 # ★ 模式2 信号源：跟单账户持仓（监控自己跟单的交易员镜像仓位，★需登录会话）
 #   由「我的跟单」页 https://www.gate.com/zh/copytrading/mine?mode=futures&type=copy 调用。
 #   区别于模式1 公开接口：返回的是已跟单交易员的镜像仓位，方向真实(long/short)、数量按跟单比例缩放。
@@ -525,6 +531,61 @@ class GateScraper:
                 )
             )
         return positions
+
+    async def fetch_closed_positions(self, trader_id: str, page_size: int = 20) -> list[dict] | None:
+        """带单员已平仓记录（close_position 接口）—— 详情页交易记录数据源。
+
+        每行：{gate_order_id, symbol, side, profit, profit_rate, entry_price,
+               close_price, qty, leverage, margin, open_time, close_time}
+        - side 为真实方向（long/short）；profit/profit_rate 为已实现盈亏/收益率
+        - ★ 对隐藏持仓交易员同样完整返回（历史平仓不受 is_hide 屏蔽）
+        - 返回 None：接口失败/风控（调用方跳过本轮）；[]：无平仓记录
+        """
+        if self.mock:
+            return []
+        try:
+            lid = int(trader_id)
+        except ValueError:
+            return None
+        resp = await self._api(
+            LEADER_CLOSED_POSITION_PATH,
+            {"leader_id": lid, "market": "", "page": 1, "page_size": page_size, "sub_website_id": 0},
+        )
+        if not resp or resp.get("code") != 200:
+            return None
+        out: list[dict] = []
+        for row in resp.get("data") or []:
+            market = row.get("market", "")
+            if not market:
+                continue
+            sym = market.replace("_", "")
+            if self._is_test_symbol(sym):
+                continue
+            try:
+                open_ts = int(row.get("open_time") or 0)
+                close_ts = int(row.get("create_time") or 0)
+            except (TypeError, ValueError):
+                continue
+            def _f(v) -> float | None:
+                try:
+                    return float(v) if v not in (None, "") else None
+                except (TypeError, ValueError):
+                    return None
+            out.append({
+                "gate_order_id": int(row.get("id") or 0),
+                "symbol": sym,
+                "side": row.get("side") or "long",
+                "profit": _f(row.get("profit")),
+                "profit_rate": _f(row.get("profit_rate")),
+                "entry_price": _f(row.get("entry_price")),
+                "close_price": _f(row.get("close_price")),
+                "qty": _f(row.get("qty")),
+                "leverage": _f(row.get("leverage_max")),
+                "margin": _f(row.get("margin")),
+                "open_time": datetime.fromtimestamp(open_ts, tz=timezone.utc) if open_ts else None,
+                "close_time": datetime.fromtimestamp(close_ts, tz=timezone.utc) if close_ts else None,
+            })
+        return out
 
     async def fetch_leader_positions_live(self, trader_id: str) -> list[dict]:
         """带单员实时持仓行（trader/position 接口）—— 详情页持仓卡片数据源。

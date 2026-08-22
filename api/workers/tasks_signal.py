@@ -672,6 +672,37 @@ async def _ingest_trading_records(db, trader_id: str, records: list) -> int:
     return n
 
 
+async def _upsert_closed_positions(db, trader_pk: int, rows: list[dict]) -> int:
+    """已平仓记录入库（close_position 接口，纯展示）：gate_order_id 去重，返回新插入行数。
+
+    只 db.add 不 commit（refresh 循环逐交易员统一提交）；
+    pre-check 必需：unique 冲突的 rollback 会连坐同事务的画像/基线写入。
+    """
+    from sqlalchemy import select
+
+    from api.models.signal import ClosedPosition
+
+    ids = [r["gate_order_id"] for r in rows if r.get("gate_order_id")]
+    if not ids:
+        return 0
+    existing = set(
+        (await db.execute(
+            select(ClosedPosition.gate_order_id).where(
+                ClosedPosition.trader_id == trader_pk,
+                ClosedPosition.gate_order_id.in_(ids),
+            )
+        )).scalars().all()
+    )
+    n = 0
+    for r in rows:
+        gid = r.get("gate_order_id")
+        if not gid or gid in existing:
+            continue
+        db.add(ClosedPosition(trader_id=trader_pk, **r))
+        n += 1
+    return n
+
+
 # ── ★ 详情页实时持仓缓存（2026-08-20）：trader/position 接口含真实方向/均价/
 #    标记价/未实现盈亏，详情页 positions 优先读它（替代占比基线的 null 字段+方向缺失）。
 #    写入方：poll_live 每轮（有跟单策略 ~50s 实时）/ refresh 每 30 分钟（无跟单兜底）。──
@@ -791,7 +822,7 @@ async def _refresh_listed_profiles() -> dict[str, int]:
     from api.services.signalstore.service import SignalStore
 
     factory = get_session_factory()
-    stats = {"updated": 0, "missing": 0, "failed": 0, "pos_events": 0, "trade_rows": 0, "chart_rows": 0}
+    stats = {"updated": 0, "missing": 0, "failed": 0, "pos_events": 0, "trade_rows": 0, "chart_rows": 0, "closed_rows": 0}
     scraper = GateScraper(data_dir=get_settings().scraper_bulk_data_dir)
     try:
         if not scraper.mock and not await scraper.ensure_browser_ready(90):
@@ -856,6 +887,16 @@ async def _refresh_listed_profiles() -> dict[str, int]:
                         await _write_live_positions(scraper, [trader.trader_id])
                     except Exception as exc:  # noqa: BLE001 缓存失败不阻断
                         logger.warning("live_pos cache %s fail: %s", trader.trader_id, exc)
+                    # ★ 已平仓记录采集（2026-08-22）：close_position 接口含真实方向/
+                    #   已实现盈亏/开平仓均价，是详情页交易记录的数据源；对隐藏持仓
+                    #   交易员同样返回（历史平仓不受 is_hide 屏蔽）。纯展示数据与
+                    #   监控模式无关，无条件采集（gate_order_id 跨轮去重）。
+                    try:
+                        closed = await scraper.fetch_closed_positions(trader.trader_id)
+                        if closed:
+                            stats["closed_rows"] += await _upsert_closed_positions(db, trader.id, closed)
+                    except Exception as exc:  # noqa: BLE001 单项失败不阻断
+                        logger.warning("closed_positions %s fail: %s", trader.trader_id, exc)
                     # ★ 收益曲线历史回填（2026-08-20）：profit_chart 近 30 天每日累计
                     #   收益率 upsert 进 trader_profiles——上线首日快照只有 1-2 行，
                     #   7d/30d 区间曲线无意义；回填后与 Gate 网页走势图一致。
