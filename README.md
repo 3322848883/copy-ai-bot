@@ -129,7 +129,7 @@ npm run dev
 | `POSTGRES_PASSWORD` | 生产 DB 密码 |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana 管理员密码 |
 
-> 完整上线清单见 `docs/PRODUCTION_CHECKLIST.md`；操作演练见 `docs/OPERATIONS_RUNBOOK.md`。
+> 部署步骤（服务器 Docker / 服务器原生 / 本地开发）见 `docs/DEPLOYMENT.md`；完整上线清单见 `docs/PRODUCTION_CHECKLIST.md`；操作演练见 `docs/OPERATIONS_RUNBOOK.md`。
 
 ## API 概览
 
@@ -168,6 +168,7 @@ CI（GitHub Actions `.github/workflows/ci.yml`）：push/PR 到 main 自动跑 r
 
 ## 文档索引（docs/）
 
+- **部署指南**：`DEPLOYMENT.md`（服务器/本地 × Docker/非 Docker 四种形态完整步骤、环境要求、环境变量参考、验证清单、排障）
 - 平台设计：`2026-08-12-signal-saas-platform-design.md`（含 G03-G27 需求编号）
 - 开发计划：`2026-08-12-signal-saas-v1-development-plan.md`
 - 需求覆盖核对：`2026-08-12-signal-saas-requirements-coverage-check.md`
