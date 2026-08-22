@@ -288,17 +288,18 @@ export default function AdminStrategiesPage() {
         <div style={{ overflowX: "auto" }}>
           <table className="ftx-table">
             <thead>
-              <tr><th>带单员</th><th>仓位</th><th className="num">胜率</th><th className="num">最大回撤</th><th className="num">带单天数</th><th>门槛</th><th className="num">跟单人数</th><th>操作</th></tr>
+              <tr><th className="num">#</th><th>带单员</th><th>仓位</th><th className="num">胜率</th><th className="num">最大回撤</th><th className="num">带单天数</th><th>门槛</th><th className="num">跟单人数</th><th>操作</th></tr>
             </thead>
             <tbody>
               {pendingFiltered.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)" }}>暂无待选带单员</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)" }}>暂无待选带单员</td></tr>
               )}
-              {pendingFiltered.map((t) => {
+              {pendingFiltered.map((t, idx) => {
                 const passed = gatePassed(t);
                 const fails = gateFailures(t);
                 return (
                   <tr key={t.id}>
+                    <td className="num" style={{ color: "var(--muted)", fontSize: 12 }}>{idx + 1}</td>
                     <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
                       {t.name}
                       <span style={{ marginLeft: 8, color: "var(--muted)", fontFamily: "inherit", fontSize: 11 }}>
@@ -364,14 +365,15 @@ export default function AdminStrategiesPage() {
         <div style={{ overflowX: "auto" }}>
           <table className="ftx-table">
             <thead>
-              <tr><th>策略名</th><th>仓位</th><th>风格</th><th>风险</th><th className="num">30日收益</th><th className="num">跟单人数</th><th>状态</th><th>操作</th></tr>
+              <tr><th className="num">#</th><th>策略名</th><th>仓位</th><th>风格</th><th>风险</th><th className="num">30日收益</th><th className="num">跟单人数</th><th>状态</th><th>操作</th></tr>
             </thead>
             <tbody>
               {listedFiltered.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)" }}>暂无已上架策略</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)" }}>暂无已上架策略</td></tr>
               )}
-              {listedFiltered.map((s) => (
+              {listedFiltered.map((s, idx) => (
                 <tr key={s.id}>
+                  <td className="num" style={{ color: "var(--muted)", fontSize: 12 }}>{idx + 1}</td>
                   <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>
                     {s.display_name}
                     {s.is_follow && <span className="badge badge-ok" style={{ marginLeft: 8, fontSize: 10 }}>已跟单</span>}
@@ -446,12 +448,13 @@ export default function AdminStrategiesPage() {
           <div style={{ overflowX: "auto" }}>
             <table className="ftx-table">
               <thead>
-                <tr><th>leader_id</th><th>昵称</th><th>仓位</th><th className="num">30日收益</th><th className="num">胜率</th><th className="num">回撤</th><th className="num">跟单人数</th><th>状态</th><th>操作</th></tr>
+                <tr><th className="num">#</th><th>leader_id</th><th>昵称</th><th>仓位</th><th className="num">30日收益</th><th className="num">胜率</th><th className="num">回撤</th><th className="num">跟单人数</th><th>状态</th><th>操作</th></tr>
               </thead>
               <tbody>
-                {searchResults.map((r) => (
+                {searchResults.map((r, idx) => (
                   <Fragment key={String(r.leader_id)}>
                     <tr>
+                      <td className="num" style={{ color: "var(--muted)", fontSize: 12 }}>{idx + 1}</td>
                       <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{r.leader_id}</td>
                       <td style={{ fontWeight: 600 }}>{r.nick}</td>
                       <td><PosBadge hide={r.hide_position} /></td>
@@ -470,7 +473,7 @@ export default function AdminStrategiesPage() {
                     </tr>
                     {r.style && (
                       <tr style={{ background: "rgba(255,255,255,0.015)" }}>
-                        <td colSpan={9} style={{ color: "var(--muted)", paddingTop: 6, paddingBottom: 6 }}>
+                        <td colSpan={10} style={{ color: "var(--muted)", paddingTop: 6, paddingBottom: 6 }}>
                           <div style={{ lineHeight: 1.7 }}>
                             <div><b style={{ color: "var(--fg)" }}>风格</b>：{r.style.replace(/\|/g, " / ")}　<b style={{ color: "var(--fg)" }}>跟单区间</b>：{r.min_follow_amount || "-"} ~ {r.max_follow_amount || "-"} USDT</div>
                             {r.abstract && <div style={{ marginTop: 2 }}><b style={{ color: "var(--fg)" }}>简介</b>：{r.abstract}</div>}

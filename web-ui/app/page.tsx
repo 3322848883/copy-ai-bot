@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 import { useWsChannel } from "@/components/WsProvider";
-import { localDate } from "@/lib/time";
+import { localDate, localDateTime } from "@/lib/time";
 
 type Bot = {
   id: number;
@@ -34,6 +34,7 @@ type Order = {
   failure_category: string | null;
   fail_reason?: string | null;
   latency_ms: number | null;
+  created_at?: string | null;
   executed_at: string | null;
 };
 
@@ -472,7 +473,7 @@ export default function Home() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                     <thead>
                       <tr>
-                        {["策略", "动作", "状态"].map((h) => (
+                        {["时间", "策略", "动作", "状态"].map((h) => (
                           <th key={h} style={{ textAlign: "left", fontWeight: 600, color: "var(--muted)", padding: "8px 10px", borderBottom: "1px solid var(--rule)", whiteSpace: "nowrap" }}>{h}</th>
                         ))}
                       </tr>
@@ -480,6 +481,7 @@ export default function Home() {
                     <tbody>
                       {data.recent_orders.slice(0, 6).map((o) => (
                         <tr key={o.id}>
+                          <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--rule)", whiteSpace: "nowrap", color: "var(--muted)" }}>{localDateTime(o.created_at ?? o.executed_at)}</td>
                           <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--rule)", whiteSpace: "nowrap" }}>{o.strategy_name ?? "—"}</td>
                           <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--rule)", color: ACTION_COLOR[o.action] ?? "var(--fg)", whiteSpace: "nowrap" }}>
                             {ACTION_LABEL[o.action] ?? o.action}

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base, TimestampMixin
@@ -48,6 +48,10 @@ class CopyOrder(Base):
     #   ExecResult.reason / 风控规则名 / sizer 校验消息原样落库（截断 255）
     fail_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # ★ 落库（下单尝试）时刻：executed_at 仅成交时写入，失败/待定订单此前无任何时间可展示
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

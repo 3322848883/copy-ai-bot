@@ -216,6 +216,7 @@ class BotService:
                 "failure_category": o.failure_category,
                 "fail_reason": o.fail_reason,
                 "latency_ms": o.latency_ms,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
                 "executed_at": o.executed_at.isoformat() if o.executed_at else None,
             }
             for o in orders

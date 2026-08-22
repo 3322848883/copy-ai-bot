@@ -9,7 +9,7 @@ type OrderRow = {
   id: number; user_email: string; strategy_name: string; action: string; action_label: string;
   symbol: string; side: string; leverage: number; qty: number; required_margin_usdt: number;
   status: string; status_label: string; failure_category: string | null; fail_reason?: string | null;
-  latency_ms: number | null; executed_at: string | null;
+  latency_ms: number | null; created_at?: string | null; executed_at: string | null;
 };
 type Kpi = { total: number; filled: number; failed: number; risk_blocked: number; fill_rate: number; avg_latency_ms: number | null };
 type Failure = { kpi: Kpi; breakdown: Record<string, number> };
@@ -228,7 +228,7 @@ export default function AdminOrdersPage() {
             <tbody>
               {orders.map((o) => (
                 <tr key={o.id}>
-                  <td className="sub-ref">{fmtTime(o.executed_at)}</td>
+                  <td className="sub-ref" title={o.executed_at ? "成交时间" : "下单时间"}>{fmtTime(o.executed_at ?? o.created_at ?? null)}</td>
                   <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{o.user_email}</td>
                   <td>{o.strategy_name || "-"}</td>
                   <td>
