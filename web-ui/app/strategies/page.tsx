@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { apiFetch, tokenStore } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { Sparkline } from "@/components/Sparkline";
 import FollowModal from "@/components/FollowModal";
 
@@ -71,7 +70,6 @@ function pageNumbers(current: number, total: number): Array<number | "…"> {
 /** M2 T2.9 策略广场（对齐设计稿）：页眉 eyebrow + chip 胶囊筛选 + 卡片迷你 spark +
  *  底部信息行（跟单人数/7日收益 + 开启跟单/查看详情）+ 页码式分页 + 一键跟单（M6 模拟盘）。 */
 export default function StrategiesPage() {
-  const router = useRouter();
   const [items, setItems] = useState<Strategy[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);

@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { apiFetch, tokenStore } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import FollowModal from "@/components/FollowModal";
 
 type Detail = {
@@ -202,7 +202,6 @@ function EquityChart({ data }: { data: EquityData }) {
  *  保留现有 /v1/strategies/{id} 与 /equity API、风控确认与一键跟单逻辑。 */
 export default function StrategyDetailPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [equity, setEquity] = useState<EquityData | null>(null);
   const [err, setErr] = useState("");
