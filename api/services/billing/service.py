@@ -79,6 +79,39 @@ class BillingService:
         await self.db.refresh(sub)
         return sub
 
+    async def activate_subscription_manual(
+        self, user_id: int, plan_id: str, duration_days: int | None = None, payment_order_id: int | None = None
+    ) -> Subscription:
+        """★ 后台管理员手动开通订阅（绕过支付流程）。
+
+        - duration_days 可覆盖套餐默认时长（管理员自定义）
+        - payment_order_id 默认 None（无支付订单）
+        - 先过期旧订阅，再建新订阅
+        """
+        plan = self._plan(plan_id)
+        old = (
+            await self.db.execute(
+                select(Subscription)
+                .where(Subscription.user_id == user_id, Subscription.status == "active")
+            )
+        ).scalars().all()
+        for s in old:
+            s.status = "expired"
+
+        days = duration_days or plan["duration_days"]
+        now = datetime.now(timezone.utc)
+        sub = Subscription(
+            user_id=user_id,
+            plan_id=plan_id,
+            status="active",
+            expires_at=now + timedelta(days=days),
+            payment_order_id=payment_order_id,
+        )
+        self.db.add(sub)
+        await self.db.commit()
+        await self.db.refresh(sub)
+        return sub
+
     async def get_active_subscription(self, user_id: int) -> Subscription | None:
         """★ G10 配合：风控引擎判断订阅是否有效。"""
         sub = (

@@ -19,6 +19,7 @@ const MENU_GROUPS: { group: string; items: MenuItem[] }[] = [
       { href: "/strategies", label: "信号源审核", icon: "◈", badge: "signals" },
       { href: "/orders", label: "跟单订单", icon: "▤" },
       { href: "/payments", label: "支付记录", icon: "◎", badge: "payments" },
+      { href: "/subscriptions", label: "订阅管理", icon: "◉" },
       { href: "/announcements", label: "公告管理", icon: "📣" },
     ],
   },
