@@ -89,6 +89,20 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """★ 未捕获异常兜底：结构化 500（避免 nginx 层转 502 / 前端收到非 JSON 响应）。"""
+    import logging
+
+    logging.getLogger("signal-saas.api").exception(
+        "unhandled exception in %s %s", request.method, request.url.path, exc_info=exc
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"error": {"code": "internal_error", "message": "服务器内部错误，请稍后重试", "detail": {}}},
+    )
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok", "service": settings.app_name}

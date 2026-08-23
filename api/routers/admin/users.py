@@ -24,17 +24,24 @@ class NoteIn(BaseModel):
 async def list_users(
     q: str = Query("", description="邮箱模糊搜索"),
     status: str = Query("", description="normal=正常 / frozen=已冻结（服务端筛选，保证跨页完整）"),
+    subscription_status: str = Query("", description="active=已订阅 / expired=已过期 / none=未订阅"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     db: DbDep = None,
     _admin=Depends(get_current_admin),
 ) -> dict:
-    from sqlalchemy import func, select
+    from datetime import datetime, timezone
+
+    from sqlalchemy import exists, func, select
+
+    from api.core.errors import ValidationError
+    from api.models.billing import Subscription
+    from api.services.settings.service import get_plans
 
     if status not in ("", "normal", "frozen"):
-        from api.core.errors import ValidationError
-
         raise ValidationError("status 仅支持 normal/frozen")
+    if subscription_status not in ("", "active", "expired", "none"):
+        raise ValidationError("subscription_status 仅支持 active/expired/none")
     stmt = select(User)
     count_stmt = select(func.count(User.id))
     if q:
@@ -48,8 +55,57 @@ async def list_users(
     elif status == "normal":
         stmt = stmt.where(User.is_frozen.is_(False), User.is_active.is_(True))
         count_stmt = count_stmt.where(User.is_frozen.is_(False), User.is_active.is_(True))
+    # ★ 订阅状态筛选（服务端 EXISTS 判断，跨页完整）
+    now = datetime.now(timezone.utc)
+    if subscription_status == "active":
+        _has_active = exists().where(
+            Subscription.user_id == User.id,
+            Subscription.status == "active",
+            Subscription.expires_at > now,
+        )
+        stmt = stmt.where(_has_active)
+        count_stmt = count_stmt.where(_has_active)
+    elif subscription_status == "expired":
+        _has_sub = exists().where(Subscription.user_id == User.id)
+        _has_active = exists().where(
+            Subscription.user_id == User.id,
+            Subscription.status == "active",
+            Subscription.expires_at > now,
+        )
+        stmt = stmt.where(_has_sub, ~_has_active)
+        count_stmt = count_stmt.where(_has_sub, ~_has_active)
+    elif subscription_status == "none":
+        _has_sub = exists().where(Subscription.user_id == User.id)
+        stmt = stmt.where(~_has_sub)
+        count_stmt = count_stmt.where(~_has_sub)
     total = await db.scalar(count_stmt) or 0
     rows = (await db.execute(stmt.order_by(User.id.desc()).offset((page - 1) * size).limit(size))).scalars().all()
+    # ★ 批量获取订阅状态（每用户最新一条 active 订阅，含过期判断）
+    sub_map: dict[int, dict] = {}
+    if rows:
+        plan_names = {p.get("plan_id"): p.get("name") or p.get("plan_id") for p in get_plans()}
+        sub_rows = (
+            await db.execute(
+                select(Subscription.user_id, Subscription.plan_id, Subscription.expires_at)
+                .where(
+                    Subscription.user_id.in_([u.id for u in rows]),
+                    Subscription.status == "active",
+                )
+                .order_by(Subscription.expires_at.desc())
+            )
+        ).all()
+        for uid, pid, exp in sub_rows:
+            if uid in sub_map:
+                continue
+            e = exp
+            if e.tzinfo is None:
+                e = e.replace(tzinfo=timezone.utc)
+            sub_map[uid] = {
+                "plan_id": pid,
+                "plan_name": plan_names.get(pid, pid),
+                "status": "active" if e > now else "expired",
+                "expires_at": exp.isoformat() if exp else None,
+            }
     return {
         "total": total,
         "items": [
@@ -60,6 +116,7 @@ async def list_users(
                 "is_active": u.is_active,
                 "is_frozen": u.is_frozen,
                 "risk_disclosure_accepted": u.risk_disclosure_accepted,
+                "subscription": sub_map.get(u.id),
                 "created_at": u.created_at.isoformat() if hasattr(u, "created_at") else None,
             }
             for u in rows

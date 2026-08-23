@@ -6,7 +6,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.errors import ConflictError, NotFoundError, ValidationError
+from api.core.errors import ConflictError, NotFoundError, PermissionDenied, ValidationError
 from api.models.bot import CopyBot, CopyOrder, PositionSnapshot
 from api.models.signal import Strategy
 from api.models.user import ApiKey, Identity
@@ -53,7 +53,9 @@ class BotService:
                 )
             )
             if not _exempt:
-                raise ValidationError("无有效订阅，请先开通套餐，或绑定交易所邀请码并通过管理员复核")
+                if _ident and _ident.exchange_invite_code and _ident.exchange_invite_status == "pending":
+                    raise PermissionDenied("交易所邀请码已提交，请等待管理员复核通过后即可跟单")
+                raise PermissionDenied("无有效订阅，请先开通套餐，或绑定交易所邀请码并通过管理员复核")
 
         # ★ M4 修复（合规）：未确认风险揭示禁止建跟单（前端首次跟单弹窗 + 后端强制）
         from sqlalchemy import select as _select

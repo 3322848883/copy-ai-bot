@@ -12,6 +12,7 @@ type UserRow = {
   is_active: boolean;
   is_frozen: boolean;
   risk_disclosure_accepted?: boolean;
+  subscription?: { plan_id: string; plan_name?: string; status: string; expires_at: string | null } | null;
   created_at: string | null;
 };
 type HighRisk = { user_id: number; email: string; trigger: string; bind_1h: number; frozen_amount_usdt: number; status: string };
@@ -39,6 +40,9 @@ const FILTERS = [
   { key: "sub", label: "主号下级" },
   { key: "frozen", label: "已冻结" },
   { key: "risk", label: "风控标记" },
+  { key: "sub_active", label: "已订阅" },
+  { key: "sub_expired", label: "已过期" },
+  { key: "sub_none", label: "未订阅" },
 ] as const;
 type FilterKey = (typeof FILTERS)[number]["key"];
 
@@ -95,13 +99,21 @@ export default function AdminUsersPage() {
     }
   }
 
-  const statusOf = (key: FilterKey) => (key === "frozen" ? "frozen" : key === "normal" ? "normal" : "");
+  const statusOf = (key: FilterKey) => {
+    if (key === "frozen") return { status: "frozen", sub: "" };
+    if (key === "normal") return { status: "normal", sub: "" };
+    if (key === "sub_active") return { status: "", sub: "active" };
+    if (key === "sub_expired") return { status: "", sub: "expired" };
+    if (key === "sub_none") return { status: "", sub: "none" };
+    return { status: "", sub: "" };
+  };
 
-  const load = useCallback(async (query = "", pageNo = 1, statusParam = "") => {
+  const load = useCallback(async (query = "", pageNo = 1, statusParam = "", subParam = "") => {
     try {
       const qs = new URLSearchParams({ size: String(PAGE_SIZE), page: String(pageNo) });
       if (query) qs.set("q", query);
       if (statusParam) qs.set("status", statusParam);
+      if (subParam) qs.set("subscription_status", subParam);
       const [u, r, d] = await Promise.all([
         apiFetch<{ items: UserRow[]; total: number }>(`/admin/v1/users?${qs.toString()}`, {}, tokenStore.adminAccess),
         apiFetch<{ items: HighRisk[] }>("/admin/v1/risk/high-risk", {}, tokenStore.adminAccess).catch(() => ({ items: [] })),
@@ -125,13 +137,13 @@ export default function AdminUsersPage() {
     // 顶栏全局搜索跳转 /users?q=… 时预填关键词
     const urlQ = new URLSearchParams(window.location.search).get("q") || "";
     setQ(urlQ);
-    load(urlQ, 1, "");
+    load(urlQ, 1, "", "");
   }, [load, router]);
 
   const applyFilter = (key: FilterKey) => {
     setFilter(key);
     // normal/frozen 走服务端（跨页完整）；sub/risk 为全局标记集合，客户端过滤当前页
-    load(q, 1, statusOf(key));
+    load(q, 1, statusOf(key).status, statusOf(key).sub);
   };
 
   const filtered = useMemo(() => {
@@ -149,7 +161,7 @@ export default function AdminUsersPage() {
     try {
       await apiFetch(`/admin/v1/users/${u.id}/freeze`, { method: "PATCH", body: JSON.stringify({ frozen: !u.is_frozen }) }, tokenStore.adminAccess);
       toast(u.is_frozen ? "success" : "warn", `用户 ${u.email} 已${u.is_frozen ? "解冻" : "冻结"} · 操作已记入审计日志`);
-      await load(q, page, statusOf(filter));
+      await load(q, page, statusOf(filter).status, statusOf(filter).sub);
       setDrawer((prev) => (prev && prev.id === u.id ? { ...prev, is_frozen: !u.is_frozen } : prev));
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "操作失败");
@@ -204,6 +216,19 @@ export default function AdminUsersPage() {
     ) : (
       <span className="badge badge-warn">未确认</span>
     );
+  // ★ 订阅状态徽章：身份随订阅套餐变化（已订阅显示套餐名+到期时间）
+  const subStatusBadge = (u: UserRow) => {
+    const s = u.subscription;
+    if (!s) return <span className="badge badge-muted">未订阅</span>;
+    if (s.status === "active") {
+      return (
+        <span className="badge badge-ok" title={`${s.plan_id} · 到期 ${fmtFull(s.expires_at)}`}>
+          已订阅 · {s.plan_name || s.plan_id}
+        </span>
+      );
+    }
+    return <span className="badge badge-warn">已过期</span>;
+  };
 
   return (
     <div>
@@ -222,9 +247,9 @@ export default function AdminUsersPage() {
             placeholder="邮箱搜索"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && load(q, 1, statusOf(filter))}
+            onKeyDown={(e) => e.key === "Enter" && load(q, 1, statusOf(filter).status, statusOf(filter).sub)}
           />
-          <button className="btn btn-primary" onClick={() => load(q, 1, statusOf(filter))}>搜索</button>
+          <button className="btn btn-primary" onClick={() => load(q, 1, statusOf(filter).status, statusOf(filter).sub)}>搜索</button>
         </div>
       </div>
 
@@ -269,6 +294,7 @@ export default function AdminUsersPage() {
               <tr>
                 <th>用户</th>
                 <th>身份</th>
+                <th>订阅</th>
                 <th>风控确认</th>
                 <th>状态</th>
                 <th>注册时间</th>
@@ -278,13 +304,14 @@ export default function AdminUsersPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", color: "var(--muted)" }}>暂无用户</td>
+                  <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)" }}>暂无用户</td>
                 </tr>
               )}
               {filtered.map((u) => (
                 <tr key={u.id} style={{ cursor: "pointer" }} onClick={() => openDrawer(u)}>
                   <td style={{ fontFamily: "var(--font-geist-mono), monospace", fontWeight: 600 }}>{u.email}</td>
                   <td>{roleBadge(u.role)}</td>
+                  <td>{subStatusBadge(u)}</td>
                   <td>{subBadge(u)}</td>
                   <td>{statusBadge(u)}</td>
                   <td className="sub-ref">{fmtTime(u.created_at)}</td>
@@ -298,11 +325,11 @@ export default function AdminUsersPage() {
         </div>
         {pageCount > 1 && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 16 }}>
-            <button style={pageBtn(false)} disabled={page === 1} onClick={() => load(q, page - 1, statusOf(filter))}>‹</button>
+            <button style={pageBtn(false)} disabled={page === 1} onClick={() => load(q, page - 1, statusOf(filter).status, statusOf(filter).sub)}>‹</button>
             {Array.from({ length: pageCount }, (_, i) => i + 1).slice(0, 7).map((p) => (
-              <button key={p} style={pageBtn(page === p)} onClick={() => load(q, p, statusOf(filter))}>{p}</button>
+              <button key={p} style={pageBtn(page === p)} onClick={() => load(q, p, statusOf(filter).status, statusOf(filter).sub)}>{p}</button>
             ))}
-            <button style={pageBtn(false)} disabled={page === pageCount} onClick={() => load(q, page + 1, statusOf(filter))}>›</button>
+            <button style={pageBtn(false)} disabled={page === pageCount} onClick={() => load(q, page + 1, statusOf(filter).status, statusOf(filter).sub)}>›</button>
           </div>
         )}
       </div>

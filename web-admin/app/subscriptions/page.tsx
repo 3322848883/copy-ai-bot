@@ -27,7 +27,8 @@ function fmtTime(iso: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "—";
-  return d.toLocaleString("zh-CN", { hour12: false });
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 /** 订阅管理：订阅列表 + 手动开通 + 编辑到期时间/状态 + 撤销。 */
@@ -49,9 +50,12 @@ export default function AdminSubscriptionsPage() {
   const [editStatus, setEditStatus] = useState("active");
   const [editExpires, setEditExpires] = useState("");
 
+  const PAGE_SIZE = 20;
+  const planName = useCallback((pid: string) => plans.find((p) => p.plan_id === pid)?.name || pid, [plans]);
+
   const load = useCallback(async () => {
     try {
-      const params = new URLSearchParams({ page: String(page), page_size: "20" });
+      const params = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
       if (status) params.set("status", status);
       if (keyword.trim()) params.set("keyword", keyword.trim());
       const r = await apiFetch<{ items: Sub[]; total: number }>(`/admin/v1/subscriptions?${params}`, {}, tokenStore.adminAccess);
@@ -78,7 +82,7 @@ export default function AdminSubscriptionsPage() {
       const days = Number(openForm.duration_days);
       if (openForm.duration_days && days > 0) body.duration_days = days;
       const r = await apiFetch<Sub>("/admin/v1/subscriptions", { method: "POST", body: JSON.stringify(body) }, tokenStore.adminAccess);
-      toast("success", `已为 ${r.email || `#${uid}`} 开通 ${r.plan_id}（至 ${fmtTime(r.expires_at)}）`);
+      toast("success", `已为 ${r.email || `#${uid}`} 开通 ${planName(r.plan_id)}（至 ${fmtTime(r.expires_at)}）`);
       setOpenShow(false);
       setOpenForm({ user_id: "", plan_id: "", duration_days: "" });
       load();
@@ -107,7 +111,7 @@ export default function AdminSubscriptionsPage() {
   async function doDelete(s: Sub) {
     const ok = await confirm({
       title: "撤销订阅",
-      message: `撤销 ${s.email || `#${s.user_id}`} 的 ${s.plan_id} 订阅？\n删除后该用户将失去订阅权限。`,
+      message: `撤销 ${s.email || `#${s.user_id}`} 的 ${planName(s.plan_id)} 订阅？\n删除后该用户将失去订阅权限。`,
       danger: true,
       confirmText: "撤销",
     });
@@ -121,19 +125,38 @@ export default function AdminSubscriptionsPage() {
     }
   }
 
-  const totalPages = Math.max(1, Math.ceil(total / 20));
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageBtn = (active: boolean): React.CSSProperties => ({
+    width: 32, height: 32, borderRadius: 4, border: "1px solid",
+    borderColor: active ? "rgba(239,68,68,0.4)" : "var(--rule)",
+    background: active ? "rgba(239,68,68,0.1)" : "transparent",
+    color: active ? "var(--admin-red)" : "var(--muted)",
+    cursor: "pointer", fontFamily: "var(--font-geist-mono), monospace", fontSize: 12,
+  });
 
   return (
-    <div className="page">
+    <div>
+      {/* 页头 */}
       <div className="page-hdr">
         <div>
-          <div className="page-title">订阅管理</div>
-          <div className="page-sub">查看用户订阅、手动开通、延长到期时间、撤销订阅</div>
+          <div className="page-eyebrow">SUBSCRIPTION MANAGEMENT</div>
+          <h1 className="page-title">
+            订阅管理<small>{total.toLocaleString()} 条订阅</small>
+          </h1>
         </div>
-        <button className="btn btn-primary" onClick={() => { setOpenForm({ user_id: "", plan_id: plans[0]?.plan_id || "", duration_days: "" }); setOpenShow(true); }}>手动开通</button>
+        <div className="page-actions">
+          <button className="btn btn-primary" onClick={() => { setOpenForm({ user_id: "", plan_id: plans[0]?.plan_id || "", duration_days: "" }); setOpenShow(true); }}>手动开通</button>
+        </div>
       </div>
 
-      <div className="card" style={{ padding: 16, marginBottom: 16, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+      {/* 筛选栏 */}
+      <div
+        style={{
+          display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+          padding: "12px 16px", background: "var(--surface)", border: "1px solid var(--rule)", borderRadius: 8, marginBottom: 16,
+        }}
+      >
+        <span style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>筛选</span>
         <input className="input" style={{ width: 220 }} placeholder="搜索用户邮箱…" value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1); }} />
         <select className="input" style={{ width: 140 }} value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
           <option value="">全部状态</option>
@@ -141,51 +164,62 @@ export default function AdminSubscriptionsPage() {
           <option value="expired">已过期</option>
           <option value="pending">待支付</option>
         </select>
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>共 {total} 条</span>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace" }}>
+          共 {total.toLocaleString()} 条
+        </span>
       </div>
 
-      <div className="card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>用户</th>
-              <th>套餐</th>
-              <th>状态</th>
-              <th>到期时间</th>
-              <th>创建时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>暂无订阅记录</td></tr>
-            )}
-            {items.map((s) => (
-              <tr key={s.id}>
-                <td>#{s.id}</td>
-                <td>
-                  <div>{s.email || "—"}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)" }}>UID {s.user_id}</div>
-                </td>
-                <td>{s.plan_id}</td>
-                <td>{statusBadge(s.status)}</td>
-                <td>{fmtTime(s.expires_at)}</td>
-                <td>{fmtTime(s.created_at)}</td>
-                <td>
-                  <button className="action-link" onClick={() => { setEditTarget(s); setEditStatus(s.status); setEditExpires(s.expires_at ? new Date(s.expires_at).toISOString().slice(0, 16) : ""); }}>编辑</button>
-                  {" · "}
-                  <button className="action-link danger" onClick={() => doDelete(s)}>撤销</button>
-                </td>
+      {/* 订阅列表 */}
+      <div className="panel">
+        <div className="panel-hdr">
+          <div className="panel-title"><span className="sec-dot"></span>订阅列表</div>
+          <span className="panel-sub">/admin/v1/subscriptions · 手动开通/编辑/撤销均强制审计留痕</span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="ftx-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>用户</th>
+                <th>套餐</th>
+                <th>状态</th>
+                <th>到期时间</th>
+                <th>创建时间</th>
+                <th>操作</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {items.length === 0 && (
+                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>暂无订阅记录</td></tr>
+              )}
+              {items.map((s) => (
+                <tr key={s.id}>
+                  <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>#{s.id}</td>
+                  <td>
+                    <div>{s.email || "—"}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>UID {s.user_id}</div>
+                  </td>
+                  <td>{planName(s.plan_id)}<div style={{ fontSize: 11, color: "var(--muted)" }}>{s.plan_id}</div></td>
+                  <td>{statusBadge(s.status)}</td>
+                  <td className="sub-ref">{fmtTime(s.expires_at)}</td>
+                  <td className="sub-ref">{fmtTime(s.created_at)}</td>
+                  <td>
+                    <button className="action-link" onClick={() => { setEditTarget(s); setEditStatus(s.status); setEditExpires(s.expires_at ? new Date(s.expires_at).toISOString().slice(0, 16) : ""); }}>编辑</button>
+                    {" · "}
+                    <button className="action-link danger" onClick={() => doDelete(s)}>撤销</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         {totalPages > 1 && (
-          <div className="pager">
-            <button className="btn btn-secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</button>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>{page} / {totalPages}</span>
-            <button className="btn btn-secondary" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>下一页</button>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 16 }}>
+            <button style={pageBtn(false)} disabled={page <= 1} onClick={() => setPage(page - 1)}>‹</button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).slice(0, 7).map((p) => (
+              <button key={p} style={pageBtn(page === p)} onClick={() => setPage(p)}>{p}</button>
+            ))}
+            <button style={pageBtn(false)} disabled={page >= totalPages} onClick={() => setPage(page + 1)}>›</button>
           </div>
         )}
       </div>
@@ -198,7 +232,7 @@ export default function AdminSubscriptionsPage() {
               <div className="modal-title">手动开通订阅</div>
               <button className="modal-close" onClick={() => setOpenShow(false)}>✕</button>
             </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>绕过支付流程直接为用户开通订阅（旧订阅自动过期）。</div>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>绕过支付流程直接为用户开通订阅（旧订阅自动过期）。</div>
             <div className="field">
               <label className="field-label">用户 ID</label>
               <input className="input" type="number" min={1} placeholder="用户 ID（可在用户管理查看）" value={openForm.user_id} onChange={(e) => setOpenForm({ ...openForm, user_id: e.target.value })} />
@@ -232,8 +266,8 @@ export default function AdminSubscriptionsPage() {
               <div className="modal-title">编辑订阅 #{editTarget.id}</div>
               <button className="modal-close" onClick={() => setEditTarget(null)}>✕</button>
             </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-              {editTarget.email || `UID ${editTarget.user_id}`} · {editTarget.plan_id}
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>
+              {editTarget.email || `UID ${editTarget.user_id}`} · {planName(editTarget.plan_id)}
             </div>
             <div className="field">
               <label className="field-label">状态</label>
