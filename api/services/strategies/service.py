@@ -111,18 +111,26 @@ class StrategyService:
             stmt = stmt.where(Strategy.status == "listed")
         strategies = (await self.db.execute(stmt)).scalars().all()
 
+        # ★ 统一收益口径：一次拉取全部画像序列按交易员分组（避免 N+1），
+        #   广场卡片与收益曲线同源同口径（profit_chart 每日累计序列）
+        series_map: dict[int, list[TraderProfile]] = {}
+        if strategies:
+            all_profiles = (
+                await self.db.execute(
+                    select(TraderProfile)
+                    .where(TraderProfile.trader_id.in_([s.trader_id for s in strategies]))
+                    .order_by(TraderProfile.snapshot_date.asc())
+                )
+            ).scalars().all()
+            for pr in all_profiles:
+                series_map.setdefault(pr.trader_id, []).append(pr)
+
         rows: list[dict] = []
         for s in strategies:
             trader = await self.db.get(Trader, s.trader_id)
-            profile = (
-                await self.db.execute(
-                    select(TraderProfile)
-                    .where(TraderProfile.trader_id == s.trader_id)
-                    .order_by(TraderProfile.snapshot_date.desc())
-                    .limit(1)
-                )
-            ).scalars().first()
-            rows.append(self._strategy_dict(s, trader, profile))
+            series = series_map.get(s.trader_id, [])
+            profile = series[-1] if series else None
+            rows.append(self._strategy_dict(s, trader, profile, series))
         return rows, len(rows)
 
     # ── ★ G04 上架 ──
@@ -292,15 +300,15 @@ class StrategyService:
             raise NotFoundError("策略已下架")
         trader = await self.db.get(Trader, strategy.trader_id)
 
-        today = None
-        profile = (
+        # ★ 统一收益口径：详情页与广场/曲线同源（完整每日序列 → 区间收益）
+        series = (
             await self.db.execute(
                 select(TraderProfile)
                 .where(TraderProfile.trader_id == strategy.trader_id)
-                .order_by(TraderProfile.snapshot_date.desc())
-                .limit(1)
+                .order_by(TraderProfile.snapshot_date.asc())
             )
-        ).scalars().first()
+        ).scalars().all()
+        profile = series[-1] if series else None
 
         # ★ G21：画像兜底
         from datetime import date
@@ -317,7 +325,7 @@ class StrategyService:
             profile_state = {"is_stale": True, "placeholder": False}
             profile_payload = profile
 
-        data = self._strategy_dict(strategy, trader, profile_payload)
+        data = self._strategy_dict(strategy, trader, profile_payload, series)
         data["profile_state"] = profile_state
         positions, recent_orders, pos_source = await self._signal_replay(trader)
         data["positions"] = positions
@@ -599,7 +607,59 @@ class StrategyService:
             "followers": (t.followers if t.followers else 0),
         }
 
-    def _strategy_dict(self, s: Strategy, t: Trader | None, p: TraderProfile | None) -> dict:
+    def _series_metrics(self, series: list[TraderProfile]) -> dict:
+        """从每日画像序列推导统一收益指标（profit_chart 口径，与 /equity 曲线同源）。
+
+        区间收益 = 末点累计 − 区间起点累计（simple 累计口径，与曲线对应 Tab 末点一致）；
+        序列不足 2 点（仅当天快照）→ 回退带单员详情口径（source=leader_detail）。
+        """
+        if not series:
+            return {"source": "none", "sparkline": []}
+        vals = [round(p.roi_all or 0.0, 2) for p in series]
+        n = len(vals)
+        last = vals[-1]
+        spark = [
+            {"date": p.snapshot_date.isoformat(), "value": round(p.roi_all or 0.0, 2)}
+            for p in series
+        ]
+        # 降采样：超过 60 点按步长抽稀（保证末点）
+        if len(spark) > 60:
+            step = len(spark) / 60
+            spark = [spark[int(i * step)] for i in range(60)]
+            spark[-1] = {
+                "date": series[-1].snapshot_date.isoformat(),
+                "value": round(series[-1].roi_all or 0.0, 2),
+            }
+        if n < 2:
+            return {"roi_all": last, "sparkline": spark, "source": "leader_detail"}
+
+        def _interval(idx: int) -> float:
+            base = vals[max(0, n - idx)] if n > idx else vals[0]
+            return round(last - base, 2)
+
+        return {
+            "roi_7d": _interval(7),
+            "roi_30d": _interval(30),
+            "roi_all": last,
+            "sparkline": spark,
+            "source": "profit_chart",
+        }
+
+    def _strategy_dict(
+        self,
+        s: Strategy,
+        t: Trader | None,
+        p: TraderProfile | None,
+        series: list[TraderProfile] | None = None,
+    ) -> dict:
+        m = self._series_metrics(series or [])
+
+        def _pick(key: str, attr: str) -> float:
+            v = m.get(key)
+            if v is not None:
+                return v
+            return (getattr(p, attr) or 0) if p else 0
+
         return {
             "id": s.id,
             "trader_id": s.trader_id,
@@ -609,10 +669,12 @@ class StrategyService:
             "style": s.style,
             "risk_rating": s.risk_rating,
             "status": s.status,
-            "roi_7d": p.roi_7d or 0 if p else 0,
-            "roi_30d": p.roi_30d or 0 if p else 0,
+            "roi_7d": _pick("roi_7d", "roi_7d"),
+            "roi_30d": _pick("roi_30d", "roi_30d"),
             "roi_90d": p.roi_90d or 0 if p else 0,
-            "roi_all": p.roi_all or 0 if p else 0,
+            "roi_all": _pick("roi_all", "roi_all"),
+            "sparkline": m.get("sparkline", []),
+            "roi_source": m.get("source", "none"),
             "win_rate_30d": p.win_rate_30d or 0 if p else 0,
             "win_rate_all": p.win_rate_all or 0 if p else 0,
             "max_drawdown": p.max_drawdown or 0 if p else 0,

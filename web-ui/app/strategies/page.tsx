@@ -6,6 +6,8 @@ import { apiFetch } from "@/lib/api";
 import { Sparkline } from "@/components/Sparkline";
 import FollowModal from "@/components/FollowModal";
 
+type SparkPoint = { date: string; value: number };
+
 type Strategy = {
   id: number;
   exchange: string;
@@ -17,6 +19,8 @@ type Strategy = {
   roi_30d: number;
   roi_90d: number;
   roi_all: number;
+  sparkline?: SparkPoint[];
+  roi_source?: "profit_chart" | "leader_detail" | "none";
   win_rate_all: number;
   max_drawdown: number;
   trading_days: number;
@@ -47,6 +51,7 @@ const SORT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "followers", label: "跟单人数" },
   { value: "roi_7d", label: "7日收益" },
   { value: "roi_30d", label: "30日收益" },
+  { value: "roi_all", label: "累计收益" },
   { value: "win_rate_all", label: "累计胜率" },
 ];
 
@@ -172,7 +177,11 @@ export default function StrategiesPage() {
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
             {items.map((s) => {
-              const up = s.roi_30d >= 0;
+              const hasRoi = s.roi_source !== "none";
+              const up = hasRoi && s.roi_30d >= 0;
+              const sparkVals = (s.sparkline ?? []).map((p) => p.value);
+              const roiColor = (v: number) => (!hasRoi ? "var(--muted)" : v >= 0 ? "var(--success)" : "var(--danger)");
+              const roiText = (v: number) => (!hasRoi ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`);
               return (
                 <Link
                   key={s.id}
@@ -196,41 +205,46 @@ export default function StrategiesPage() {
                         <span className={`tag ${STYLE_TAG[s.style] ?? ""}`}>{STYLE_LABEL[s.style] ?? s.style}</span>
                       </div>
                     </div>
-                    {/* 2×2 指标：30日收益 / 累计胜率 / 风险评级 / 跟单人数 */}
+                    {/* 2×2 指标：30日收益 / 7日收益 / 累计收益 / 累计胜率（★ 与收益曲线同源同口径） */}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                       <div>
                         <div style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>30日收益</div>
-                        <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 17, fontWeight: 600, color: up ? "var(--success)" : "var(--danger)", marginTop: 2 }}>
-                          {up ? "+" : ""}{s.roi_30d.toFixed(1)}%
-                        </div>
+                        <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 17, fontWeight: 600, color: roiColor(s.roi_30d), marginTop: 2 }}>{roiText(s.roi_30d)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>7日收益</div>
+                        <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 17, fontWeight: 600, color: roiColor(s.roi_7d), marginTop: 2 }}>{roiText(s.roi_7d)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>累计收益</div>
+                        <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 17, fontWeight: 600, color: roiColor(s.roi_all), marginTop: 2 }}>{roiText(s.roi_all)}</div>
                       </div>
                       <div>
                         <div style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>累计胜率</div>
                         <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 17, fontWeight: 600, marginTop: 2 }}>{s.win_rate_all.toFixed(1)}%</div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>风险评级</div>
-                        <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 17, fontWeight: 500, color: RISK_COLOR[s.risk_rating] ?? "var(--muted)", marginTop: 2 }}>
-                          {RISK_SHORT[s.risk_rating] ?? s.risk_rating}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 10, color: "var(--tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>跟单人数</div>
-                        <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 17, fontWeight: 600, marginTop: 2 }}>{fmt(s.followers)}</div>
-                      </div>
                     </div>
-                    {/* 迷你收益曲线 spark（roi 数据数组生成，正绿负红） */}
+                    {/* 迷你收益曲线 spark（★ 真实每日累计序列，与详情页收益曲线同源） */}
                     <div style={{ height: 52, position: "relative" }}>
-                      <Sparkline id={`${s.id}`} values={[s.roi_7d, s.roi_30d, s.roi_90d, s.roi_all]} />
+                      {sparkVals.length >= 2 ? (
+                        <Sparkline id={`${s.id}`} values={sparkVals} />
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 11, color: "var(--muted)" }}>
+                          暂无收益数据
+                        </div>
+                      )}
                     </div>
-                    {/* 底部信息行：跟单人数 + 7日收益 + 开启跟单/查看详情小按钮 */}
+                    {/* 底部信息行：跟单人数 + 风险评级 + 数据源标注 + 开启跟单/查看详情小按钮 */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 12, borderTop: "1px solid rgba(51,65,85,0.4)", position: "relative" }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>
                         <span style={{ color: "var(--tertiary)", marginRight: 6 }}>◉</span>
-                        {fmt(s.followers)} 人跟单 · 7日{" "}
-                        <span style={{ color: s.roi_7d >= 0 ? "var(--success)" : "var(--danger)", fontFamily: "var(--font-geist-mono)" }}>
-                          {s.roi_7d >= 0 ? "+" : ""}{s.roi_7d.toFixed(1)}%
+                        {fmt(s.followers)} 人跟单
+                        <span style={{ marginLeft: 8, color: RISK_COLOR[s.risk_rating] ?? "var(--muted)" }}>
+                          · {RISK_SHORT[s.risk_rating] ?? s.risk_rating}风险
                         </span>
+                        {s.roi_source === "leader_detail" && (
+                          <span style={{ marginLeft: 8, fontSize: 10, color: "var(--tertiary)", border: "1px solid var(--rule)", borderRadius: 999, padding: "1px 8px" }}>详情口径</span>
+                        )}
                       </span>
                       {s.status === "listed" ? (
                         s.follow_enabled === false ? (

@@ -17,6 +17,8 @@ type Detail = {
   roi_30d: number;
   roi_90d: number;
   roi_all: number;
+  sparkline?: { date: string; value: number }[];
+  roi_source?: "profit_chart" | "leader_detail" | "none";
   win_rate_all: number;
   max_drawdown: number;
   trading_days: number;
@@ -75,8 +77,6 @@ type ClosedTrade = {
 
 const STYLE_LABEL: Record<string, string> = { trend: "趋势", range: "震荡", momentum: "动量" };
 const STYLE_TAG: Record<string, string> = { trend: "tag-trend", range: "tag-range", momentum: "tag-momentum" };
-const RISK_SHORT: Record<string, string> = { low: "低", mid: "中", high: "高" };
-const RISK_COLOR: Record<string, string> = { low: "#28c464", mid: "#eab308", high: "#ef4444" };
 
 const ACTION_TAG: Record<string, { cls: string; label: string }> = {
   open: { cls: "act-open", label: "开仓" },
@@ -312,8 +312,9 @@ export default function StrategyDetailPage() {
             <div style={{ display: "flex", gap: 32, flexWrap: "wrap", marginTop: 4 }}>
               {[
                 { label: "30日收益", value: `${detail.roi_30d >= 0 ? "+" : ""}${detail.roi_30d.toFixed(1)}%`, color: detail.roi_30d >= 0 ? "var(--success)" : "var(--danger)", big: true },
-                { label: "累计胜率", value: `${detail.win_rate_all.toFixed(1)}%`, color: undefined, big: true },
-                { label: "风险评级", value: RISK_SHORT[detail.risk_rating] ?? detail.risk_rating, color: RISK_COLOR[detail.risk_rating], big: false },
+                { label: "7日收益", value: `${detail.roi_7d >= 0 ? "+" : ""}${detail.roi_7d.toFixed(1)}%`, color: detail.roi_7d >= 0 ? "var(--success)" : "var(--danger)", big: true },
+                { label: "累计收益", value: `${detail.roi_all >= 0 ? "+" : ""}${detail.roi_all.toFixed(1)}%`, color: detail.roi_all >= 0 ? "var(--success)" : "var(--danger)", big: true },
+                { label: "累计胜率", value: `${detail.win_rate_all.toFixed(1)}%`, color: undefined, big: false },
                 { label: "跟单人数", value: fmt(detail.followers), color: undefined, big: false },
                 { label: "最大回撤", value: `-${detail.max_drawdown.toFixed(1)}%`, color: "var(--warning)", big: false },
               ].map((m) => (
