@@ -581,31 +581,57 @@ async def _sync_positions_display(db, scraper, trader_id: str, emit_signals: boo
     try:
         raw = await r.get(key)
         old: dict[str, float] = {}
+        old_sides: dict[str, str] = {}
         if raw:
             try:
-                pos = _json.loads(raw).get("pos")
+                d = _json.loads(raw)
+                pos = d.get("pos")
                 if isinstance(pos, dict):
                     old = {k: float(v) for k, v in pos.items()}
+                sides = d.get("sides")
+                if isinstance(sides, dict):
+                    old_sides = {k: str(v) for k, v in sides.items()}
             except (ValueError, TypeError):  # noqa: BLE001 损坏基线按无基线处理
                 old = {}
+        opened = sorted(set(snap) - set(old))
+        live_sides: dict[str, str] = {}
         if emit_signals and old != snap:
             now = datetime.now(timezone.utc)
             ts = int(now.timestamp())
-            for sym in sorted(set(snap) - set(old)):  # 新开仓
+            # ★ open 方向真实化（2026-08-23）：实时拉 trader/position 取真实
+            #   long/short（公开带单员）；隐藏/失败 → {} 回退 long
+            if opened:
+                try:
+                    rows = await scraper.fetch_leader_positions_live(trader_id)
+                    live_sides = {
+                        row["symbol"]: row["side"]
+                        for row in rows or []
+                        if row.get("symbol") and row.get("side") in ("long", "short")
+                    }
+                except Exception:  # noqa: BLE001 方向拉取失败不阻断信号产出
+                    live_sides = {}
+            for sym in opened:  # 新开仓
                 db.add(SourceSignal(
-                    exchange="gate", source_trader_id=trader_id, symbol=sym, side="long",
+                    exchange="gate", source_trader_id=trader_id, symbol=sym,
+                    side=live_sides.get(sym, "long"),
                     leverage=1, qty=0.0, percent=snap[sym] or None, action="open",
                     source_mode="A", opened_at=now, received_at=now,
                     dedupe_key=f"refresh-{trader_id}-{sym}-open-{ts}",
                 ))
-            for sym in sorted(set(old) - set(snap)):  # 已平仓
+            for sym in sorted(set(old) - set(snap)):  # 已平仓：回查基线原方向
                 db.add(SourceSignal(
-                    exchange="gate", source_trader_id=trader_id, symbol=sym, side="long",
+                    exchange="gate", source_trader_id=trader_id, symbol=sym,
+                    side=old_sides.get(sym, "long"),
                     leverage=1, qty=0.0, percent=None, action="close",
                     source_mode="A", opened_at=now, received_at=now,
                     dedupe_key=f"refresh-{trader_id}-{sym}-close-{ts}",
                 ))
-        await r.set(key, _json.dumps({"ts": _time.time(), "pos": snap}))
+        # 基线带 sides 快照：live_sides 覆盖全量方向，未拉取时沿用旧 sides
+        if opened and live_sides:
+            new_sides = {sym: live_sides.get(sym, "long") for sym in snap}
+        else:
+            new_sides = {sym: old_sides.get(sym, "long") for sym in snap}
+        await r.set(key, _json.dumps({"ts": _time.time(), "pos": snap, "sides": new_sides}))
         return len(set(snap) ^ set(old)) if emit_signals else 0
     finally:
         await r.aclose()

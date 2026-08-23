@@ -230,7 +230,7 @@ class CopyEngine:
                 bot, sig, "no_position", f"无持仓可减: {sig.symbol}（带单员减仓时本账户无该仓位，常见于中途开始跟单）"
             )
         reduce_qty = pos["qty"] * min(getattr(sig, "reduce_ratio", 0.5) or 0.5, 1.0)
-        side = "sell" if sig.side == "long" else "buy"
+        side = self._closing_side(pos, sig)
         exec_res = await self._execute_order(
             bot=bot, sig=sig, side=side, qty=reduce_qty,
             leverage=bot.leverage, margin_mode=bot.margin_mode, reduce_only=True,
@@ -245,13 +245,34 @@ class CopyEngine:
             return await self._fail_persist(
                 bot, sig, "no_position", f"无持仓可平: {sig.symbol}（带单员平仓时本账户无该仓位，常见于中途开始跟单）"
             )
-        side = "sell" if sig.side == "long" else "buy"
+        side = self._closing_side(pos, sig)
         exec_res = await self._execute_order(
             bot=bot, sig=sig, side=side, qty=pos["qty"],
             leverage=bot.leverage, margin_mode=bot.margin_mode, reduce_only=True,
             api_key=api_row.api_key, api_secret=api_secret,
         )
         return await self._finalize(bot, sig, pos["qty"], 0.0, exec_res, api_row)
+
+    @staticmethod
+    def _closing_side(pos: dict, sig: SourceSignal) -> str:
+        """平仓方向（2026-08-23）：以本账户实际持仓方向为准，回退信号方向。
+
+        ★ 模式A open 方向已真实化（可为 short），但信号方向仍可能滞后/错位
+        （基线 sides 缺失、隐藏带单员兜底 long）——reduce_only 反向单方向错了
+        交易所直接拒单（no position to reduce），持仓会卡死无法关闭。
+        实际持仓是唯一可信源：PaperBroker 快照有 side；Gate 真实接口
+        返回带符号 size（正=多，负=空）。
+        """
+        s = pos.get("side")
+        if s in ("long", "short"):
+            return "sell" if s == "long" else "buy"
+        size = pos.get("size")
+        if size is not None:
+            try:
+                return "sell" if float(size) >= 0 else "buy"
+            except (TypeError, ValueError):
+                pass
+        return "sell" if sig.side == "long" else "buy"
 
     # ── helpers ──
     @staticmethod
