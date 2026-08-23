@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 import { Sparkline } from "@/components/Sparkline";
+import FollowModal from "@/components/FollowModal";
 
 type Strategy = {
   id: number;
@@ -79,8 +80,6 @@ export default function StrategiesPage() {
   const [sort, setSort] = useState("followers");
   const [err, setErr] = useState("");
   const [creating, setCreating] = useState<Strategy | null>(null);
-  const [form, setForm] = useState({ percent: 20, leverage: 10, paper: false });
-  const [formMsg, setFormMsg] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -105,41 +104,6 @@ export default function StrategiesPage() {
   function pickSort(v: string) {
     setSort(v);
     setPage(1);
-  }
-
-  async function createBot() {
-    if (!creating) return;
-    setFormMsg("");
-    try {
-      if (!tokenStore.access) {
-        router.push("/login");
-        return;
-      }
-      // 取用户已绑定的交易所 API key（跨所跟单：绑定任意交易所即可跟单任意信号源，优选 Gate）
-      const keys = await apiFetch<{ items: Array<{ exchange: string; id: number }> }>("/v1/apikeys", {}, tokenStore.access);
-      const bound = keys.items ?? [];
-      const key = bound.find((k) => k.exchange === "gate") ?? bound[0];
-      if (!key) {
-        setFormMsg("请先到「我的账户」绑定任一交易所 API Key 后再开启跟单");
-        return;
-      }
-      await apiFetch(
-        "/v1/bots",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            strategy_id: creating.id, exchange: key.exchange, api_key_id: key.id,
-            amount_mode: "percent", percent: form.percent, leverage: form.leverage,
-            margin_mode: "isolated", paper: form.paper,
-          }),
-        },
-        tokenStore.access
-      );
-      setFormMsg("跟单机器人已创建");
-      setTimeout(() => setCreating(null), 900);
-    } catch (e) {
-      setFormMsg(e instanceof Error ? e.message : "创建失败");
-    }
   }
 
   return (
@@ -290,7 +254,6 @@ export default function StrategiesPage() {
                               e.preventDefault();
                               e.stopPropagation();
                               setCreating(s);
-                              setFormMsg("");
                             }}
                           >
                             开启跟单
@@ -329,44 +292,11 @@ export default function StrategiesPage() {
           </div>
         )}
 
-        {/* M6：一键跟单创建模态（支持模拟盘） */}
-        {creating && (
-          <div
-            style={{ position: "fixed", inset: 0, background: "rgba(7,14,26,0.8)", backdropFilter: "blur(4px)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }}
-            onClick={(e) => { if (e.target === e.currentTarget) setCreating(null); }}
-          >
-            <div style={{ width: 460, maxWidth: "92vw", maxHeight: "88vh", overflowY: "auto", background: "var(--surface-overlay)", border: "1px solid var(--rule)", borderRadius: 10, boxShadow: "0 16px 48px rgba(0,0,0,0.45)", padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>跟单「{creating.display_name}」</div>
-                <button className="btn btn-secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setCreating(null)}>✕</button>
-              </div>
-              <div style={{ color: "var(--muted)", fontSize: 12 }}>
-                逐仓模式 · <span className={`tag ${STYLE_TAG[creating.style] ?? ""}`}>{STYLE_LABEL[creating.style] ?? creating.style}</span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div>
-                  <label className="label">跟单比例（%）</label>
-                  <input className="input" type="number" min={1} max={100} value={form.percent} onChange={(e) => setForm({ ...form, percent: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label className="label">杠杆（1-125x）</label>
-                  <input className="input" type="number" min={1} max={125} value={form.leverage} onChange={(e) => setForm({ ...form, leverage: Number(e.target.value) })} />
-                </div>
-              </div>
-              <label className="label" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 0 }}>
-                <input type="checkbox" checked={form.paper} onChange={(e) => setForm({ ...form, paper: e.target.checked })} />
-                模拟盘（沙箱验证，不触达真实资金）
-              </label>
-              {formMsg && (
-                <div style={{ color: formMsg.includes("已创建") ? "var(--success)" : "var(--danger)", fontSize: 13 }}>{formMsg}</div>
-              )}
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
-                <button className="btn btn-secondary" onClick={() => setCreating(null)}>取消</button>
-                <button className="btn btn-primary" onClick={createBot}>创建机器人</button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* ★ 跟单弹窗（与策略详情共用 FollowModal，设置完全一致） */}
+        <FollowModal
+          strategy={creating ? { id: creating.id, display_name: creating.display_name, style: creating.style, max_drawdown: creating.max_drawdown } : null}
+          onClose={() => setCreating(null)}
+        />
       </div>
     </main>
   );
