@@ -208,6 +208,145 @@ curl -s https://your-domain.com/v1/strategies | head
 | `./data/scraper/`、`./data/scraper-bulk/` | 爬虫预热 cookie（防 Akamai 挑战） | 可不备份，丢失自动重建但冷启动期采集质量下降 |
 | volume `promdata`/`grafanadata` | 监控数据 | 低优先级 |
 
+### 2.8 宿主机 nginx 反代（多项目共存场景，方案A）
+
+> **适用场景**：服务器上已有其他项目占用 80/443（如 ai/api/fc/gf/hc.omnicore.xin），
+> 无法再让项目自带 nginx 容器监听 80/443。此时用**宿主机 nginx 反代 + 容器仅暴露回环端口**。
+> 2026-08-24 生产部署即采用此方案。
+
+**① 容器回环端口映射**（`docker-compose.server.yml`，与 `docker-compose.prod.yml` 叠加）：
+
+```bash
+# 禁用项目自带 nginx（80/443 留给宿主机 nginx）
+# docker-compose.server.yml 中：
+#   nginx: { profiles: ["monitoring"] }   # 不随默认 profile 启动
+#   prometheus/grafana 同理（监控栈按需启用）
+
+# 容器仅暴露回环端口，供宿主机 nginx 反代：
+#   api      127.0.0.1:8001:8000
+#   web      127.0.0.1:3002:3000
+#   web-admin 127.0.0.1:3001:3001
+#   db       127.0.0.1:5433:5432   （运维直连）
+#   redis    127.0.0.1:6381:6379   （运维直连）
+#   mailhog  127.0.0.1:8026:8025 / 1026:1025
+
+docker compose --env-file .env.prod \
+  -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.server.yml \
+  up -d --build
+```
+
+**② 宿主机 nginx 配置**（★ 必须包含 API 反代路由，否则后台登录 404）：
+
+```nginx
+# /etc/nginx/sites-available/signal.omnicore.xin  → 后台子域
+server {
+    server_name signal.omnicore.xin;
+    client_max_body_size 20m;
+
+    # ★ 后台 API 同源反代（web-admin 前端把请求发到 https://后台子域/admin/v1/...）
+    #   缺失此路由 → 登录 POST /admin/v1/auth/login 返回 404（2026-08-24 踩坑）
+    location /admin/v1/ { proxy_pass http://127.0.0.1:8001; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+    location /v1/       { proxy_pass http://127.0.0.1:8001; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+
+    # 后台 SPA
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/alpha.omnicore.xin/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/alpha.omnicore.xin/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+}
+```
+
+```nginx
+# /etc/nginx/sites-available/alpha.omnicore.xin  → 主站（前台 SPA + API + WS）
+server {
+    server_name alpha.omnicore.xin;
+    client_max_body_size 20m;
+
+    # ★ API 同源反代（前台 + 兼容后台旧路径）
+    location /v1/       { proxy_pass http://127.0.0.1:8001; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+    location /admin/v1/ { proxy_pass http://127.0.0.1:8001; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+
+    # WebSocket 实时推送（缺 Upgrade 头 → WS 连不上）
+    location /ws/ {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    # 监控与文档
+    location /metrics { proxy_pass http://127.0.0.1:8001; proxy_set_header Host $host; }
+    location /healthz { proxy_pass http://127.0.0.1:8001; proxy_set_header Host $host; }
+    location /docs { proxy_pass http://127.0.0.1:8001; proxy_set_header Host $host; }
+    location /openapi.json { proxy_pass http://127.0.0.1:8001; proxy_set_header Host $host; }
+
+    # 前台 SPA
+    location / {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/alpha.omnicore.xin/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/alpha.omnicore.xin/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+}
+```
+
+**③ 签发证书并启用**：
+
+```bash
+# DNS A 记录先指向服务器 IP，再签发（certbot 单证书含两个域名 SAN）
+certbot --nginx -d alpha.omnicore.xin -d signal.omnicore.xin \
+  --non-interactive --agree-tos --redirect --key-type ecdsa
+
+# 启用站点 + 重载
+ln -s /etc/nginx/sites-available/alpha.omnicore.xin /etc/nginx/sites-enabled/
+ln -s /etc/nginx/sites-available/signal.omnicore.xin /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+```
+
+**④ 验证（部署后必做）**：
+
+```bash
+# 后台登录接口（★ 必须 200，404 即 nginx 缺 API 路由）
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://signal.omnicore.xin/admin/v1/auth/login \
+  -H 'Content-Type: application/json' -d '{"email":"admin@x.com","password":"x"}'
+# 期望 200（密码错则 401，路由通）；404 = 缺 /admin/v1/ 路由
+
+# 前台公开端点 + 健康检查
+curl -s https://alpha.omnicore.xin/v1/config | head -c 200   # 200
+curl -sI https://alpha.omnicore.xin/healthz                  # 200
+```
+
+> **★ 踩坑记录（2026-08-24）**：宿主机 nginx 若只配 `location /` → 前端容器、漏掉
+> `/v1/`、`/admin/v1/`、`/ws/` 等 API 路由，前端页面正常但**登录接口 404**（请求被当作
+> SPA 路由处理）。排查时先 `curl POST /admin/v1/auth/login` 验证路由，再查前端。
+> 另注意：登录限流 10 次/分钟（`/admin/v1/auth/`），连续测试触发 429 属正常保护，等窗口即可。
+
 ---
 
 ## 3. 服务器部署 · 非 Docker（原生进程）
