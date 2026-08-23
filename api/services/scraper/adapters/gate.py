@@ -114,6 +114,9 @@ class GateScraper:
         self.headless_mode = headless_mode or settings.scraper_headless_mode
         # ★ 页面池并发：同一浏览器(context)内并行的页面数（并发拉取多个带单员）
         self.page_pool_size = max(1, page_pool_size or settings.scraper_page_pool_size)
+        # ★ 页面池自适应：上限封顶防内存爆；缩容缓冲防跟单波动抖动
+        self.max_pages = max(self.page_pool_size, settings.scraper_max_pages)
+        self.shrink_buf = max(0, settings.scraper_pool_shrink_buf)
         # ★ 独立 profile 目录：默认 data/scraper（poll_live 热循环专用）；批量任务
         #   （scrape_all/refresh/reconcile）传 scraper_bulk_data_dir 隔离，避免
         #   Chromium ProcessSingleton 同 profile 抢锁互杀。
@@ -198,6 +201,33 @@ class GateScraper:
         # ★ 页面池：同一 context 下并行开 N 页，共享同一指纹/cookie，并发 fetch 互不阻塞
         self._pages = [await self._context.new_page() for _ in range(self.page_pool_size)]
         self._ready_pages.clear()
+
+    async def _resize_pool(self, needed: int) -> None:
+        """★ 页面池自适应扩缩：按实际监控交易员数动态调整并发页面数。
+
+        - 扩容立即：needed > 当前池 → new_page 追加（共享同一会话/指纹，_api 首次
+          请求经 _ensure_page_ready 自动建会话）
+        - 缩容保守：当前池 > needed + shrink_buf 才回收尾部页面（防跟单波动抖动，
+          避免频繁建/关页面触发 Akamai 重握手）
+        - 下限 = 初始池（page_pool_size），上限 = max_pages（防内存爆）
+        - 只关尾部页面：保留页面下标不变，_ready_pages 会话 cookie 不失效
+        """
+        if not self._pages:
+            await self._ensure_browser()
+        target = min(max(needed, self.page_pool_size), self.max_pages)
+        # 扩容：立即追加
+        while len(self._pages) < target:
+            self._pages.append(await self._context.new_page())
+        # 缩容：当前池 > 需要 + 缓冲 才回收尾部多余页面
+        if len(self._pages) > target + self.shrink_buf:
+            excess = self._pages[target:]
+            for p in excess:
+                try:
+                    await p.close()
+                except Exception:  # noqa: BLE001 单页关闭失败不阻断
+                    pass
+            self._pages = self._pages[:target]
+            self._ready_pages = {i for i in self._ready_pages if i < target}
 
     async def ensure_browser_ready(self, max_wait_s: float = 90.0) -> bool:
         """带重试的浏览器就绪：poll_live / scrape_all / refresh 共用同一
@@ -690,11 +720,12 @@ class GateScraper:
         """
         if not trader_ids:
             return {}
-        await self._ensure_browser()
+        # ★ 页面池自适应：按实际监控交易员数扩缩并发页面（扩容立即/缩容保守/上限封顶）
+        await self._resize_pool(len(trader_ids))
         if not self._pages:
             return {tid: None for tid in trader_ids}
-        # 并发上限 = 页面池大小；为防过度并发，用信号量限制并发数
-        sem = asyncio.Semaphore(self.page_pool_size)
+        # 并发上限 = 当前页面池大小；为防过度并发，用信号量限制并发数
+        sem = asyncio.Semaphore(len(self._pages))
 
         async def _one(tid: str) -> tuple[str, dict[str, float] | None]:
             async with sem:

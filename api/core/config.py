@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     #   1 个浏览器 = 1 套指纹/cookie 身份，页面数决定并发上限（每页独立 fetch 互不阻塞）。
     #   默认 4：单个交易所几十个带单员时，单轮耗时 ≈ 交易员数/池大小 × 单次往返。
     scraper_page_pool_size: int = 4
+    # ★ 页面池自适应上限：按实际监控交易员数动态扩缩（_resize_pool），
+    #   扩容立即、缩容保守（留缓冲防跟单波动抖动），上限封顶防内存爆。
+    #   16 页 ≈ 2.4GB（~150MB/页），5.8GB 服务器安全；50+ 交易员时约 5s/轮。
+    scraper_max_pages: int = 16
+    # ★ 缩容缓冲：当前池 > 需要 + 缓冲 才回收尾部页面（防频繁建/关抖动）
+    scraper_pool_shrink_buf: int = 4
     # ★ 方案B：公开爬虫独立 user_data_dir（与登录会话 signal_session_data_dir 彻底隔离）。
     #   公开接口(模式A)走此目录的浏览器；私有接口(模式B)走登录会话，互不争抢 Chrome profile 锁。
     scraper_data_dir: str = "data/scraper"
