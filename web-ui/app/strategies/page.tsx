@@ -21,6 +21,9 @@ type Strategy = {
   max_drawdown: number;
   trading_days: number;
   followers: number;
+  source?: string;
+  hide_position?: boolean | null;
+  follow_enabled?: boolean;
 };
 
 const STYLE_LABEL: Record<string, string> = { trend: "趋势", range: "震荡", momentum: "动量" };
@@ -268,18 +271,31 @@ export default function StrategiesPage() {
                         </span>
                       </span>
                       {s.status === "listed" ? (
-                        <button
-                          className="btn btn-primary"
-                          style={{ padding: "6px 14px", fontSize: 12 }}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setCreating(s);
-                            setFormMsg("");
-                          }}
-                        >
-                          开启跟单
-                        </button>
+                        s.follow_enabled === false ? (
+                          /* ★ 阀门上移后台管理员：未开放跟单的策略展示友好提示 */
+                          <span
+                            className="btn btn-secondary"
+                            style={{
+                              padding: "6px 14px", fontSize: 12, pointerEvents: "none",
+                              borderStyle: "dashed", opacity: 0.75,
+                            }}
+                          >
+                            暂未开放跟单
+                          </span>
+                        ) : (
+                          <button
+                            className="btn btn-primary"
+                            style={{ padding: "6px 14px", fontSize: 12 }}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setCreating(s);
+                              setFormMsg("");
+                            }}
+                          >
+                            开启跟单
+                          </button>
+                        )
                       ) : (
                         <span className="btn btn-secondary" style={{ padding: "6px 14px", fontSize: 12, pointerEvents: "none" }}>
                           查看详情

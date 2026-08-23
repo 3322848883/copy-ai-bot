@@ -11,6 +11,7 @@ type Strategy = {
   status: string; followers: number; roi_30d: number; roi_all: number; win_rate_30d: number; win_rate_all: number;
   max_drawdown: number; trading_days: number; collector_ready?: boolean;
   hide_position?: boolean | null;
+  follow_enabled?: boolean;
   is_follow?: boolean; created_at?: string;
 };
 type Trader = {
@@ -52,7 +53,7 @@ function gateFailures(t: { win_rate_all: number; max_drawdown: number; trading_d
 /** 仓位公开状态徽章：公开→模式A 可用；隐藏→仅模式B（API 镜像跟单）；null→未采集 */
 function PosBadge({ hide }: { hide?: boolean | null }) {
   if (hide === true)
-    return <span className="badge badge-warn" title="带单员隐藏当前持仓：公开采集拿不到仓位，上架请使用模式B（绑定API镜像跟单）">隐藏</span>;
+    return <span className="badge badge-warn" title="带单员隐藏当前持仓：模式A缺方向数据不可实盘开仓；仅模式B（API镜像）方向真实。上架后可开放跟单，方向由镜像提供">隐藏</span>;
   if (hide === false) return <span className="badge badge-ok" title="当前持仓公开：模式A（广场采集）可用">公开</span>;
   return <span className="badge badge-muted" title="尚未采集到持仓公开状态（detail 未拉过）">未知</span>;
 }
@@ -164,6 +165,31 @@ export default function AdminStrategiesPage() {
     if (!ok) return;
     try {
       await apiFetch(`/admin/v1/signals/${s.id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }, tokenStore.adminAccess);
+      toast("success", `「${s.display_name}」已${label}`);
+      load();
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "操作失败");
+    }
+  }
+
+  // ★ 跟单阀门上移后台管理员：显式开关用户端是否可跟单（不再由隐藏仓位隐式推导）
+  async function toggleFollow(s: Strategy) {
+    const nextDisabled = s.follow_enabled !== false; // 当前=开放则转为关闭
+    const label = nextDisabled ? "关闭跟单" : "开放跟单";
+    const warn = s.hide_position === true ? "\n提示：该策略带单员隐藏仓位，关闭后用户将无法跟单；若模式A保留展示。" : "";
+    const ok = await confirm({
+      title: label,
+      message: `「${s.display_name}」${label}。用户端广场将${nextDisabled ? "显示「暂未开放跟单」" : "可点「开启跟单」"}。${warn}`,
+      danger: nextDisabled,
+      confirmText: label,
+    });
+    if (!ok) return;
+    try {
+      await apiFetch(
+        `/admin/v1/signals/${s.id}/follow_enabled`,
+        { method: "PATCH", body: JSON.stringify({ enabled: !nextDisabled }) },
+        tokenStore.adminAccess,
+      );
       toast("success", `「${s.display_name}」已${label}`);
       load();
     } catch (e) {
@@ -365,11 +391,11 @@ export default function AdminStrategiesPage() {
         <div style={{ overflowX: "auto" }}>
           <table className="ftx-table">
             <thead>
-              <tr><th className="num">#</th><th>策略名</th><th>仓位</th><th>风格</th><th>风险</th><th className="num">30日收益</th><th className="num">跟单人数</th><th>状态</th><th>操作</th></tr>
+              <tr><th className="num">#</th><th>策略名</th><th>仓位</th><th>风格</th><th>风险</th><th className="num">30日收益</th><th className="num">跟单人数</th><th>状态</th><th>跟单</th><th>操作</th></tr>
             </thead>
             <tbody>
               {listedFiltered.length === 0 && (
-                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)" }}>暂无已上架策略</td></tr>
+                <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--muted)" }}>暂无已上架策略</td></tr>
               )}
               {listedFiltered.map((s, idx) => (
                 <tr key={s.id}>
@@ -385,6 +411,16 @@ export default function AdminStrategiesPage() {
                   <td className="num" style={{ color: s.roi_30d >= 0 ? "var(--success)" : "#f87171" }}>{s.roi_30d >= 0 ? "+" : ""}{s.roi_30d.toFixed(1)}%</td>
                   <td className="num">{s.followers || 0}</td>
                   <td>{statusBadge(s.status)}</td>
+                  <td>
+                    {s.follow_enabled === false ? (
+                      <span className="badge badge-muted" title="跟单未开放，用户端广场显示「暂未开放跟单」">未开放</span>
+                    ) : (
+                      <span className="badge badge-ok" title="跟单开放中，用户端广场可「开启跟单」">开放</span>
+                    )}{" "}
+                    <button className="action-link" onClick={() => toggleFollow(s)} style={{ fontSize: 12 }}>
+                      {s.follow_enabled === false ? "开放" : "关闭"}
+                    </button>
+                  </td>
                   <td>
                     {s.status === "listed" ? (
                       <button className="action-link" onClick={() => setStatus(s, "paused")}>暂停</button>
@@ -508,11 +544,14 @@ export default function AdminStrategiesPage() {
               )}
               <div style={{ marginTop: 6 }}>
                 {listTarget.hide_position === true ? (
-                  <span style={{ color: "var(--warning)" }}>⚠ 该带单员隐藏当前持仓：模式A（公开广场采集）拿不到其仓位信号，上架后仅支持模式B（绑定API镜像跟单）。</span>
+                  <span style={{ color: "var(--warning)" }}>
+                    ⚠ 该带单员隐藏当前持仓：模式A无方向数据，<strong>不能在此上架</strong>。
+                    请用跟单账户关注该带单员（系统自动以模式B上架，方向数据真实），或放弃上架。
+                  </span>
                 ) : listTarget.hide_position === false ? (
                   <span style={{ color: "var(--success)" }}>✓ 该带单员公开当前持仓：模式A（公开广场采集）可用。</span>
                 ) : (
-                  <span>仓位公开状态未知（尚未采集）。</span>
+                  <span>仓位公开状态未知（尚未采集）：上架后信号时将实时补拉方向。</span>
                 )}
               </div>
             </div>
@@ -549,7 +588,10 @@ export default function AdminStrategiesPage() {
                 className={`btn ${gatePassed(listTarget) ? "btn-primary" : "btn-danger"}`}
                 style={{ flex: 1 }}
                 onClick={doList}
-                disabled={!gatePassed(listTarget) && !forceReason}
+                disabled={
+                  listTarget.hide_position === true ||
+                  (!gatePassed(listTarget) && !forceReason)
+                }
               >
                 {gatePassed(listTarget) ? "确认上架" : "强制上架"}
               </button>

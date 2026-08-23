@@ -142,6 +142,18 @@ class StrategyService:
         if trader is None:
             raise NotFoundError("带单员不存在")
 
+        # ★ 模式A只做公开仓位（2026-08-23 上架闸门）：隐藏仓位的带单员公开渠道无
+        #   方向（占比接口无 side、实时持仓接口对 is_hide 返回空），模式A open 信号
+        #   回退 long 会反向开仓。硬闸门不可 force 跳过（force 只豁免质量门槛，
+        #   数据能力缺失无 override 语义）；合规路径 = 用跟单账户关注该带单员，
+        #   sync_followed_leaders 自动以模式B上架（方向真实），或放弃上架。
+        #   hide_position 为 null（未知）不拦——信号时会实时补拉方向。
+        if trader.hide_position is True:
+            raise ValidationError(
+                "该带单员已隐藏当前仓位，模式A无方向数据，不能上架。"
+                "请用跟单账户关注该带单员（系统自动以模式B上架，方向数据真实），或放弃上架"
+            )
+
         existing = await self.db.scalar(select(Strategy).where(Strategy.trader_id == trader_id))
         if existing:
             raise ConflictError("该带单员已在已添加池")
@@ -606,5 +618,6 @@ class StrategyService:
             "followers": (t.followers if t and t.followers else 0),
             "source": s.source,
             "hide_position": (t.hide_position if t else None),
+            "follow_enabled": bool(s.follow_enabled),
             "trader_id_external": t.trader_id if t else None,
         }

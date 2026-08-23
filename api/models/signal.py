@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, true as sa_true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base, TimestampMixin
@@ -63,6 +63,9 @@ class Strategy(TimestampMixin, Base):
     # ★ 策略来源：A=公开广场采集/G04 审核上架（人工）；B=模式2 跟单同步自动上架。
     #   delist_unfollowed 只下架 B——否则模式2 同步会把模式1 审核上架的策略全部误下架。
     source: Mapped[str] = mapped_column(String(1), default="A", server_default="A")
+    # ★ 跟单是否开放（阀门上移后台管理员）：default true=上架即开放。
+    #   不再由 hide_position 隐式推导用户端能否跟单——隐藏仓位仅作后台数据标记。
+    follow_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true())
 
 
 class ClosedPosition(Base):

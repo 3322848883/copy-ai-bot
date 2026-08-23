@@ -21,6 +21,10 @@ class GrayIn(BaseModel):
     gray_pct: int  # 0-100
 
 
+class FollowEnabledIn(BaseModel):
+    enabled: bool
+
+
 class ForceListIn(BaseModel):
     trader_id: int
     exchange: str = "gate"  # ★ M6 T8：上架策略所属交易所（不再写死 gate）
@@ -194,6 +198,8 @@ async def list_strategies(
                 "followers": trader.followers if trader else 0,
                 # ★ 仓位公开状态（Gate is_hide）：True=隐藏（公开采集拿不到仓位，仅模式B 可跟）
                 "hide_position": trader.hide_position if trader else None,
+                # ★ 跟单是否开放（阀门上移后台管理员）：管理员显式控制，不再由 hide_position 推导
+                "follow_enabled": bool(s.follow_enabled),
                 "roi_7d": profile.roi_7d if profile else 0,
                 "roi_30d": profile.roi_30d if profile else 0,
                 "roi_all": profile.roi_all if profile else 0,
@@ -329,6 +335,23 @@ async def set_gray(strategy_id: int, body: GrayIn, db: DbDep = None, admin=Depen
         before={"gray_pct": before}, after={"gray_pct": strategy.gray_pct},
     )
     return {"id": strategy_id, "gray_pct": strategy.gray_pct}
+
+
+@router.patch("/{strategy_id}/follow_enabled")
+async def set_follow_enabled(strategy_id: int, body: FollowEnabledIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
+    """★ 跟单阀门上移后台管理员：显式开关是否开放跟单（不再由 hide_position 推导）。"""
+    strategy = await db.get(Strategy, strategy_id)
+    if strategy is None:
+        raise NotFoundError("策略不存在")
+    before = bool(strategy.follow_enabled)
+    strategy.follow_enabled = body.enabled
+    await db.commit()
+    await AuditService(db).log(
+        actor_id=admin["id"], action="strategy.follow_enabled",
+        target_type="strategy", target_id=str(strategy_id),
+        before={"follow_enabled": before}, after={"follow_enabled": strategy.follow_enabled},
+    )
+    return {"id": strategy_id, "follow_enabled": strategy.follow_enabled}
 
 
 class StrategyRiskIn(BaseModel):

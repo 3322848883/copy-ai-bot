@@ -27,6 +27,7 @@ type Detail = {
   closed_trades?: ClosedTrade[];
   source?: string;
   hide_position?: boolean | null;
+  follow_enabled?: boolean;
 };
 
 type Position = {
@@ -324,9 +325,11 @@ export default function StrategyDetailPage() {
   }
 
   const listed = detail.status === "listed";
-  // ★ 模式A只做公开仓位（2026-08-23）：隐藏仓位带单员公开渠道无方向，
-  //   A 策略纯展示不可跟单；模式B（镜像）方向真实不受限
-  const hiddenPosition = detail.hide_position === true && detail.source !== "B";
+  // ★ 阀门上移后台管理员（2026-08-24）：能否跟单由后台 follow_enabled 显式控制，
+  //   不再由 hide_position 隐式推导。隐藏仓位仅作后台数据标记（展示型信号源）。
+  const followDisabled = detail.follow_enabled === false;
+  // 展示型信号源（模式A+隐藏，公开渠道无方向数据，后端安全拦截并友好提示）
+  const displayOnly = detail.hide_position === true && detail.source !== "B";
   const desc =
     `${STYLE_LABEL[detail.style] ?? detail.style}策略，全市场信号实时跟随、自动执行。` +
     `已运行 ${detail.trading_days} 天，累计胜率 ${detail.win_rate_all.toFixed(1)}%，` +
@@ -402,10 +405,14 @@ export default function StrategyDetailPage() {
           </div>
           <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 12, alignItems: "stretch" }}>
             {listed ? (
-              hiddenPosition ? (
-                <button className="btn btn-secondary" style={{ height: 48, padding: "0 32px", fontSize: 16, opacity: 0.5, cursor: "not-allowed" }} disabled>
-                  暂不支持跟单
-                </button>
+              followDisabled ? (
+                <div style={{
+                  height: 48, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  borderRadius: 10, border: "1px dashed var(--border-strong, rgba(148,163,184,0.4))",
+                  background: "rgba(148,163,184,0.06)", color: "var(--secondary)", fontSize: 15, fontWeight: 600,
+                }}>
+                  暂未开放跟单 · 敬请期待
+                </div>
               ) : (
                 <button className="btn btn-primary" style={{ height: 48, padding: "0 32px", fontSize: 16, fontWeight: 600 }} onClick={() => setFollowOpen(true)}>
                   开启跟单
@@ -417,9 +424,9 @@ export default function StrategyDetailPage() {
               </button>
             )}
             <span style={{ fontSize: 10, color: "var(--tertiary)", textAlign: "center" }}>
-              {hiddenPosition
-                ? "该信号源带单员已隐藏当前仓位，方向数据不可用 · 数据仅供展示参考"
-                : "信号源由平台审核上架 · 每笔跟单均实时执行风控检查"}
+              {displayOnly
+                ? "展示型信号源：可查看历史业绩与画像 · 实时跟单入口以实际开通为准"
+                : "信号源由平台审核上架 · 管理员确认开放后即可跟单"}
             </span>
           </div>
         </div>
