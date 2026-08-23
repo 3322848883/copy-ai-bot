@@ -15,6 +15,7 @@ const MENU_GROUPS: { group: string; items: MenuItem[] }[] = [
       { href: "/", label: "数据概览", icon: "◈" },
       { href: "/users", label: "用户管理", icon: "▣" },
       { href: "/review", label: "主号审核", icon: "◈" },
+      { href: "/exchange-invites", label: "交易所邀请码", icon: "🔑" },
       { href: "/strategies", label: "信号源审核", icon: "◈", badge: "signals" },
       { href: "/orders", label: "跟单订单", icon: "▤" },
       { href: "/payments", label: "支付记录", icon: "◎", badge: "payments" },
@@ -28,10 +29,6 @@ const MENU_GROUPS: { group: string; items: MenuItem[] }[] = [
       { href: "/wallets", label: "钱包账本", icon: "≋" },
       { href: "/withdrawals", label: "提现审核", icon: "↗", badge: "withdrawals" },
     ],
-  },
-  {
-    group: "合作",
-    items: [{ href: "/exchange-invites", label: "邀请码管理", icon: "🔑" }],
   },
   {
     group: "风控",
