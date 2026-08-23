@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
+import AdminPager from "@/components/AdminPager";
 
 type Summary = { total_usdt: number; available_usdt: number; withdrawing_usdt: number; paid_usdt: number; frozen_usdt: number };
 type LedgerItem = { id: number; owner_id: number; owner_email: string; source_user_id: number; amount_usdt: number; status: string; status_label: string; created_at: string | null };
@@ -18,20 +19,26 @@ export default function AdminWalletsPage() {
   const toast = useToast();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [ledger, setLedger] = useState<LedgerItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [adjust, setAdjust] = useState<{ mode: "credit" | "debit" } | null>(null);
   const [userId, setUserId] = useState("");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const PAGE_SIZE = 50;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (pg = 1) => {
     try {
+      const qs = new URLSearchParams({ page: String(pg), size: String(PAGE_SIZE) });
       const [s, l] = await Promise.all([
         apiFetch<Summary>("/admin/v1/wallets/summary", {}, tokenStore.adminAccess),
-        apiFetch<{ items: LedgerItem[] }>("/admin/v1/wallets", {}, tokenStore.adminAccess),
+        apiFetch<{ items: LedgerItem[]; total: number }>(`/admin/v1/wallets?${qs}`, {}, tokenStore.adminAccess),
       ]);
       setSummary(s);
       setLedger(l.items);
+      setTotal(l.total);
+      setPage(pg);
     } catch {
       /* ignore */
     }
@@ -168,6 +175,7 @@ export default function AdminWalletsPage() {
             </tbody>
           </table>
         </div>
+        <AdminPager page={page} totalPages={Math.max(1, Math.ceil(total / PAGE_SIZE))} onChange={(p) => load(p)} />
       </div>
 
       {/* 手动补发/扣除弹窗（对齐设计稿 modal） */}

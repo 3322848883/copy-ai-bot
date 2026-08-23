@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
+import AdminPager from "@/components/AdminPager";
 
 type Order = { id: number; user_id: number; plan_id: string; amount_usdt: number; network: string; tx_hash: string | null; status: string; confirmations: number; required: number; poll_attempts: number; created_at: string | null };
 
@@ -54,9 +55,12 @@ export default function AdminPaymentsPage() {
   const confirm = useConfirm();
   const toast = useToast();
   const [items, setItems] = useState<Order[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
   const [addrs, setAddrs] = useState<PAddr[]>([]);
   const [form, setForm] = useState({ network: "trc20", address: "", remark: "" });
+  const PAGE_SIZE = 20;
 
   const loadAddrs = useCallback(async () => {
     try {
@@ -65,16 +69,20 @@ export default function AdminPaymentsPage() {
     } catch { /* ignore */ }
   }, []);
 
-  const load = useCallback(async (st = status) => {
+  const load = useCallback(async (st = status, pg = page) => {
     try {
+      const qs = new URLSearchParams({ page: String(pg), size: String(PAGE_SIZE) });
+      if (st) qs.set("status", st);
       const [r, a] = await Promise.all([
-        apiFetch<{ items: Order[] }>(`/admin/v1/payments${st ? `?status=${st}` : ""}`, {}, tokenStore.adminAccess),
+        apiFetch<{ items: Order[]; total: number }>(`/admin/v1/payments?${qs}`, {}, tokenStore.adminAccess),
         apiFetch<{ items: PAddr[] }>("/admin/v1/payments/addresses", {}, tokenStore.adminAccess),
       ]);
       setItems(r.items);
+      setTotal(r.total);
+      setPage(pg);
       setAddrs(a.items);
     } catch { /* ignore */ }
-  }, [status]);
+  }, [status, page]);
 
   useEffect(() => {
     if (!tokenStore.adminAccess) {
@@ -167,12 +175,12 @@ export default function AdminPaymentsPage() {
       {/* 状态筛选 */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "12px 16px", background: "var(--surface-dim)", border: "1px solid var(--rule)", borderRadius: 8 }}>
         {FILTERS.map((s) => (
-          <button key={s} style={chipStyle(status === s)} onClick={() => { setStatus(s); load(s); }}>
+          <button key={s} style={chipStyle(status === s)} onClick={() => { setStatus(s); load(s, 1); }}>
             {s === "" ? "全部" : STATUS_LABEL[s]}
           </button>
         ))}
         <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace" }}>
-          {items.length} 笔
+          共 {total} 笔
         </span>
       </div>
 
@@ -221,6 +229,7 @@ export default function AdminPaymentsPage() {
             </tbody>
           </table>
         </div>
+        <AdminPager page={page} totalPages={Math.max(1, Math.ceil(total / PAGE_SIZE))} onChange={(p) => load(status, p)} />
       </div>
 
       {/* 平台收款地址 */}

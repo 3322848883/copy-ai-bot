@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
+import AdminPager from "@/components/AdminPager";
 
 type Wd = { id: number; user_id: number; amount_usdt: number; fee_usdt: number; network: string; address: string; status: string; tx_hash: string | null; reject_reason: string | null; created_at: string | null };
 
@@ -44,25 +45,32 @@ export default function AdminWithdrawalsPage() {
   const toast = useToast();
   const [items, setItems] = useState<Wd[]>([]);
   const [kpiItems, setKpiItems] = useState<Wd[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
   const [detail, setDetail] = useState<Wd | null>(null);
   const [mode, setMode] = useState<"approve" | "reject">("approve");
   const [txHash, setTxHash] = useState("");
   const [rejectReason, setRejectReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const PAGE_SIZE = 20;
 
-  const load = useCallback(async (st = status) => {
+  const load = useCallback(async (st = "", pg = 1) => {
     try {
+      const qs = new URLSearchParams({ page: String(pg), size: String(PAGE_SIZE) });
+      if (st) qs.set("status", st);
       const [r, k] = await Promise.all([
-        apiFetch<{ items: Wd[] }>(`/admin/v1/withdrawals${st ? `?status=${st}` : ""}`, {}, tokenStore.adminAccess),
+        apiFetch<{ items: Wd[]; total: number }>(`/admin/v1/withdrawals?${qs}`, {}, tokenStore.adminAccess),
         apiFetch<{ items: Wd[] }>("/admin/v1/withdrawals", {}, tokenStore.adminAccess),
       ]);
       setItems(r.items);
+      setTotal(r.total);
+      setPage(pg);
       setKpiItems(k.items);
     } catch {
       /* ignore */
     }
-  }, [status]);
+  }, []);
 
   useEffect(() => {
     if (!tokenStore.adminAccess) {
@@ -303,7 +311,7 @@ export default function AdminWithdrawalsPage() {
               }}
               onClick={() => {
                 setStatus(f.value);
-                load(f.value);
+                load(f.value, 1);
               }}
             >
               {f.label}
@@ -352,6 +360,7 @@ export default function AdminWithdrawalsPage() {
             </tbody>
           </table>
         </div>
+        <AdminPager page={page} totalPages={Math.max(1, Math.ceil(total / PAGE_SIZE))} onChange={(p) => load(status, p)} />
       </div>
 
       {/* 最近处理记录 */}

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
+import AdminPager from "@/components/AdminPager";
 
 type Kpi = { today_count: number; today_amount_usdt: number; verifying_count: number; available_count: number; canceled_count: number; frozen_count: number };
 type Abuse = { items: { inviter_id: number; email: string; bind_count: number }[]; threshold: number; window_hours: number };
@@ -16,17 +17,23 @@ export default function AdminInvitesPage() {
   const [kpi, setKpi] = useState<Kpi | null>(null);
   const [abuse, setAbuse] = useState<Abuse | null>(null);
   const [relations, setRelations] = useState<Relation[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (pg = 1) => {
     try {
+      const qs = new URLSearchParams({ page: String(pg), size: String(PAGE_SIZE) });
       const [k, a, r] = await Promise.all([
         apiFetch<Kpi>("/admin/v1/invites/kpi", {}, tokenStore.adminAccess),
         apiFetch<Abuse>("/admin/v1/invites/abuse", {}, tokenStore.adminAccess),
-        apiFetch<{ items: Relation[] }>("/admin/v1/invites", {}, tokenStore.adminAccess),
+        apiFetch<{ items: Relation[]; total: number }>(`/admin/v1/invites?${qs}`, {}, tokenStore.adminAccess),
       ]);
       setKpi(k);
       setAbuse(a);
       setRelations(r.items);
+      setTotal(r.total);
+      setPage(pg);
     } catch {
       /* ignore */
     }
@@ -154,6 +161,7 @@ export default function AdminInvitesPage() {
             </tbody>
           </table>
         </div>
+        <AdminPager page={page} totalPages={Math.max(1, Math.ceil(total / PAGE_SIZE))} onChange={(p) => load(p)} />
       </div>
     </div>
   );

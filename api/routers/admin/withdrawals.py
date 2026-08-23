@@ -15,19 +15,29 @@ router = APIRouter(prefix="/withdrawals", tags=["admin-withdrawals"])
 @router.get("")
 async def list_withdrawals(
     status: str = Query(""),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
     db: DbDep = None,
     _admin=Depends(get_current_admin),
 ) -> dict:
-    """提现单列表（按状态筛选，默认全部）。"""
-    from sqlalchemy import select
+    """提现单列表（按状态筛选 + 分页）。"""
+    from sqlalchemy import func, select
 
     from api.models.billing import Withdrawal
 
-    stmt = select(Withdrawal).order_by(Withdrawal.id.desc()).limit(100)
+    stmt = select(Withdrawal).order_by(Withdrawal.id.desc())
+    count_stmt = select(func.count(Withdrawal.id))
     if status:
         stmt = stmt.where(Withdrawal.status == status)
-    rows = (await db.execute(stmt)).scalars().all()
+        count_stmt = count_stmt.where(Withdrawal.status == status)
+    total = await db.scalar(count_stmt) or 0
+    rows = (
+        (await db.execute(stmt.offset((page - 1) * size).limit(size)))
+        .scalars()
+        .all()
+    )
     return {
+        "total": total,
         "items": [
             {
                 "id": w.id,
