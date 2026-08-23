@@ -7,6 +7,9 @@ COPY web-admin/ ./
 ARG NEXT_PUBLIC_API_BASE=http://localhost:8000
 ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE
 RUN npm run build
+# ★ 生产依赖裁剪（2026-08-23）：与 web-ui 同款修复——运行阶段不再二次
+#   npm ci（npm 经代理崩溃退出码 0 的隐患），prune 后直接 COPY
+RUN npm prune --omit=dev
 
 FROM node:20-alpine
 WORKDIR /app
@@ -15,6 +18,6 @@ ENV PORT=3001
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/next.config.* ./
-RUN npm ci --omit=dev
+COPY --from=builder /app/node_modules ./node_modules
 EXPOSE 3001
 CMD ["npm", "run", "start"]

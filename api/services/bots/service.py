@@ -63,6 +63,18 @@ class BotService:
             raise ValidationError(
                 f"跨所错配：策略来自 {strategy.source_exchange}，不能绑定到 {exchange} 交易所"
             )
+        # ★ 模式A只做公开仓位（2026-08-23）：隐藏仓位的带单员公开渠道无方向
+        #   （占比接口无 side、实时持仓接口对 is_hide 返回空），模式A open 信号
+        #   回退 long 会反向开仓——A 策略+隐藏 = 纯展示（画像/历史订单），不可跟单。
+        #   模式B（跟单镜像）方向真实，隐藏带单员不受限。
+        if strategy.source == "A":
+            from api.models.signal import Trader
+
+            trader = await self.db.get(Trader, strategy.trader_id)
+            if trader is not None and trader.hide_position:
+                raise ValidationError(
+                    "该信号源带单员已隐藏当前仓位，方向数据不可用，暂不支持跟单（数据仅供展示参考）"
+                )
         # API Key 归属校验
         api_row = await self.db.get(ApiKey, api_key_id)
         if api_row is None or api_row.user_id != user_id:

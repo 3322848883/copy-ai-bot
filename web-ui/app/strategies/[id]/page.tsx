@@ -25,6 +25,8 @@ type Detail = {
   positions_source?: "live" | "baseline" | "replay";
   recent_orders: Order[];
   closed_trades?: ClosedTrade[];
+  source?: string;
+  hide_position?: boolean | null;
 };
 
 type Position = {
@@ -322,6 +324,9 @@ export default function StrategyDetailPage() {
   }
 
   const listed = detail.status === "listed";
+  // ★ 模式A只做公开仓位（2026-08-23）：隐藏仓位带单员公开渠道无方向，
+  //   A 策略纯展示不可跟单；模式B（镜像）方向真实不受限
+  const hiddenPosition = detail.hide_position === true && detail.source !== "B";
   const desc =
     `${STYLE_LABEL[detail.style] ?? detail.style}策略，全市场信号实时跟随、自动执行。` +
     `已运行 ${detail.trading_days} 天，累计胜率 ${detail.win_rate_all.toFixed(1)}%，` +
@@ -397,16 +402,24 @@ export default function StrategyDetailPage() {
           </div>
           <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 12, alignItems: "stretch" }}>
             {listed ? (
-              <button className="btn btn-primary" style={{ height: 48, padding: "0 32px", fontSize: 16, fontWeight: 600 }} onClick={() => setFollowOpen(true)}>
-                开启跟单
-              </button>
+              hiddenPosition ? (
+                <button className="btn btn-secondary" style={{ height: 48, padding: "0 32px", fontSize: 16, opacity: 0.5, cursor: "not-allowed" }} disabled>
+                  暂不支持跟单
+                </button>
+              ) : (
+                <button className="btn btn-primary" style={{ height: 48, padding: "0 32px", fontSize: 16, fontWeight: 600 }} onClick={() => setFollowOpen(true)}>
+                  开启跟单
+                </button>
+              )
             ) : (
               <button className="btn btn-secondary" style={{ height: 48, padding: "0 32px", fontSize: 16, opacity: 0.5, cursor: "not-allowed" }} disabled>
                 已停止跟单
               </button>
             )}
             <span style={{ fontSize: 10, color: "var(--tertiary)", textAlign: "center" }}>
-              信号源由平台审核上架 · 每笔跟单均实时执行风控检查
+              {hiddenPosition
+                ? "该信号源带单员已隐藏当前仓位，方向数据不可用 · 数据仅供展示参考"
+                : "信号源由平台审核上架 · 每笔跟单均实时执行风控检查"}
             </span>
           </div>
         </div>

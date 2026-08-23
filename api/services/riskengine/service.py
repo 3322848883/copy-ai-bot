@@ -110,6 +110,19 @@ class RiskEngine:
                     reason="subscription expired, open/add blocked",
                 )
 
+        # ★ 模式A只做公开仓位（2026-08-23）：隐藏仓位的带单员公开渠道无方向，
+        #   模式A open 信号回退 long 会反向开仓。open/add 拦截；close/reduce
+        #   放行（风险释放/清仓路径，方向由实际持仓判定）。模式B 镜像方向真实不受限。
+        if (
+            intent.source_mode == "A"
+            and intent.action in ("open", "add")
+            and intent.extra.get("trader_hide_position")
+        ):
+            return _decide(
+                RiskDecision.REJECTED, rule="hidden_position",
+                reason="trader hides positions, mode A direction unknown",
+            )
+
         # 1. 策略白名单
         if not intent.strategy_whitelisted:
             return _decide(RiskDecision.REJECTED, rule="whitelist", reason="strategy not whitelisted")

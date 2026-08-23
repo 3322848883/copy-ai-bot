@@ -183,6 +183,18 @@ class CopyEngine:
             return await self._fail_persist(bot, sig, "min_size" if "名义" in exc.message else "other", exc.message)
 
         # 风控
+        # ★ 隐藏仓位上下文（2026-08-23）：仅模式A open/add 需要（风控 hidden_position
+        #   规则）；模式B 镜像方向真实，跳过查询
+        trader_hidden = False
+        if (sig.source_mode or "A") == "A":
+            from api.models.signal import Trader
+
+            trader_row = await self.db.scalar(
+                select(Trader).where(
+                    Trader.exchange == sig.exchange, Trader.trader_id == sig.source_trader_id
+                )
+            )
+            trader_hidden = bool(trader_row and trader_row.hide_position)
         risk_res = await self.risk.evaluate(
             OrderIntent(
                 user_id=bot.user_id,
@@ -201,6 +213,7 @@ class CopyEngine:
                 # ★ P1 修复：激活死规则——此前恒为默认值，全局并发节流与当日亏损熔断永不触发
                 global_concurrent_now=await self._count_open_positions(),
                 today_realized_pnl=await self._user_open_pnl(bot.user_id),
+                extra={"trader_hide_position": trader_hidden},
             )
         )
         # ★ M6 T6.2 指标：风控决策

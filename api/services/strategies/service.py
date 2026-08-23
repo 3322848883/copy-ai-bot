@@ -605,5 +605,6 @@ class StrategyService:
             "trading_days": p.trading_days or 0 if p else 0,
             "followers": (t.followers if t and t.followers else 0),
             "source": s.source,
+            "hide_position": (t.hide_position if t else None),
             "trader_id_external": t.trader_id if t else None,
         }
