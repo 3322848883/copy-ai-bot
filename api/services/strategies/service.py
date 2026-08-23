@@ -179,8 +179,8 @@ class StrategyService:
         strategy = Strategy(
             trader_id=trader_id,
             source_exchange=exchange,
-            # ★ 统一命名标准：昵称（id），忽略前端自定义名
-            display_name=format_display_name(trader.name, trader.trader_id),
+            # ★ 管理员可自定义名称：传入非空则用自定义名，否则回退默认「昵称（id）」
+            display_name=(display_name or "").strip() or format_display_name(trader.name, trader.trader_id),
             style=style,
             risk_rating=risk_rating,
             status="listed",

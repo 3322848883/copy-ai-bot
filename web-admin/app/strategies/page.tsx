@@ -70,6 +70,7 @@ export default function AdminStrategiesPage() {
 
   // 上架弹窗状态
   const [listTarget, setListTarget] = useState<Trader | null>(null);
+  const [customName, setCustomName] = useState("");
   const [style, setStyle] = useState("trend");
   const [riskRating, setRiskRating] = useState("mid");
   const [forceReason, setForceReason] = useState("");
@@ -215,6 +216,7 @@ export default function AdminStrategiesPage() {
         body: JSON.stringify({
           trader_id: listTarget.id,
           exchange: (ex === "全部" ? "gate" : ex.toLowerCase()),
+          display_name: customName.trim() || listTarget.name,
           style,
           risk_rating: riskRating,
           force: !passed,
@@ -346,7 +348,7 @@ export default function AdminStrategiesPage() {
                     <td>
                       <button
                         className={`action-link${passed ? "" : " danger"}`}
-                        onClick={() => { setListTarget(t); setStyle("trend"); setRiskRating("mid"); setForceReason(""); }}
+                        onClick={() => { setListTarget(t); setCustomName(t.name); setStyle("trend"); setRiskRating("mid"); setForceReason(""); }}
                       >
                         {passed ? "上架" : "强制上架"}
                       </button>
@@ -559,8 +561,14 @@ export default function AdminStrategiesPage() {
               <div className="warn-note"><span>⚠</span><span>强制上架绕过 G04 门槛，将承担额外的信号质量风险，请审慎操作</span></div>
             )}
             <div className="field">
-              <label className="field-label">策略名称（统一标准：昵称（id））</label>
-              <div className="input" style={{ opacity: 0.75 }}>{listTarget.name}</div>
+              <label className="field-label">策略名称（默认「昵称（id）」，可自定义）</label>
+              <input
+                className="input"
+                value={customName}
+                maxLength={64}
+                onChange={(e) => setCustomName(e.target.value)}
+                placeholder={listTarget.name}
+              />
             </div>
             <div className="field" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
