@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch, tokenStore } from "@/lib/api";
 
 type ApiKey = { id: number; exchange: string; bound_at?: string; last_checked_at?: string };
-type SubStatus = { active: boolean; plan_id?: string; expires_at?: string };
+type SubStatus = { active: boolean; plan_id?: string; expires_at?: string; exempt?: boolean; exempt_reason?: string | null };
 
 const EXCHANGE_LABEL: Record<string, string> = { gate: "Gate", binance: "Binance", okx: "OKX", bybit: "Bybit", bitget: "Bitget" };
 
@@ -30,6 +30,7 @@ export default function AccountPage() {
   const [exchange, setExchange] = useState("");
   const [identityType, setIdentityType] = useState("");
   const [exchangeInvite, setExchangeInvite] = useState("");
+  const [exchangeInviteStatus, setExchangeInviteStatus] = useState(""); // pending / approved / rejected
   const [email, setEmail] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [msg, setMsg] = useState("");
@@ -67,7 +68,7 @@ export default function AccountPage() {
       router.push("/login");
       return;
     }
-    // hydration 后从 localStorage 恢复概览字段
+    // hydration 后从 localStorage 恢复概览字段（首帧兜底）
     setExchange(localStorage.getItem("ss_exchange") || "");
     setIdentityType(localStorage.getItem("ss_identity_type") || "");
     setExchangeInvite(localStorage.getItem("ss_exchange_invite") || "");
@@ -76,6 +77,26 @@ export default function AccountPage() {
     apiFetch<SubStatus>("/v1/subscriptions/me", {}, tokenStore.access)
       .then(setSub)
       .catch(() => setSub(null));
+    // ★ 以后端为准校准身份/绑定状态（localStorage 可能过期：其他设备绑定、后台复核状态变更）
+    apiFetch<{ exchange: string | null; identity_type: string; exchange_invite_bound: boolean; exchange_invite_code: string | null; exchange_invite_status: string | null }>("/v1/identity/me", {}, tokenStore.access)
+      .then((me) => {
+        if (me.exchange) {
+          setExchange(me.exchange);
+          localStorage.setItem("ss_exchange", me.exchange);
+        }
+        if (me.identity_type) {
+          setIdentityType(me.identity_type);
+          localStorage.setItem("ss_identity_type", me.identity_type);
+        }
+        setExchangeInvite(me.exchange_invite_code || "");
+        setExchangeInviteStatus(me.exchange_invite_status || "");
+        if (me.exchange_invite_bound && me.exchange_invite_code) {
+          localStorage.setItem("ss_exchange_invite", me.exchange_invite_code);
+        } else {
+          localStorage.removeItem("ss_exchange_invite");
+        }
+      })
+      .catch(() => { /* 接口失败保留 localStorage 兜底显示 */ });
   }, [loadKeys, router]);
 
   async function onBindFriendInvite(e: React.FormEvent) {
@@ -132,10 +153,10 @@ export default function AccountPage() {
     e.preventDefault();
     setErr(""); setMsg(""); setLoading(true);
     try {
-      const res = await apiFetch<{ message: string; exchange: string }>("/v1/identity/bind-exchange-invite", { method: "POST", body: JSON.stringify({ exchange, code: inviteCode }) }, tokenStore.access);
+      const res = await apiFetch<{ message: string; exchange: string; status?: string }>("/v1/identity/bind-exchange-invite", { method: "POST", body: JSON.stringify({ exchange, code: inviteCode }) }, tokenStore.access);
       setMsg(res.message);
       setExchangeInvite(inviteCode);
-      localStorage.setItem("ss_exchange_invite", inviteCode);
+      setExchangeInviteStatus(res.status || "pending");
       setInviteCode("");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "绑定失败");
@@ -185,11 +206,13 @@ export default function AccountPage() {
     }
   }
 
-  const subBadge = sub?.active
-    ? sub.plan_id === "trial_5u"
-      ? <span className="badge badge-ok">试用版</span>
-      : <span className="badge badge-ok">正式版</span>
-    : <span className="badge badge-warn">未开通</span>;
+  const subBadge = sub?.exempt
+    ? <span className="badge badge-ok">合作豁免 · 免订阅</span>
+    : sub?.active
+      ? sub.plan_id === "trial_5u"
+        ? <span className="badge badge-ok">试用版</span>
+        : <span className="badge badge-ok">正式版</span>
+      : <span className="badge badge-warn">未开通</span>;
 
   // ★ 跟单接入引导状态
   const totalBind = apiKeys.length;
@@ -325,8 +348,12 @@ export default function AccountPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>交易所邀请码</span>
-                    <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 14, color: exchangeInvite ? "var(--accent)" : "var(--fg)" }}>
-                      {exchangeInvite || "未绑定"}
+                    <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 14, color: exchangeInviteStatus === "approved" ? "var(--accent)" : "var(--fg)" }}>
+                      {!exchangeInvite ? "未绑定"
+                        : exchangeInviteStatus === "approved" ? `${exchangeInvite}（已生效）`
+                        : exchangeInviteStatus === "pending" ? `${exchangeInvite}（待复核）`
+                        : exchangeInviteStatus === "rejected" ? `${exchangeInvite}（已驳回）`
+                        : exchangeInvite}
                     </span>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -470,17 +497,23 @@ export default function AccountPage() {
                     <span className="panel-sub">/v1/identity/bind-exchange-invite</span>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-                    {exchangeInvite
-                      ? <>已绑定：<span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "var(--accent)" }}>{exchangeInvite}</span></>
-                      : "绑定平台交易所邀请码，完成推荐关系绑定（绑定后不可更改）"}
+                    {exchangeInviteStatus === "approved" && exchangeInvite
+                      ? <>已绑定：<span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "var(--accent)" }}>{exchangeInvite}</span> · 管理员复核通过，跟单免订阅</>
+                      : exchangeInviteStatus === "pending" && exchangeInvite
+                        ? <>已提交：<span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "var(--warning)" }}>{exchangeInvite}</span> · 等待管理员复核，通过后即享跟单免订阅</>
+                        : exchangeInviteStatus === "rejected" && exchangeInvite
+                          ? <>提交的 <span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "var(--danger)" }}>{exchangeInvite}</span> 未通过管理员复核，请重新绑定</>
+                          : "绑定平台交易所邀请码完成合作归属核实，管理员复核通过后跟单免订阅（注册后可随时补填，通过后不可更改）"}
                   </div>
-                  <form onSubmit={onBindExchangeInvite} style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
-                    <div style={{ flex: 1 }}>
-                      <label className="label">邀请码</label>
-                      <input className="input" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="如 8F3K2A" />
-                    </div>
-                    <button className="btn btn-primary" type="submit" disabled={loading || !inviteCode}>绑定</button>
-                  </form>
+                  {exchangeInviteStatus !== "approved" && exchangeInviteStatus !== "pending" && (
+                    <form onSubmit={onBindExchangeInvite} style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+                      <div style={{ flex: 1 }}>
+                        <label className="label">邀请码</label>
+                        <input className="input" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="如 8F3K2A" />
+                      </div>
+                      <button className="btn btn-primary" type="submit" disabled={loading || !inviteCode}>{exchangeInviteStatus === "rejected" ? "重新绑定" : "绑定"}</button>
+                    </form>
+                  )}
                 </div>
 
                 <div className="panel">
@@ -489,7 +522,7 @@ export default function AccountPage() {
                     <span className="panel-sub">/v1/identity/bind-invite</span>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-                    填写邀请你的好友的邀请码，建立上级关系（绑定后无法更改）
+                    填写邀请你的好友的邀请码，建立上级关系（仅限注册后 24 小时内绑定，绑定后无法更改）
                   </div>
                   <form onSubmit={onBindFriendInvite} style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
                     <div style={{ flex: 1 }}>

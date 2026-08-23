@@ -33,7 +33,7 @@ function RegisterForm() {
 
   /** 注册 3 步：1 邮箱密码 → 2 验证码 → 3 完成（风险揭示） */
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  /** 首次引导 5 步：0 未开始 → 1 选所 → 2 交易所码(G27) → 3 好友码 → 4 完成 */
+  /** 首次引导 5 步：0 未开始 → 1 选所 → 2 交易所码 → 3 好友码 → 4 完成 */
   const [onbStep, setOnbStep] = useState<0 | 1 | 2 | 3 | 4>(0);
 
   const [email, setEmail] = useState("");
@@ -186,11 +186,11 @@ function RegisterForm() {
     }
   }
 
-  /** 引导步骤 2→3：校验并绑定交易所邀请码（★ G27 必填） */
+  /** 引导步骤 2→3：校验并绑定交易所邀请码（选填，可跳过） */
   async function onVerifyExchangeInvite() {
     const c = exInviteCode.trim();
     if (!c) {
-      push("warn", "请填写所选交易所的邀请码");
+      push("info", "邀请码为选填项，可直接跳过");
       return;
     }
     setOnbLoading(true);
@@ -199,7 +199,7 @@ function RegisterForm() {
       setExInviteOk(true);
       setExInviteErr("");
       const name = EXCHANGES.find((x) => x.key === exchange)?.name ?? exchange;
-      push("success", `邀请码有效，已绑定 ${name} 合作归属（G27 核实通过）`);
+      push("success", `邀请码已提交（${name}），管理员复核通过后免订阅`);
     } catch (err) {
       setExInviteOk(false);
       setExInviteErr(err instanceof Error ? err.message : "邀请码无效或不属于所选交易所");
@@ -212,7 +212,7 @@ function RegisterForm() {
   async function onVerifyFriendInvite() {
     const c = friendCode.trim();
     if (!c) {
-      push("warn", "请输入好友邀请码（可跳过）");
+      push("info", "好友邀请码为选填项，可直接继续");
       return;
     }
     setOnbLoading(true);
@@ -442,7 +442,7 @@ function RegisterForm() {
               </div>
             </div>
           ) : (
-            /* ── 首次引导 5 步流程（选所 → G27 交易所邀请码 → 好友邀请码 → 完成）── */
+            /* ── 首次引导 5 步流程（选所 → 交易所邀请码 → 好友邀请码 → 完成）── */
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div style={obSteps}>
                 <div style={{ ...obStepItem, ...S.stepActiveColor }}>
@@ -504,20 +504,20 @@ function RegisterForm() {
                 </div>
               )}
 
-              {/* 步骤 2：交易所邀请码（★ G27 必填） */}
+              {/* 步骤 2：交易所邀请码（选填，可跳过） */}
               {onbStep === 2 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                   <div>
                     <div style={S.subTitle}>
                       填写 <span style={{ color: "var(--accent)" }}>{exchangeName}</span> 邀请码{" "}
-                      <span style={{ fontSize: 10, color: "var(--warning)" }}>必填</span>
+                      <span style={{ fontSize: 10, color: "var(--tertiary)" }}>选填 · 可跳过</span>
                     </div>
                     <div style={{ ...S.subDesc, marginTop: 4 }}>
-                      在 <strong style={{ color: "var(--fg)" }}>{exchangeName}</strong> 注册时使用的平台邀请码（合作返佣归属核实，★G27）
+                      在 <strong style={{ color: "var(--fg)" }}>{exchangeName}</strong> 注册时使用的平台邀请码（合作返佣归属核实）；没有可直接跳过
                     </div>
                   </div>
                   <div style={S.field}>
-                    <label style={S.fieldLabel}>交易所邀请码</label>
+                    <label style={S.fieldLabel}>交易所邀请码（选填）</label>
                     <div style={S.codeRow}>
                       <input
                         className="input"
@@ -534,17 +534,17 @@ function RegisterForm() {
                         {onbLoading ? "校验中…" : "校验"}
                       </button>
                     </div>
-                    {exInviteOk && <span style={S.okMsg}>✓ 邀请码有效，已绑定该交易所合作归属</span>}
+                    {exInviteOk && <span style={S.okMsg}>✓ 邀请码已提交，管理员复核通过后即享免订阅</span>}
                     {exInviteErr && <span style={S.errMsg}>{exInviteErr}</span>}
                   </div>
                   <button
                     className="btn btn-primary"
                     type="button"
-                    disabled={!exInviteOk || onbLoading}
+                    disabled={onbLoading}
                     style={S.btnPrimary48}
                     onClick={() => setOnbStep(3)}
                   >
-                    下一步
+                    {exInviteOk ? "下一步" : "跳过并继续"}
                   </button>
                 </div>
               )}

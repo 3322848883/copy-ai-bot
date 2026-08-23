@@ -48,6 +48,7 @@ class OrderIntent:
     # 上下文（由调用方注入）
     subscription_active: bool = True
     identity_type: str = "normal"
+    exchange_invite_bound: bool = False  # ★ 已绑定交易所邀请码 → 合作归属免订阅
     bot_virtual_locked: float = 0.0
     bot_max_total_position: float = 10_000.0
     global_concurrent_now: int = 0
@@ -103,7 +104,12 @@ class RiskEngine:
             return _decide(RiskDecision.REJECTED, rule="action", reason=f"unknown action: {intent.action}")
 
         # ★ G10：订阅过期拦截 OPEN/ADD，放行 REDUCE/CLOSE
-        if not intent.subscription_active and intent.identity_type != "sub_account":
+        #   豁免：平台池主号下级（sub_account）或已绑定交易所邀请码（合作归属免订阅）
+        if (
+            not intent.subscription_active
+            and intent.identity_type != "sub_account"
+            and not intent.exchange_invite_bound
+        ):
             if intent.action in ("open", "add"):
                 return _decide(
                     RiskDecision.REJECTED, rule="subscription",

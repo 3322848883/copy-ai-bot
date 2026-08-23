@@ -6,10 +6,16 @@ import { apiFetch, tokenStore } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 
 type Code = { id: number; exchange: string; code: string; status: string; remark: string | null; bind_count: number; max_binds: number | null; created_at?: string | null };
+type Binding = { user_id: number; email: string; exchange: string | null; code: string; status: string; updated_at?: string | null };
 
 const EXCHANGES = ["全部", "GATE", "BINANCE", "OKX", "BYBIT", "BITGET"];
 const NET_CLASS: Record<string, string> = { gate: "gate", binance: "bin", okx: "okx", bybit: "byb", bitget: "bgt" };
 const EX_LABEL: Record<string, string> = { gate: "GATE", binance: "BINANCE", okx: "OKX", bybit: "BYBIT", bitget: "BITGET" };
+const BIND_STATUS_BADGE: Record<string, [string, string]> = {
+  pending: ["badge-warn", "待复核"],
+  approved: ["badge-ok", "已通过"],
+  rejected: ["badge-err", "已驳回"],
+};
 
 /** ★G27 交易所邀请码管理（对齐演示稿 exchange-invites：Tab + 列表 + 新增弹窗 + 审计）。 */
 export default function AdminExchangeInvitesPage() {
@@ -26,12 +32,24 @@ export default function AdminExchangeInvitesPage() {
   const [newMax, setNewMax] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // ★ 用户绑定复核（绑定后需管理员批准才免订阅）
+  const [bindings, setBindings] = useState<Binding[]>([]);
+  const [bindFilter, setBindFilter] = useState("pending");
+  const [busyUid, setBusyUid] = useState<number | null>(null);
+
   const load = useCallback(async () => {
     try {
       const r = await apiFetch<{ items: Code[] }>("/admin/v1/exchange-invites", {}, tokenStore.adminAccess);
       setItems(r.items);
     } catch { /* ignore */ }
   }, []);
+
+  const loadBindings = useCallback(async () => {
+    try {
+      const r = await apiFetch<{ items: Binding[] }>(`/admin/v1/exchange-invites/bindings/list?status=${bindFilter}`, {}, tokenStore.adminAccess);
+      setBindings(r.items);
+    } catch { /* ignore */ }
+  }, [bindFilter]);
 
   useEffect(() => {
     if (!tokenStore.adminAccess) {
@@ -40,6 +58,10 @@ export default function AdminExchangeInvitesPage() {
     }
     load();
   }, [load, router]);
+
+  useEffect(() => {
+    if (tokenStore.adminAccess) loadBindings();
+  }, [loadBindings]);
 
   const filtered = ex === "全部" ? items : items.filter((c) => (c.exchange || "").toUpperCase() === ex);
 
@@ -86,6 +108,21 @@ export default function AdminExchangeInvitesPage() {
       load();
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "删除失败");
+    }
+  }
+
+  async function review(b: Binding, action: "approve" | "reject") {
+    setBusyUid(b.user_id);
+    try {
+      await apiFetch(`/admin/v1/exchange-invites/bindings/${b.user_id}/${action}`, { method: "POST" }, tokenStore.adminAccess);
+      toast(action === "approve" ? "success" : "warn", action === "approve"
+        ? `已通过 ${b.email} 的邀请码复核 · 免订阅生效`
+        : `已驳回 ${b.email} 的邀请码 · 用户可重新绑定`);
+      loadBindings();
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "操作失败");
+    } finally {
+      setBusyUid(null);
     }
   }
 
@@ -143,7 +180,55 @@ export default function AdminExchangeInvitesPage() {
           </table>
         </div>
         <div style={{ marginTop: 16, padding: 12, borderRadius: 4, background: "rgba(234,179,8,0.06)", border: "1px solid rgba(234,179,8,0.25)", fontSize: 12, color: "var(--warning)" }}>
-          ℹ 用户注册选所后必须填写对应交易所邀请码，后端调用 <span style={{ fontFamily: "var(--font-geist-mono), monospace" }}>verify_and_bind</span> 核实：码存在 + 启用 + 未达上限 + 属于所选所，任一不满足即拒绝并提示具体原因。
+          ℹ 交易所邀请码为选填（注册时可跳过、注册后可补填）。用户提交后后端核实：码存在 + 启用 + 未达上限 + 属于所选所；
+          核实通过进入「待复核」，<strong>管理员在下方复核列表中批准后用户才获得免订阅资格</strong>；驳回后用户可重新绑定。
+        </div>
+      </div>
+
+      {/* ★ 用户绑定复核 */}
+      <div className="panel">
+        <div className="panel-hdr">
+          <div className="panel-title"><span className="sec-dot"></span>用户绑定复核</div>
+          <span className="panel-sub">/admin/v1/exchange-invites/bindings · 批准后免订阅生效</span>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          {[["pending", "待复核"], ["approved", "已通过"], ["rejected", "已驳回"]].map(([k, label]) => (
+            <button key={k} className={`btn btn-sm ${bindFilter === k ? "btn-primary" : "btn-secondary"}`} onClick={() => setBindFilter(k)}>{label}</button>
+          ))}
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="ftx-table">
+            <thead>
+              <tr><th>用户</th><th>所属所</th><th>提交邀请码</th><th>状态</th><th>提交时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              {bindings.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)" }}>暂无记录</td></tr>}
+              {bindings.map((b) => {
+                const [cls, label] = BIND_STATUS_BADGE[b.status] || ["badge-muted", b.status];
+                return (
+                  <tr key={b.user_id}>
+                    <td style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 12 }}>{b.email}</td>
+                    <td>{b.exchange ? <span className="net-tag" style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 9, padding: "1px 8px", borderRadius: 2, border: "1px solid", color: "#00d4aa", borderColor: "rgba(0,212,170,0.4)" }}>{EX_LABEL[b.exchange] || b.exchange.toUpperCase()}</span> : "—"}</td>
+                    <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{b.code}</td>
+                    <td><span className={`badge ${cls}`}>{label}</span></td>
+                    <td className="sub-ref">{b.updated_at ? new Date(b.updated_at).toLocaleString("zh-CN") : "—"}</td>
+                    <td>
+                      {b.status === "pending" ? (
+                        <>
+                          <button className="btn btn-primary btn-sm" style={{ marginRight: 6 }} disabled={busyUid === b.user_id} onClick={() => review(b, "approve")}>批准</button>
+                          <button className="btn btn-secondary btn-sm" style={{ color: "#f87171" }} disabled={busyUid === b.user_id} onClick={() => review(b, "reject")}>驳回</button>
+                        </>
+                      ) : b.status === "rejected" ? (
+                        <button className="btn btn-primary btn-sm" disabled={busyUid === b.user_id} onClick={() => review(b, "approve")}>改判通过</button>
+                      ) : (
+                        <span className="sub-ref">已生效</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 

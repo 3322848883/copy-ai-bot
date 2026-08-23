@@ -31,6 +31,7 @@ class Identity(TimestampMixin, Base):
     exchange: Mapped[str] = mapped_column(String(16), nullable=True)          # gate/binance/...
     invite_code: Mapped[str | None] = mapped_column(String(32), nullable=True)  # 好友邀请码
     exchange_invite_code: Mapped[str | None] = mapped_column(String(32), nullable=True)  # ★ G27
+    exchange_invite_status: Mapped[str | None] = mapped_column(String(16), nullable=True)  # ★ pending/approved/rejected 管理员复核
     inviter_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     identity_type: Mapped[str] = mapped_column(String(16), default="normal")  # normal / sub_account
     locked: Mapped[bool] = mapped_column(Boolean, default=False)

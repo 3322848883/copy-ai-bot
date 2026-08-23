@@ -98,3 +98,78 @@ async def delete_code(code_id: int, db: DbDep = None, admin=Depends(require_admi
         after={"exchange": record.exchange, "code": record.code},
     )
     return {"deleted": True}
+
+
+# ── ★ 用户绑定复核：绑定交易所邀请码后需管理员批准才免订阅 ──
+
+
+@router.get("/bindings/list")
+async def list_bindings(
+    status: str = Query(""),  # pending / approved / rejected，空=全部
+    db: DbDep = None,
+    _admin=Depends(get_current_admin),
+) -> dict:
+    from sqlalchemy import select
+
+    from api.models.user import Identity, User
+
+    stmt = (
+        select(Identity, User.email)
+        .join(User, User.id == Identity.user_id)
+        .where(Identity.exchange_invite_code.is_not(None))
+        .order_by(Identity.updated_at.desc())
+    )
+    if status:
+        stmt = stmt.where(Identity.exchange_invite_status == status)
+    rows = (await db.execute(stmt)).all()
+    return {
+        "items": [
+            {
+                "user_id": ident.user_id,
+                "email": email,
+                "exchange": ident.exchange,
+                "code": ident.exchange_invite_code,
+                "status": ident.exchange_invite_status or "pending",
+                "updated_at": ident.updated_at.isoformat() if ident.updated_at else None,
+            }
+            for ident, email in rows
+        ]
+    }
+
+
+async def _set_binding_status(db, admin: dict, user_id: int, new_status: str, action: str) -> dict:
+    from api.models.user import Identity
+    from api.services.notification.service import NotificationService
+
+    identity = await db.get(Identity, user_id)
+    if identity is None or not identity.exchange_invite_code:
+        raise NotFoundError("该用户未绑定交易所邀请码")
+    before = identity.exchange_invite_status
+    identity.exchange_invite_status = new_status
+    await db.commit()
+    await AuditService(db).log(
+        actor_id=admin["id"], action=action,
+        target_type="identity", target_id=str(user_id),
+        before={"status": before}, after={"status": new_status, "code": identity.exchange_invite_code},
+    )
+    if new_status == "approved":
+        await NotificationService(db).push(
+            user_id, "exchange_invite", "交易所邀请码复核通过",
+            "你的交易所邀请码已通过复核，跟单功能免订阅长期有效。",
+        )
+    else:
+        await NotificationService(db).push(
+            user_id, "exchange_invite", "交易所邀请码复核未通过",
+            "你提交的交易所邀请码未通过复核，可前往个人中心重新绑定。",
+        )
+    return {"user_id": user_id, "status": new_status}
+
+
+@router.post("/bindings/{user_id}/approve")
+async def approve_binding(user_id: int, db: DbDep = None, admin=Depends(require_admin)) -> dict:
+    return await _set_binding_status(db, admin, user_id, "approved", "exchange_invite_binding.approve")
+
+
+@router.post("/bindings/{user_id}/reject")
+async def reject_binding(user_id: int, db: DbDep = None, admin=Depends(require_admin)) -> dict:
+    return await _set_binding_status(db, admin, user_id, "rejected", "exchange_invite_binding.reject")

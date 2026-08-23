@@ -23,7 +23,7 @@ type Order = {
   note?: string;
   ttl_seconds?: number;
 };
-type SubStatus = { active: boolean; plan_id?: string; expires_at?: string };
+type SubStatus = { active: boolean; plan_id?: string; expires_at?: string; exempt?: boolean; exempt_reason?: string | null; exchange_invite_status?: string | null };
 type HistoryOrder = {
   order_id: number;
   plan_id: string;
@@ -249,8 +249,8 @@ export default function SubscriptionsPage() {
         {msg && <div style={{ background: "rgba(22,163,74,0.1)", border: "1px solid rgba(22,163,74,0.4)", color: "#4ade80", borderRadius: 6, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>{msg}</div>}
         {err && <div className="error-box">{err}</div>}
 
-        {/* 订阅状态卡 / G10 过期黄条 */}
-        {sub?.active ? (
+        {/* 订阅状态卡 / 合作豁免卡 / G10 过期黄条 */}
+        {sub?.active && sub.plan_id ? (
           <div
             className="panel"
             style={{ marginBottom: 24, border: "1px solid var(--accent)", background: "rgba(0,212,170,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 24, flexWrap: "wrap" }}
@@ -277,15 +277,57 @@ export default function SubscriptionsPage() {
               </button>
             </div>
           </div>
+        ) : sub?.exempt ? (
+          /* ★ 合作归属免订阅：已绑定交易所邀请码 / 平台资源池主号下级 */
+          <div
+            className="panel"
+            style={{ marginBottom: 24, border: "1px solid var(--accent)", background: "rgba(0,212,170,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 24, flexWrap: "wrap" }}
+          >
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <div style={{ marginBottom: 8 }}>
+                <span className="badge badge-ok">合作归属 · 免订阅</span>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 700 }}>
+                {sub.exempt_reason === "exchange_invite" ? "交易所邀请码已绑定" : "平台合作账户"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                {sub.exempt_reason === "exchange_invite"
+                  ? "已通过合作归属核实，跟单功能免订阅长期有效"
+                  : "已标记为主号下级，跟单功能免订阅"}
+              </div>
+            </div>
+            <button className="btn btn-secondary" style={{ height: 44, padding: "0 28px" }} onClick={openHistory}>
+              查看记录
+            </button>
+          </div>
+        ) : sub?.exchange_invite_status === "pending" ? (
+          /* ★ 交易所邀请码已提交，等待管理员复核（复核通过前不免订阅） */
+          <div
+            className="panel"
+            style={{ marginBottom: 24, border: "1px solid rgba(234,179,8,0.4)", background: "rgba(234,179,8,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 24, flexWrap: "wrap" }}
+          >
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <div style={{ marginBottom: 8 }}>
+                <span className="badge badge-warn">邀请码复核中</span>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 700 }}>交易所邀请码待管理员复核</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                复核通过后将自动获得免订阅资格；当前可先开通套餐，或等待复核结果
+              </div>
+            </div>
+          </div>
         ) : (
           <>
             {/* G10 过期黄条 */}
             <div style={{ marginBottom: 16, padding: 12, borderRadius: 6, border: "1px solid rgba(234,179,8,0.3)", background: "rgba(234,179,8,0.06)", fontSize: 12, color: "var(--warning)", lineHeight: 1.6 }}>
-              ⚠ 订阅已过期 / 未开通：CopyBot 自动暂停开仓（OPEN/ADD 拦截），平仓（REDUCE/CLOSE）放行；续费后立即恢复跟单。
+              ⚠ 订阅已过期 / 未开通：CopyBot 自动暂停开仓（OPEN/ADD 拦截），平仓（REDUCE/CLOSE）放行；续费或绑定交易所邀请码（管理员复核通过）后立即恢复跟单。
+              {sub?.exchange_invite_status === "rejected" && (
+                <div style={{ marginTop: 6, color: "var(--danger)" }}>你提交的交易所邀请码未通过复核，可前往个人中心重新绑定。</div>
+              )}
             </div>
             <div className="empty-state" style={{ minHeight: 160, marginBottom: 24 }}>
               <div className="es-ic">◇</div>
-              <div style={{ fontSize: 13 }}>未开通订阅，选择下方套餐即可开始跟单</div>
+              <div style={{ fontSize: 13 }}>未开通订阅，选择下方套餐开始跟单；或在账户页绑定交易所邀请码（管理员复核通过后免订阅）</div>
             </div>
           </>
         )}

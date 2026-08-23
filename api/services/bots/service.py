@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core.errors import ConflictError, NotFoundError, ValidationError
 from api.models.bot import CopyBot, CopyOrder, PositionSnapshot
 from api.models.signal import Strategy
-from api.models.user import ApiKey
+from api.models.user import ApiKey, Identity
 from api.services.tradetracker.service import TradeTracker
 
 logger = logging.getLogger("signal-saas.bots")
@@ -39,11 +39,21 @@ class BotService:
         paper: bool = False,  # ★ M6 T6.2 沙箱模拟盘
     ) -> CopyBot:
         # ★ M5 T5.10：订阅拦截（未订阅/已过期禁止建跟单）
+        #   豁免：平台池主号下级（sub_account）或交易所邀请码复核通过（合作归属免订阅）
         from api.services.billing.service import BillingService
 
         sub = await BillingService(self.db).get_active_subscription(user_id)
         if sub is None:
-            raise ValidationError("无有效订阅，请先开通套餐再跟单")
+            _ident = await self.db.get(Identity, user_id)
+            _exempt = bool(
+                _ident
+                and (
+                    (_ident.exchange_invite_code and _ident.exchange_invite_status == "approved")
+                    or _ident.identity_type == "sub_account"
+                )
+            )
+            if not _exempt:
+                raise ValidationError("无有效订阅，请先开通套餐，或绑定交易所邀请码并通过管理员复核")
 
         # ★ M4 修复（合规）：未确认风险揭示禁止建跟单（前端首次跟单弹窗 + 后端强制）
         from sqlalchemy import select as _select
@@ -58,6 +68,9 @@ class BotService:
         strategy = await self.db.get(Strategy, strategy_id)
         if strategy is None or strategy.status != "listed":
             raise NotFoundError("策略不存在或未上架")
+        # ★ 跟单阀门上移后台管理员：管理员关闭跟单则该策略不可创建跟单机器人
+        if not strategy.follow_enabled:
+            raise ValidationError("该策略当前未开放跟单，敬请期待")
         # ★ 跨所错配拦截：策略所属交易所 vs 机器人交易所
         if strategy.source_exchange != exchange:
             raise ValidationError(
@@ -65,7 +78,7 @@ class BotService:
             )
         # ★ 模式A只做公开仓位（2026-08-23）：隐藏仓位的带单员公开渠道无方向
         #   （占比接口无 side、实时持仓接口对 is_hide 返回空），模式A open 信号
-        #   回退 long 会反向开仓——A 策略+隐藏 = 纯展示（画像/历史订单），不可跟单。
+        #   回退 long 会反向开仓——技术保护（安全拦截，消息友好化）。
         #   模式B（跟单镜像）方向真实，隐藏带单员不受限。
         if strategy.source == "A":
             from api.models.signal import Trader
@@ -73,7 +86,7 @@ class BotService:
             trader = await self.db.get(Trader, strategy.trader_id)
             if trader is not None and trader.hide_position:
                 raise ValidationError(
-                    "该信号源带单员已隐藏当前仓位，方向数据不可用，暂不支持跟单（数据仅供展示参考）"
+                    "该信号源当前为展示型（可查看历史业绩与画像），实时跟单能力接入后即可开启，敬请期待"
                 )
         # API Key 归属校验
         api_row = await self.db.get(ApiKey, api_key_id)

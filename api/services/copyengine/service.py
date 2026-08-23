@@ -195,6 +195,11 @@ class CopyEngine:
                 )
             )
             trader_hidden = bool(trader_row and trader_row.hide_position)
+        # ★ 订阅/身份上下文：真实注入 identity_type 与交易所邀请码绑定状态
+        #   （此前 identity_type 硬编码 normal，sub_account 免订阅永不生效）
+        from api.models.user import Identity as _Identity
+
+        _ident = await self.db.get(_Identity, bot.user_id)
         risk_res = await self.risk.evaluate(
             OrderIntent(
                 user_id=bot.user_id,
@@ -207,7 +212,10 @@ class CopyEngine:
                 signal_received_at=sig.received_at,
                 source_mode=sig.source_mode,
                 subscription_active=await self._subscription_active(bot.user_id),
-                identity_type="normal",
+                identity_type=(_ident.identity_type if _ident else "normal") or "normal",
+                exchange_invite_bound=bool(
+                    _ident and _ident.exchange_invite_code and _ident.exchange_invite_status == "approved"
+                ),
                 bot_virtual_locked=bot.virtual_locked_usdt,
                 bot_max_total_position=bot.max_total_position_usdt,
                 # ★ P1 修复：激活死规则——此前恒为默认值，全局并发节流与当日亏损熔断永不触发

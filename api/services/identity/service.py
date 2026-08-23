@@ -40,12 +40,22 @@ class IdentityService:
         await self.db.refresh(identity)
         return identity
 
-    # ── 好友邀请码（防循环 + 一次性）──
+    # ── 好友邀请码（防循环 + 一次性 + ★ 注册后 24h 内才可绑定，不允许事后补填）──
     async def bind_invite_code(self, user_id: int, code: str) -> Identity:
         """绑定好友邀请码：校验邀请人存在、防自邀、防循环（祖先链回溯）。"""
         code = code.strip().upper()
         if not code:
             raise NotFoundError("邀请码不能为空")
+
+        # ★ 补填时限：好友码仅限注册后 24 小时内绑定（与交易所码不同，不允许事后补填）
+        user = await self.db.get(User, user_id)
+        if user is not None and user.created_at is not None:
+            from datetime import timedelta
+
+            now = datetime.now(timezone.utc)
+            created = user.created_at if user.created_at.tzinfo else user.created_at.replace(tzinfo=timezone.utc)
+            if now > created + timedelta(hours=24):
+                raise ConflictError("好友邀请码仅限注册后 24 小时内绑定，已超时")
 
         inviter = await self.db.scalar(
             select(User).join(Identity, Identity.user_id == User.id).where(Identity.invite_code == code)
@@ -114,12 +124,28 @@ class IdentityService:
         )
         return identity
 
-    # ── ★ G27 交易所邀请码核实（必填）──
+    # ── ★ G27 交易所邀请码核实（选填，注册后可补填，绑定后待管理员复核，复核通过才免订阅）──
     async def verify_and_bind_exchange_invite(
         self, user_id: int, exchange: str, code: str
     ) -> tuple[bool, str]:
-        """核实链：码存在 → active → 未达上限 → 属于所选所。"""
+        """核实链：码存在 → active → 未达上限 → 属于所选所。待复核/已通过不可重复，驳回可重绑。"""
         code = code.strip().upper()
+
+        identity = await self._get_or_create(user_id)
+        if identity.exchange_invite_code:
+            if identity.exchange_invite_status == "pending":
+                return False, "已提交绑定，正在等待管理员复核"
+            if identity.exchange_invite_status != "rejected":
+                return False, "已绑定交易所邀请码，不可重复绑定"
+            # 驳回 → 允许重新绑定，先释放旧码计数
+            old_record = await self.db.scalar(
+                select(ExchangeInviteCode).where(
+                    ExchangeInviteCode.code == identity.exchange_invite_code,
+                )
+            )
+            if old_record is not None and old_record.bind_count > 0:
+                old_record.bind_count -= 1
+
         record = await self.db.scalar(
             select(ExchangeInviteCode).where(
                 ExchangeInviteCode.exchange == exchange.lower(),
@@ -135,8 +161,8 @@ class IdentityService:
         if record.max_binds is not None and record.bind_count >= record.max_binds:
             return False, "邀请码已达绑定上限，请更换"
 
-        identity = await self._get_or_create(user_id)
         identity.exchange_invite_code = code
+        identity.exchange_invite_status = "pending"
         record.bind_count += 1
         await self.db.commit()
 
@@ -145,7 +171,7 @@ class IdentityService:
             action="identity.bind_exchange_invite",
             target_type="identity",
             target_id=user_id,
-            after={"exchange": exchange, "code": code, "bind_count": record.bind_count},
+            after={"exchange": exchange, "code": code, "bind_count": record.bind_count, "status": "pending"},
         )
         return True, "ok"
 
