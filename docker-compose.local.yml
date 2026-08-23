@@ -14,6 +14,8 @@ services:
       # 本地测试沿用 dev 密钥，避免与生产混淆
       JWT_SECRET: dev-secret-please-change-in-prod
       VAULT_KEY_HEX: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    ports:
+      - "8000:8000"
 
   web:
     ports:
