@@ -238,7 +238,8 @@ class StrategyService:
         std_name = format_display_name(trader.name if trader else None, trader.trader_id if trader else str(trader_id))
         existing = await self.db.scalar(select(Strategy).where(Strategy.trader_id == trader_id))
         if existing:
-            if existing.display_name != std_name:
+            # ★ 管理员已自定义名称（name_customized=True）→ 同步不覆盖；否则保持默认「昵称（id）」
+            if not existing.name_customized and existing.display_name != std_name:
                 existing.display_name = std_name
             # ★ 重新跟单：模式2 管辖恢复（此前被 delist_unfollowed 下架的 B 类）
             if existing.source != "B":
@@ -604,6 +605,7 @@ class StrategyService:
             "trader_id": s.trader_id,
             "exchange": s.source_exchange,
             "display_name": s.display_name,
+            "description": s.description,
             "style": s.style,
             "risk_rating": s.risk_rating,
             "status": s.status,

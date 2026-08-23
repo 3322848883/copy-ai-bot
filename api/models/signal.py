@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, true as sa_true
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, true as sa_true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base, TimestampMixin
@@ -66,6 +66,11 @@ class Strategy(TimestampMixin, Base):
     # ★ 跟单是否开放（阀门上移后台管理员）：default true=上架即开放。
     #   不再由 hide_position 隐式推导用户端能否跟单——隐藏仓位仅作后台数据标记。
     follow_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true())
+    # ★ 已添加池编辑：策略介绍（管理员自定义，策略广场详情页展示）
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ★ 名称是否被管理员自定义过：模式B 同步会重置 display_name 为「昵称（id）」，
+    #   管理员改过后置 True，ensure_followed_strategy 不再覆盖。
+    name_customized: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
 
 
 class ClosedPosition(Base):

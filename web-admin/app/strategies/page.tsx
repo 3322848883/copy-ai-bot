@@ -12,6 +12,8 @@ type Strategy = {
   max_drawdown: number; trading_days: number; collector_ready?: boolean;
   hide_position?: boolean | null;
   follow_enabled?: boolean;
+  description?: string | null;
+  name_customized?: boolean;
   is_follow?: boolean; created_at?: string;
 };
 type Trader = {
@@ -75,6 +77,10 @@ export default function AdminStrategiesPage() {
   const [riskRating, setRiskRating] = useState("mid");
   const [forceReason, setForceReason] = useState("");
   const [delistTarget, setDelistTarget] = useState<Strategy | null>(null);
+  // ★ 已添加池编辑：自定义策略名称/介绍
+  const [editTarget, setEditTarget] = useState<Strategy | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDesc, setEditDesc] = useState("");
 
   const [searchKw, setSearchKw] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
@@ -229,6 +235,33 @@ export default function AdminStrategiesPage() {
       load();
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "上架失败");
+    }
+  }
+
+  async function doEdit() {
+    if (!editTarget) return;
+    const name = editName.trim();
+    if (!name) {
+      toast("error", "策略名称不能为空");
+      return;
+    }
+    const ok = await confirm({
+      title: "确认保存？",
+      message: `更新「${editTarget.display_name}」的名称/介绍，用户端策略广场将同步显示。`,
+      confirmText: "保存",
+    });
+    if (!ok) return;
+    try {
+      const r = await apiFetch<{ id: number; display_name: string }>(
+        `/admin/v1/signals/${editTarget.id}`,
+        { method: "PATCH", body: JSON.stringify({ display_name: name, description: editDesc }) },
+        tokenStore.adminAccess,
+      );
+      toast("success", `「${r.display_name}」已更新`);
+      setEditTarget(null);
+      load();
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "保存失败");
     }
   }
 
@@ -424,6 +457,8 @@ export default function AdminStrategiesPage() {
                     </button>
                   </td>
                   <td>
+                    <button className="action-link" onClick={() => { setEditTarget(s); setEditName(s.display_name); setEditDesc(s.description || ""); }}>编辑</button>
+                    {" · "}
                     {s.status === "listed" ? (
                       <button className="action-link" onClick={() => setStatus(s, "paused")}>暂停</button>
                     ) : s.status === "paused" ? (
@@ -603,6 +638,33 @@ export default function AdminStrategiesPage() {
               >
                 {gatePassed(listTarget) ? "确认上架" : "强制上架"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 编辑策略弹窗（★ 自定义名称/介绍，用户端广场同步显示） */}
+      {editTarget && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-hdr">
+              <div className="modal-title">编辑策略</div>
+              <button className="modal-close" onClick={() => setEditTarget(null)}>✕</button>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+              自定义名称/介绍将同步到用户端策略广场。模式B（自动跟单）策略改过名称后，同步不再覆盖。
+            </div>
+            <div className="field">
+              <label className="field-label">策略名称（用户端显示）</label>
+              <input className="input" value={editName} maxLength={64} onChange={(e) => setEditName(e.target.value)} />
+            </div>
+            <div className="field">
+              <label className="field-label">策略介绍（用户端详情页显示，可留空）</label>
+              <textarea className="input" rows={4} placeholder="介绍该策略的交易风格、适用场景等…" value={editDesc} onChange={(e) => setEditDesc(e.target.value)} />
+            </div>
+            <div className="modal-btn-row">
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setEditTarget(null)}>取消</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={doEdit}>保存</button>
             </div>
           </div>
         </div>

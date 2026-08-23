@@ -28,6 +28,7 @@ type Detail = {
   source?: string;
   hide_position?: boolean | null;
   follow_enabled?: boolean;
+  description?: string | null;
 };
 
 type Position = {
@@ -331,9 +332,11 @@ export default function StrategyDetailPage() {
   // 展示型信号源（模式A+隐藏，公开渠道无方向数据，后端安全拦截并友好提示）
   const displayOnly = detail.hide_position === true && detail.source !== "B";
   const desc =
-    `${STYLE_LABEL[detail.style] ?? detail.style}策略，全市场信号实时跟随、自动执行。` +
-    `已运行 ${detail.trading_days} 天，累计胜率 ${detail.win_rate_all.toFixed(1)}%，` +
-    `历史最大回撤 ${detail.max_drawdown.toFixed(1)}%，开平仓秒级同步。`;
+    detail.description?.trim()
+      ? detail.description
+      : `${STYLE_LABEL[detail.style] ?? detail.style}策略，全市场信号实时跟随、自动执行。` +
+        `已运行 ${detail.trading_days} 天，累计胜率 ${detail.win_rate_all.toFixed(1)}%，` +
+        `历史最大回撤 ${detail.max_drawdown.toFixed(1)}%，开平仓秒级同步。`;
 
   return (
     <main style={{ minHeight: "100vh", position: "relative" }}>

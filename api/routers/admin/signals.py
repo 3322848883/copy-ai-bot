@@ -192,6 +192,8 @@ async def list_strategies(
                 "trader_id": s.trader_id,
                 "exchange": s.source_exchange,
                 "display_name": s.display_name,
+                "description": s.description,
+                "name_customized": bool(s.name_customized),
                 "style": s.style,
                 "risk_rating": s.risk_rating,
                 "status": s.status,
@@ -352,6 +354,55 @@ async def set_follow_enabled(strategy_id: int, body: FollowEnabledIn, db: DbDep 
         before={"follow_enabled": before}, after={"follow_enabled": strategy.follow_enabled},
     )
     return {"id": strategy_id, "follow_enabled": strategy.follow_enabled}
+
+
+class EditStrategyIn(BaseModel):
+    """★ 已添加池编辑：自定义策略名称/介绍（模式A/B 通用）。"""
+    display_name: str | None = None
+    description: str | None = None
+
+
+@router.patch("/{strategy_id}")
+async def edit_strategy(strategy_id: int, body: EditStrategyIn, db: DbDep = None, admin=Depends(require_admin)) -> dict:
+    """★ 编辑策略名称/介绍：管理员自定义，策略广场同步显示。
+
+    - display_name 非空 → 更新名称并置 name_customized=True（模式B 同步不再覆盖）
+    - description 提供 → 更新介绍（None 不清除；传空串清除）
+    """
+    from api.core.errors import ValidationError
+
+    strategy = await db.get(Strategy, strategy_id)
+    if strategy is None:
+        raise NotFoundError("策略不存在")
+    payload = body.model_dump(exclude_unset=True)
+    if not payload:
+        raise ValidationError("至少提供一个字段")
+    before = {"display_name": strategy.display_name, "description": strategy.description}
+    if "display_name" in payload:
+        name = (payload["display_name"] or "").strip()
+        if not name:
+            raise ValidationError("策略名称不能为空")
+        if len(name) > 64:
+            raise ValidationError("策略名称不能超过 64 字符")
+        strategy.display_name = name
+        strategy.name_customized = True
+    if "description" in payload:
+        strategy.description = (payload["description"] or "").strip() or None
+    await db.commit()
+    await AuditService(db).log(
+        actor_id=admin["id"], action="strategy.edit",
+        target_type="strategy", target_id=str(strategy_id),
+        before=before,
+        after={"display_name": strategy.display_name, "description": strategy.description},
+    )
+    # ★ M6 T5.19：strategy.update 实时推送（用户端广场同步名称）
+    from api.ws.hub import hub
+
+    await hub.broadcast(
+        "strategy.update",
+        {"strategy_id": strategy.id, "display_name": strategy.display_name, "status": strategy.status, "action": "edit"},
+    )
+    return {"id": strategy.id, "display_name": strategy.display_name, "description": strategy.description}
 
 
 class StrategyRiskIn(BaseModel):
