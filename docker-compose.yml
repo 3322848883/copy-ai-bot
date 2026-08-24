@@ -76,7 +76,14 @@ services:
   worker:
     build: .
     image: ai-api:latest
-    command: celery -A api.workers.celery_app:celery_app worker --loglevel=info
+    # ★ 2026-08-24 生产事故修复：限并发 + 周期回收。
+    #   此前未指定 --concurrency，Celery prefork 默认 = CPU 核数(4)，4 进程可同时跑多个
+    #   采集任务(poll_live/scrape_all/refresh/reconcile)，各自持有独立 Playwright 浏览器，
+    #   批量任务高峰期多浏览器并存、加载全高，且长驻 worker 内 playwright driver 累积不回收，
+    #   最终内存耗尽(available 4MB / swap 全满)整机 swap 抖动、docker 命令全部超时。
+    #   --concurrency=2：最多 2 个采集浏览器并存；--max-tasks-per-child=50：每 50 个任务
+    #   回收 prefork 子进程，强制释放可能残留的 driver/chromium 进程，从根上杜绝进程堆积。
+    command: celery -A api.workers.celery_app:celery_app worker --loglevel=info --concurrency=2 --max-tasks-per-child=50
     # ★ init 进程回收孤儿 chrome：playwright 拉起失败时 chrome 进程树会孤儿化
     #   （无 init 时永久残留并持有 user_data_dir 的 SingletonLock，跨容器锁死浏览器）
     init: true
