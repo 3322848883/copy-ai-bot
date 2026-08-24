@@ -25,10 +25,16 @@ async def lifespan(app: FastAPI):
     from api.ws.ticker import start_ticker
 
     ticker_task = await start_ticker()
+    # ★ 2026-08-24: 启动 Gate WS 实时行情（模拟盘 mark_price 实时刷新）
+    from api.ws.gate_ticker import start_gate_ticker
+
+    gate_ticker_task = await start_gate_ticker()
     yield
     ticker_task.cancel()
+    gate_ticker_task.cancel()
     try:
         await ticker_task
+        await gate_ticker_task
     except Exception:  # noqa: BLE001
         pass
 

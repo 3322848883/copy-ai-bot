@@ -66,5 +66,10 @@ class PositionSnapshot(TimestampMixin, Base):
     entry_price: Mapped[float] = mapped_column(Float)
     mark_price: Mapped[float] = mapped_column(Float)
     unrealized_pnl: Mapped[float] = mapped_column(Float, default=0)
+    # ★ 已实现盈亏（2026-08-24）：减仓/平仓时累计，供 snapshot_pnl 聚合。
+    #   此前平仓不记录，模拟盘/实盘已实现盈亏恒为 0。
+    realized_pnl: Mapped[float] = mapped_column(Float, default=0)
+    # ★ 合约面值（2026-08-24）：落库时写入，update_marks 直接读（避免 notional/qty 推导出 face×price）
+    face_value: Mapped[float] = mapped_column(Float, default=1.0)
     notional_usdt: Mapped[float] = mapped_column(Float, default=0)
     is_open: Mapped[bool] = mapped_column(Boolean, default=True)

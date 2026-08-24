@@ -18,6 +18,7 @@ celery_app = Celery(
         "api.workers.tasks_payment",
         "api.workers.tasks_reward",
         "api.workers.tasks_reminder",
+        "api.workers.tasks_paper",
         # ★ 生产核查修复：copy.process_signal 任务定义于此，必须随 worker 注册
         "api.workers.consumer_signal",
     ],
@@ -110,6 +111,13 @@ celery_app.conf.update(
         "signal-vacuum-retention": {
             "task": "signal.vacuum_retention",
             "schedule": crontab(hour="3", minute="0"),
+        },
+        # ★ 模拟盘 mark_price REST 兜底刷新（每 60s）：WS 实时通道断线时保证价格新鲜。
+        #   与 api 容器内 gate_ticker WS 任务互为保险，双通道任一存活即可刷新盈亏。
+        "paper-update-marks": {
+            "task": "paper.update_marks",
+            "schedule": 60.0,
+            "options": {"expires": 50},
         },
     },
 )

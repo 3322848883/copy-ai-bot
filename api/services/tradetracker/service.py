@@ -71,11 +71,12 @@ class TradeTracker:
             total_unrealized += r.unrealized_pnl
             total_notional += r.notional_usdt
 
-        # 今日已实现 PnL（简化：统计今日 close 订单）
+        # 已实现 PnL：减仓/平仓时累计到 realized_pnl（open+closed 全部快照求和）。
+        # ★ 2026-08-24：此前以 SUM(unrealized_pnl) WHERE is_open=False 兜底，
+        #   而 mark_price 从不刷新 unrealized_pnl 恒为 0 → 已实现盈亏恒为 0。
         realized = await self.db.scalar(
-            select(func.coalesce(func.sum(PositionSnapshot.unrealized_pnl), 0.0)).where(
+            select(func.coalesce(func.sum(PositionSnapshot.realized_pnl), 0.0)).where(
                 PositionSnapshot.bot_id == bot.id,
-                PositionSnapshot.is_open == False,  # noqa: E712
             )
         )
         return {

@@ -168,6 +168,12 @@ class CopyEngine:
             return await self._fail_persist(bot, sig, "symbol", f"合约规格缺失: {sig.symbol}")
 
         balance = await self._get_free_balance(bot, api_row, api_secret)
+        # ★ 2026-08-24：下单张数换算需当前价（名义 = qty×face×price）。信号价优先，否则拉 Gate 行情
+        price = getattr(sig, "_price", None)
+        if not price or price <= 0:
+            from api.services.prices import fetch_futures_price
+
+            price = await fetch_futures_price(sig.symbol)
         sizer = PositionSizer(contract)
         try:
             intent = sizer.compute(
@@ -176,6 +182,7 @@ class CopyEngine:
                 percent=self._effective_percent(bot, sig),
                 account_free_usdt=balance,
                 leverage=bot.leverage,
+                price=price,
             )
         except InsufficientBalance as exc:
             return await self._fail_persist(bot, sig, "balance", exc.message)
@@ -395,20 +402,41 @@ class CopyEngine:
                 )
             )
         ).scalars().first()
+        # ★ 合约面值：名义价值 = qty × face（此前误用 qty × mark 导致名义价值虚高数亿，
+        #   模拟盘余额/锁定全部失真）。取不到合约时回退 face=1（与旧行为一致）。
+        face = 1.0
+        contract = await self._get_contract(sig.exchange, sig.symbol)
+        if contract is not None and contract.face_value_usdt > 0:
+            face = contract.face_value_usdt
+
         if sig.action == "close":
             if existing:
                 # ★ P1 修复：按该仓位名义价值释放锁定（leverage 换算保证金），不再整 bot 清零
                 released = (existing.notional_usdt or 0.0) / bot.leverage if bot.leverage else 0.0
                 bot.virtual_locked_usdt = max(bot.virtual_locked_usdt - released, 0.0)
+                # ★ 已实现盈亏：平仓价 = 成交均价（模拟盘为真实行情价），按实际持仓方向结算。
+                #   qty 为合约张数，盈亏必须乘合约面值 face（此前漏乘，BTC 虚大 1/face=1 万倍）
+                side_sign = 1.0 if (existing.side or "long") == "long" else -1.0
+                close_price = exec_res.avg_price or existing.mark_price
+                existing.realized_pnl = (existing.realized_pnl or 0.0) + (
+                    (close_price - (existing.entry_price or close_price)) * existing.qty * face * side_sign
+                )
+                existing.unrealized_pnl = 0.0
                 existing.is_open = False
             return
         if existing:
             mark = exec_res.avg_price or existing.mark_price
+            side_sign = 1.0 if (existing.side or "long") == "long" else -1.0
             if sig.action == "reduce":
                 # ★ P1 修复：reduce 误走加仓分支——qty 只减不加，按减掉数量释放对应锁定
                 cut = min(exec_res.filled_qty, existing.qty)
-                released = cut * (existing.entry_price or mark) / bot.leverage if bot.leverage else 0.0
+                # ★ 2026-08-24：释放保证金 = cut × face × mark / leverage（此前漏乘 face）
+                released = cut * face * mark / bot.leverage if bot.leverage else 0.0
                 bot.virtual_locked_usdt = max(bot.virtual_locked_usdt - released, 0.0)
+                # ★ 已实现盈亏：减仓部分按减仓价结算（同样乘合约面值）
+                existing.realized_pnl = (existing.realized_pnl or 0.0) + (
+                    (mark - (existing.entry_price or mark)) * cut * face * side_sign
+                )
                 existing.qty = max(existing.qty - exec_res.filled_qty, 0.0)
             else:
                 existing.qty += exec_res.filled_qty
@@ -419,21 +447,24 @@ class CopyEngine:
                         + exec_res.avg_price * exec_res.filled_qty
                     ) / existing.qty
             existing.mark_price = mark
-            existing.notional_usdt = existing.qty * mark
-            # ★ P1 修复：不再写死 0——按 (mark-entry)×qty 实时估算未实现盈亏
+            # ★ 2026-08-24：名义价值 = qty × face × price（此前漏乘 price，BTC 名义虚小 7.7 万倍）
+            existing.notional_usdt = existing.qty * face * mark
+            existing.face_value = face
+            # ★ P1 修复：不再写死 0——按 (mark-entry)×qty×face 实时估算未实现盈亏
             if existing.qty <= 1e-12:
                 existing.unrealized_pnl = 0.0
             else:
                 entry = existing.entry_price or mark
-                side_sign = 1.0 if (existing.side or "long") == "long" else -1.0
-                existing.unrealized_pnl = (mark - entry) * existing.qty * side_sign
+                existing.unrealized_pnl = (mark - entry) * existing.qty * face * side_sign
         else:
             self.db.add(
                 PositionSnapshot(
                     bot_id=bot.id, symbol=sig.symbol, side=sig.side,
                     qty=exec_res.filled_qty, entry_price=exec_res.avg_price,
-                    mark_price=exec_res.avg_price, notional_usdt=exec_res.filled_qty * exec_res.avg_price,
-                    unrealized_pnl=0.0,
+                    mark_price=exec_res.avg_price,
+                    notional_usdt=exec_res.filled_qty * face * (exec_res.avg_price or 0),
+                    unrealized_pnl=0.0, realized_pnl=0.0,
+                    face_value=face,
                     is_open=True,
                 )
             )

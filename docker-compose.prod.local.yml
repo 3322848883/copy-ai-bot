@@ -41,6 +41,8 @@ services:
       ETH_RPC_URL: https://ethereum-rpc.publicnode.com
       # ★ 上线检查修复：gate.com 容器内被墙，浏览器采集走主机代理中继（scripts/proxy_relay.py）
       BROWSER_PROXY_URL: http://host.docker.internal:17897
+      # ★ 2026-08-24：Gate WS 实时行情同样被墙，经主机代理中继（HTTP CONNECT）连接
+      GATE_WS_PROXY_URL: http://host.docker.internal:17897
     # ★ Linux 服务器必需：host.docker.internal 默认不解析（Docker Desktop 自带，Linux 需 host-gateway）
     extra_hosts:
       - "host.docker.internal:host-gateway"

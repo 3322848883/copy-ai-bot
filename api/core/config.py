@@ -48,6 +48,10 @@ class Settings(BaseSettings):
         """逗号分隔解析为列表（与 CORS 同模式）。"""
         return [x.strip() for x in self.enabled_exchanges.split(",") if x.strip()]
 
+    # ★ 2026-08-24：Gate WS 实时行情代理（fx-ws.gateio.ws 部分网络不可直连）。
+    #   空 = 直连；本地生产测试经主机代理中继 http://host.docker.internal:17897。
+    gate_ws_proxy_url: str = ""
+
     # ── 风控（默认值，后台可配置）──
     delay_redline_mode_a_ms: int = 10_000  # 模式 A 爬虫
     delay_redline_mode_b_ms: int = 5_000   # 模式 B WS
