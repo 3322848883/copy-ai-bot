@@ -49,6 +49,8 @@ export default function MyBotsPage() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  // ★ 失败订单详情弹窗（长错误信息完整阅读）
+  const [failDetail, setFailDetail] = useState<Order | null>(null);
   const [orderFills, setOrderFills] = useState<Record<number, number>>({});
   // 订阅状态（G10 过期横幅）
   const [sub, setSub] = useState<{ active: boolean; expires_at?: string } | null>(null);
@@ -407,7 +409,7 @@ export default function MyBotsPage() {
                       {loadingDetail ? (
                         <div style={{ color: "var(--muted)", fontSize: 13 }}>加载中…</div>
                       ) : (
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20 }}>
                           <div>
                             <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>当前持仓</div>
                             {positions.length === 0 ? (
@@ -428,15 +430,27 @@ export default function MyBotsPage() {
                               <div style={{ color: "var(--muted)", fontSize: 12 }}>暂无订单</div>
                             ) : (
                               orders.map((o) => (
-                                <div key={o.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--rule)" }}>
-                                  <span style={{ whiteSpace: "nowrap" }}>{localDateTime(o.created_at ?? o.executed_at)}</span>
-                                  <span style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{o.action.toUpperCase()} {o.qty}</span>
-                                  <span
-                                    style={o.status === "failed" ? { color: "var(--danger)" } : undefined}
-                                    title={o.status === "failed" ? o.fail_reason || o.failure_category || "" : undefined}
-                                  >
-                                    {o.status === "filled" ? `成交 (${o.latency_ms}ms)` : `失败: ${o.fail_reason || o.failure_category || "?"}`}
-                                  </span>
+                                <div key={o.id} style={{ fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--rule)" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                                    <span style={{ whiteSpace: "nowrap" }}>{localDateTime(o.created_at ?? o.executed_at)}</span>
+                                    <span style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{o.action.toUpperCase()} {o.qty}</span>
+                                    {o.status === "filled" ? (
+                                      <span>成交 ({o.latency_ms}ms)</span>
+                                    ) : (
+                                      <button
+                                        className="btn btn-secondary"
+                                        style={{ padding: "2px 8px", fontSize: 11, color: "var(--danger)", borderColor: "rgba(239,68,68,0.4)", whiteSpace: "nowrap" }}
+                                        onClick={() => setFailDetail(o)}
+                                      >
+                                        失败 · 查看原因
+                                      </button>
+                                    )}
+                                  </div>
+                                  {o.status === "failed" && (
+                                    <div style={{ color: "var(--danger)", marginTop: 4, wordBreak: "break-word", lineHeight: 1.6, opacity: 0.9 }}>
+                                      失败: {o.fail_reason || o.failure_category || "?"}
+                                    </div>
+                                  )}
                                 </div>
                               ))
                             )}
@@ -609,6 +623,39 @@ export default function MyBotsPage() {
               >
                 确认删除
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 失败订单详情弹窗：完整错误信息 */}
+      {failDetail && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(7,14,26,0.85)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setFailDetail(null); }}
+        >
+          <div style={{ width: 460, maxWidth: "92vw", background: "var(--surface-overlay)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 10, boxShadow: "0 16px 48px rgba(0,0,0,0.45)", padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "var(--danger)" }}>订单执行失败</div>
+              <button className="btn btn-secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setFailDetail(null)}>✕</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
+              <div>
+                <div style={{ color: "var(--tertiary)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>动作</div>
+                <div style={{ marginTop: 2 }}>{failDetail.action.toUpperCase()} {failDetail.qty}</div>
+              </div>
+              <div>
+                <div style={{ color: "var(--tertiary)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>时间</div>
+                <div style={{ marginTop: 2 }}>{localDateTime(failDetail.created_at ?? failDetail.executed_at)}</div>
+              </div>
+            </div>
+            <div>
+              <div style={{ color: "var(--tertiary)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>失败原因</div>
+              <div style={{ marginTop: 6, fontSize: 13, color: "var(--danger)", lineHeight: 1.7, wordBreak: "break-word", whiteSpace: "pre-wrap" }}>
+                {failDetail.fail_reason || failDetail.failure_category || "未知原因"}
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+              <button className="btn btn-primary" style={{ padding: "6px 18px", fontSize: 12 }} onClick={() => setFailDetail(null)}>知道了</button>
             </div>
           </div>
         </div>
