@@ -1,6 +1,9 @@
 # CopyEngine qty 换算（percent×保证金）与测试符号过滤 单元测试
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta, timezone
+from types import MethodType
 from types import SimpleNamespace
 
 from api.services.copyengine.service import CopyEngine
@@ -28,9 +31,9 @@ def test_open_without_percent_keeps_bot_percent():
     assert CopyEngine._effective_percent(_bot(10.0), _sig("open", None)) == 10.0
 
 
-def test_add_action_not_scaled():
-    """add 动作不缩放，保持 bot.percent。"""
-    assert CopyEngine._effective_percent(_bot(10.0), _sig("add", 0.20)) == 10.0
+def test_add_action_scales_by_position_increase_ratio():
+    """带单员仓位增加 20% 时，本账户也按原配置比例的 20% 加仓。"""
+    assert CopyEngine._effective_percent(_bot(10.0), _sig("add", 0.20)) == 2.0
 
 
 def test_leader_percent_clamped_to_unit_interval():
@@ -42,6 +45,27 @@ def test_leader_percent_clamped_to_unit_interval():
 def test_leader_percent_non_numeric_fallback():
     """leader 占比非数字 → 回退 bot.percent。"""
     assert CopyEngine._effective_percent(_bot(10.0), _sig("open", "bad")) == 10.0
+
+
+def test_fixed_amount_is_same_margin_for_open_and_add_orders():
+    bot = SimpleNamespace(fixed_amount_usdt=100.0)
+    assert CopyEngine._effective_fixed_amount(bot, _sig("add", 0.20)) == 100.0
+    assert CopyEngine._effective_fixed_amount(bot, _sig("open", 0.20)) == 100.0
+
+
+def test_open_risk_timestamp_uses_source_time_not_detection_time():
+    """晚发现的旧仓位必须保留源时间，才能被 5s/10s 延迟红线拒绝追单。"""
+    received = datetime.now(timezone.utc)
+    opened = received - timedelta(minutes=95)
+    sig = SimpleNamespace(action="open", opened_at=opened, received_at=received)
+    assert CopyEngine._risk_timestamp(sig) == opened
+
+
+def test_close_risk_timestamp_uses_received_time():
+    received = datetime.now(timezone.utc)
+    opened = received - timedelta(hours=2)
+    sig = SimpleNamespace(action="close", opened_at=opened, received_at=received)
+    assert CopyEngine._risk_timestamp(sig) == received
 
 
 # ── 测试符号过滤 ──
@@ -93,3 +117,48 @@ def test_gray_allowed_distribution_roughly_correct():
     """100 个用户放量 30% → 命中数接近 30（±8）。"""
     hits = sum(CopyEngine._gray_allowed(1, uid, 30) for uid in range(100))
     assert 22 <= hits <= 38, f"灰度命中偏离过大: {hits}"
+
+
+def test_handle_signal_isolates_one_bot_unhandled_failure():
+    """一个 API/网络异常必须落失败单，并继续处理同信号下的其他机器人。"""
+    class FakeDb:
+        def __init__(self):
+            self.added = []
+            self.commits = 0
+
+        def add(self, value):
+            self.added.append(value)
+
+        async def commit(self):
+            self.commits += 1
+
+        async def scalar(self, statement):
+            return None
+
+    engine = object.__new__(CopyEngine)
+    engine.db = FakeDb()
+    bots = [
+        SimpleNamespace(id=1, user_id=10, strategy_id=100, leverage=5),
+        SimpleNamespace(id=2, user_id=20, strategy_id=100, leverage=5),
+    ]
+
+    async def fake_match(self, exchange, trader_id):
+        return bots
+
+    async def fake_process(self, bot, sig):
+        if bot.id == 1:
+            raise RuntimeError("temporary balance API failure")
+        return self._fail_order(bot, sig, "other", "second bot reached")
+
+    engine.match_bots = MethodType(fake_match, engine)
+    engine._process_bot = MethodType(fake_process, engine)
+    sig = SimpleNamespace(
+        id=99, exchange="gate", source_trader_id="32801", symbol="ETHUSDT",
+        side="long", action="open", percent=None, source_mode="B",
+    )
+    orders = asyncio.run(engine.handle_signal(sig))
+    assert len(orders) == 2
+    assert orders[0].status == "failed"
+    assert "temporary balance API failure" in orders[0].fail_reason
+    assert orders[1].fail_reason == "second bot reached"
+    assert engine.db.commits == 1

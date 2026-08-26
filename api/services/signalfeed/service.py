@@ -110,8 +110,18 @@ class IncrementalFeedService:
 
     # ── 持仓差分核心（poll 与 reconcile 共用）──
     @staticmethod
-    def _diff(trader_id: str, prev: dict[str, float], current: dict[str, float]) -> list[FeedEvent]:
-        """对比 prev/current 快照，产出 open/close 事件。"""
+    def _diff(
+        trader_id: str,
+        prev: dict[str, float],
+        current: dict[str, float],
+        *,
+        emit_size_changes: bool = False,
+    ) -> list[FeedEvent]:
+        """对比快照，产出开平仓；模式 B 额外产出加仓/减仓。
+
+        模式 B 的数值是登录跟单账户里的真实镜像数量，数量变化可可靠代表交易；
+        模式 A 是组合占比，会随价格自然波动，禁止据此生成真实 add/reduce。
+        """
         events: list[FeedEvent] = []
         cur_keys = set(current)
         prev_keys = set(prev)
@@ -119,13 +129,38 @@ class IncrementalFeedService:
             events.append(FeedEvent(trader_id=trader_id, symbol=sym, action="open", percent=current[sym]))
         for sym in prev_keys - cur_keys:
             events.append(FeedEvent(trader_id=trader_id, symbol=sym, action="close"))
+        if emit_size_changes:
+            for sym in cur_keys & prev_keys:
+                old = float(prev[sym])
+                new = float(current[sym])
+                delta = new - old
+                epsilon = max(abs(old), abs(new), 1.0) * 1e-9
+                if delta > epsilon:
+                    # 相对原仓位的新增比例，供用户机器人按自身仓位同比例加仓。
+                    ratio = delta / old if old > 0 else 1.0
+                    events.append(FeedEvent(
+                        trader_id=trader_id, symbol=sym, action="add",
+                        percent=max(0.0, ratio),
+                    ))
+                elif delta < -epsilon:
+                    # 相对原仓位的减仓比例；执行侧按本账户当前仓位同比例减仓。
+                    ratio = (old - new) / old if old > 0 else 1.0
+                    events.append(FeedEvent(
+                        trader_id=trader_id, symbol=sym, action="reduce",
+                        percent=max(0.0, min(1.0, ratio)),
+                    ))
         return events
 
-    def _filter(self, current: dict[str, float]) -> dict[str, float]:
-        """★ 阈值过滤：剔除低于 signal_change_threshold 的微仓（噪音）。"""
-        if self.threshold and self.threshold > 0:
-            return {sym: p for sym, p in current.items() if p >= self.threshold}
-        return dict(current)
+    def _filter(self, current: dict[str, float], mode: str = "A") -> dict[str, float]:
+        """过滤无效仓位；占比阈值只适用于模式 A。
+
+        模式 A 的值是持仓占比（0.005=0.5%），模式 B 的值是实际币数量
+        （例如 ETH 0.001）。旧实现混用同一阈值，会让小额镜像仓位永远不产生信号。
+        """
+        positive = {sym: value for sym, value in current.items() if value > 0}
+        if mode == "A" and self.threshold and self.threshold > 0:
+            return {sym: p for sym, p in positive.items() if p >= self.threshold}
+        return positive
 
     async def poll_leader(self, trader_id: str) -> list[FeedEvent]:
         """轮询单个带单员：当前持仓 vs 上次快照 → 开/平仓事件。
@@ -172,7 +207,7 @@ class IncrementalFeedService:
         if current_raw is None:
             logger.warning("gate feed: reconcile %s 接口失败，跳过", trader_id)
             return []
-        current = self._filter(current_raw)
+        current = self._filter(current_raw, mode="A")
         state = await self.get_state(trader_id, "A")
         now = time.time()
         if state is None:
@@ -201,7 +236,7 @@ class IncrementalFeedService:
                 logger.warning("gate feed: reconcile %s 接口失败，跳过", tid)
                 events_map[tid] = []
                 continue
-            current = self._filter(current_raw)
+            current = self._filter(current_raw, mode="A")
             state = await self.get_state(tid, "A")
             now = time.time()
             if state is None:
@@ -240,9 +275,12 @@ class IncrementalFeedService:
                 events_map[lid] = []
                 continue
             current: dict[str, float] = {p.symbol: p.qty for p in poses}
-            current = self._filter(current)
+            current = self._filter(current, mode="B")
             side_map: dict[str, str] = {p.symbol: p.side for p in poses}
-            events_map[lid] = await self._poll_with_snapshot(lid, current, side_map, mode="B")
+            opened_at_map = {p.symbol: p.opened_at for p in poses if p.opened_at is not None}
+            events_map[lid] = await self._poll_with_snapshot(
+                lid, current, side_map, mode="B", opened_at_map=opened_at_map,
+            )
         return events_map
 
     async def reconcile_followers_many(
@@ -260,13 +298,16 @@ class IncrementalFeedService:
                 events_map[lid] = []
                 continue
             current: dict[str, float] = {p.symbol: p.qty for p in poses}
-            current = self._filter(current)
+            current = self._filter(current, mode="B")
             side_map: dict[str, str] = {p.symbol: p.side for p in poses}
-            events_map[lid] = await self._reconcile_with_snapshot(lid, current, side_map, mode="B")
+            opened_at_map = {p.symbol: p.opened_at for p in poses if p.opened_at is not None}
+            events_map[lid] = await self._reconcile_with_snapshot(
+                lid, current, side_map, mode="B", opened_at_map=opened_at_map,
+            )
         return events_map
 
-    async def _fetch_live_sides(self, trader_id: str) -> dict[str, str]:
-        """实时持仓方向表（trader/position 接口，公开带单员专用）。
+    async def _fetch_live_metadata(self, trader_id: str) -> tuple[dict[str, str], dict[str, datetime]]:
+        """实时持仓方向与源时间（trader/position 接口，公开带单员专用）。
 
         返回 {sym: long/short}；隐藏持仓（is_hide）/空仓/接口失败 → {}——
         调用方回退 long 默认。★ 2026-08-23 实测：隐藏带单员该接口返回空，
@@ -276,14 +317,24 @@ class IncrementalFeedService:
             rows = await self.scraper.fetch_leader_positions_live(trader_id)
         except Exception:  # noqa: BLE001 方向补齐失败不阻断差分主流程
             logger.warning("gate feed: live sides %s 拉取失败，open 方向回退 long", trader_id)
-            return {}
+            return {}, {}
         sides: dict[str, str] = {}
+        opened_at: dict[str, datetime] = {}
         for row in rows or []:
             sym = row.get("symbol")
             s = row.get("side")
             if sym and s in ("long", "short"):
                 sides[sym] = s
-        return sides
+            raw_at = row.get("opened_at")
+            if sym and raw_at:
+                try:
+                    dt = datetime.fromisoformat(str(raw_at).replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    opened_at[sym] = dt.astimezone(timezone.utc)
+                except (TypeError, ValueError):
+                    pass
+        return sides, opened_at
 
     def _resolve_sides(
         self, trader_id: str, events: list[FeedEvent], current: dict[str, float],
@@ -292,14 +343,14 @@ class IncrementalFeedService:
     ) -> tuple[list[FeedEvent], dict[str, str]]:
         """事件方向解析（poll 与 reconcile 共用）。
 
-        - open：side_map（模式B镜像）> live_sides（模式A实时补拉，公开带单员真实方向）> long
+        - open/add/reduce：side_map（模式B镜像）> live_sides（模式A实时补拉）> long
         - close：回查 prev_sides 里"消失仓位原方向"（执行侧据它反向平仓），缺失 > long
         - 返回 (events, 新基线 sides 快照)：live_sides/side_map 覆盖全量方向，
           否则沿用 prev_sides 中仍存在的 symbol（方向对存量不变式成立）。
         """
         has_open = any(e.action == "open" for e in events)
         for ev in events:
-            if ev.action == "open":
+            if ev.action in {"open", "add", "reduce"}:
                 if side_map:
                     ev.side = side_map.get(ev.symbol, "long")
                 elif live_sides:
@@ -316,9 +367,42 @@ class IncrementalFeedService:
             logger.info("gate feed: %s open 方向未知（隐藏持仓或拉取失败），按 long 处理", trader_id)
         return events, new_sides
 
+    @staticmethod
+    def _replace_direction_flips(
+        trader_id: str,
+        events: list[FeedEvent],
+        prev: dict[str, float],
+        current: dict[str, float],
+        prev_sides: dict[str, str],
+        side_map: dict[str, str] | None,
+        mode: str,
+    ) -> list[FeedEvent]:
+        """模式 B 同币种多空反转必须先平旧方向，再开新方向。
+
+        仅比较数量无法发现等量反转；数量改变时还会误判为 add/reduce。用镜像仓位
+        返回的真实方向覆盖该 symbol 的普通差分，生成 close + open 两个有序事件。
+        """
+        if mode != "B" or not side_map or not prev_sides:
+            return events
+        flipped = {
+            sym for sym in set(prev) & set(current)
+            if prev_sides.get(sym) in {"long", "short"}
+            and side_map.get(sym) in {"long", "short"}
+            and prev_sides[sym] != side_map[sym]
+        }
+        if not flipped:
+            return events
+        result = [event for event in events if event.symbol not in flipped]
+        for sym in sorted(flipped):
+            result.append(FeedEvent(trader_id=trader_id, symbol=sym, action="close"))
+            result.append(FeedEvent(
+                trader_id=trader_id, symbol=sym, action="open", percent=current[sym],
+            ))
+        return result
+
     async def _poll_with_snapshot(
         self, trader_id: str, current_raw: dict[str, float], side_map: dict[str, str] | None = None,
-        mode: str = "A",
+        mode: str = "A", opened_at_map: dict[str, datetime] | None = None,
     ) -> list[FeedEvent]:
         """给定持仓快照做差分（poll 路径共用，side_map 提供 open 方向）。
 
@@ -326,21 +410,34 @@ class IncrementalFeedService:
           trader/position（仅出 open 事件时才拉，稀有事件成本 ~1.4s/次）取真实
           long/short；隐藏带单员返回空 → 保持 long（公开渠道无当前方向）。
         """
-        current = self._filter(current_raw)
+        current = self._filter(current_raw, mode=mode)
         state = await self.get_state(trader_id, mode)
         now = time.time()
         events: list[FeedEvent] = []
         if state is None:
             logger.info("gate feed: %s 首次建立基线（%d 个存量持仓跳过）", trader_id, len(current))
-            await self.set_state(trader_id, current, now, mode=mode)
+            baseline_sides = (
+                {sym: side_map.get(sym, "long") for sym in current} if side_map else None
+            )
+            await self.set_state(
+                trader_id, current, now, mode=mode, sides=baseline_sides,
+            )
             return []
         prev = state["pos"]
-        events = self._diff(trader_id, prev, current)
+        prev_sides = state.get("sides") or {}
+        events = self._diff(trader_id, prev, current, emit_size_changes=(mode == "B"))
+        events = self._replace_direction_flips(
+            trader_id, events, prev, current, prev_sides, side_map, mode,
+        )
         live_sides: dict[str, str] = {}
         if mode == "A" and not side_map and any(e.action == "open" for e in events):
-            live_sides = await self._fetch_live_sides(trader_id)
+            live_sides, live_opened_at = await self._fetch_live_metadata(trader_id)
+            opened_at_map = {**(opened_at_map or {}), **live_opened_at}
+        for ev in events:
+            if ev.action == "open" and opened_at_map and ev.symbol in opened_at_map:
+                ev.at = opened_at_map[ev.symbol]
         events, new_sides = self._resolve_sides(
-            trader_id, events, current, state.get("sides") or {}, side_map, mode, live_sides,
+            trader_id, events, current, prev_sides, side_map, mode, live_sides,
         )
         prev_ts = state.get("ts")
         if prev_ts and (now - prev_ts) > self.reconcile_interval:
@@ -353,22 +450,38 @@ class IncrementalFeedService:
 
     async def _reconcile_with_snapshot(
         self, trader_id: str, current_raw: dict[str, float], side_map: dict[str, str] | None = None,
-        mode: str = "A",
+        mode: str = "A", opened_at_map: dict[str, datetime] | None = None,
     ) -> list[FeedEvent]:
         """全量对账差分（reconcile 路径共用，side_map 提供 open 方向）。"""
-        current = self._filter(current_raw)
+        current = self._filter(current_raw, mode=mode)
         state = await self.get_state(trader_id, mode)
         now = time.time()
         if state is None:
             logger.info("gate feed: reconcile %s 无基线，建立基线", trader_id)
-            await self.set_state(trader_id, current, now, mode=mode)
+            baseline_sides = (
+                {sym: side_map.get(sym, "long") for sym in current} if side_map else None
+            )
+            await self.set_state(
+                trader_id, current, now, mode=mode, sides=baseline_sides,
+            )
             return []
-        events = self._diff(trader_id, state["pos"], current)
+        prev = state["pos"]
+        prev_sides = state.get("sides") or {}
+        events = self._diff(
+            trader_id, prev, current, emit_size_changes=(mode == "B")
+        )
+        events = self._replace_direction_flips(
+            trader_id, events, prev, current, prev_sides, side_map, mode,
+        )
         live_sides: dict[str, str] = {}
         if mode == "A" and not side_map and any(e.action == "open" for e in events):
-            live_sides = await self._fetch_live_sides(trader_id)
+            live_sides, live_opened_at = await self._fetch_live_metadata(trader_id)
+            opened_at_map = {**(opened_at_map or {}), **live_opened_at}
+        for ev in events:
+            if ev.action == "open" and opened_at_map and ev.symbol in opened_at_map:
+                ev.at = opened_at_map[ev.symbol]
         events, new_sides = self._resolve_sides(
-            trader_id, events, current, state.get("sides") or {}, side_map, mode, live_sides,
+            trader_id, events, current, prev_sides, side_map, mode, live_sides,
         )
         if events:
             logger.info("gate feed: reconcile %s 修正 %d 个事件", trader_id, len(events))

@@ -39,6 +39,12 @@ class CopyOrder(Base):
     signal_id: Mapped[int] = mapped_column(ForeignKey("source_signals.id"))
     action: Mapped[str] = mapped_column(String(8))  # open / add / reduce / close
     qty: Mapped[float] = mapped_column(Float)
+    # 委托数量与真实成交数量必须分开。IOC 可能部分成交，旧模型只存委托量，
+    # 后台会把 399 张全部显示成已成交。
+    filled_qty: Mapped[float] = mapped_column(Float, default=0, server_default="0")
+    avg_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exchange_order_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    client_order_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     leverage: Mapped[int] = mapped_column(Integer)
     required_margin_usdt: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(16), default="pending")

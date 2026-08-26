@@ -22,21 +22,26 @@ async def lifespan(app: FastAPI):
 
     init_adapters()
     # M6 P0: 启动 pnl.tick 周期推送任务（首页实时盈亏）
+    from api.ws.broker import start_ws_event_bridge
     from api.ws.ticker import start_ticker
 
     ticker_task = await start_ticker()
+    ws_bridge_task = await start_ws_event_bridge()
     # ★ 2026-08-24: 启动 Gate WS 实时行情（模拟盘 mark_price 实时刷新）
     from api.ws.gate_ticker import start_gate_ticker
 
     gate_ticker_task = await start_gate_ticker()
     yield
     ticker_task.cancel()
+    ws_bridge_task.cancel()
     gate_ticker_task.cancel()
-    try:
-        await ticker_task
-        await gate_ticker_task
-    except Exception:  # noqa: BLE001
-        pass
+    # CancelledError 在 Python 3.11 属于 BaseException；逐个 await 会在第一个任务
+    # 取消时提前退出，剩余后台任务无法完成清理。统一 gather 回收全部任务。
+    import asyncio
+
+    await asyncio.gather(
+        ticker_task, ws_bridge_task, gate_ticker_task, return_exceptions=True,
+    )
 
 
 # ★ 生产核查修复：prod 关闭 Swagger/OpenAPI 暴露（减少侦察面），dev 保留

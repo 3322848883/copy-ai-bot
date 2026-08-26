@@ -19,6 +19,7 @@ celery_app = Celery(
         "api.workers.tasks_reward",
         "api.workers.tasks_reminder",
         "api.workers.tasks_paper",
+        "api.workers.tasks_order",
         # ★ 生产核查修复：copy.process_signal 任务定义于此，必须随 worker 注册
         "api.workers.consumer_signal",
     ],
@@ -58,27 +59,12 @@ celery_app.conf.update(
             "schedule": crontab(minute="17,47"),
             "options": {"expires": max(settings.signal_profile_refresh_interval, 60)},
         },
-        # ★ 实时信号轮询（任务内按 signal_poll_interval 连续轮询，beat 定时重踢）
-        #   ★ 调度间隔 = 循环时长 + 15s 余量：任务总耗时 = loop + 浏览器启停开销(~5-10s)，
-        #     若间隔 == loop，相邻两轮任务永久重叠，互抢 data/scraper 的
-        #     ProcessSingleton 锁（实测每轮损失 ~30 轮询）；留余量后干净交接。
-        "signal-poll-live": {
-            "task": "signal.poll_live",
-            # ★ 余量 15→10s（2026-08-20）：实测浏览器启停开销 ~1s，10s 足够；
-            #   任务循环时长 110s（config signal_poll_loop_seconds），空窗 10s/120s ≈ 8%
-            "schedule": settings.signal_poll_loop_seconds + 10,
-            # ★ 修复：expires 放宽至 2 倍，防任务慢跑导致消息队列过期形成轮询空窗
-            "options": {"expires": max(settings.signal_poll_loop_seconds * 2, 60)},
-        },
-        # ★ 全量对账（强制重同步基线，兜底漂移）
-        #   ★ 相位修复（2026-08-20）：原 timedelta（默认 600s）相位随 beat 启动漂移，
-        #     与 scrape_all(1800s) 的公倍数点每 30 分钟同秒触发互抢 bulk 浏览器。
-        #     改 crontab 每 10 分钟（:09 起），避开 scrape(:02/:32) 与 refresh(:17/:47)。
-        #   ★ 调整对账频率请改此 minute 列表（signal_reconcile_interval 不再驱动调度）。
-        "signal-reconcile": {
-            "task": "signal.reconcile",
-            "schedule": crontab(minute="9,19,29,39,49,59"),
-            "options": {"expires": max(settings.signal_reconcile_interval - 5, 5)},
+        # 实时轮询与10分钟强制对账由独立 live_poller 常驻进程负责，
+        # 避免短周期 Celery 任务重启产生采集空窗及登录浏览器目录争抢。
+        "order-reconcile-uncertain": {
+            "task": "order.reconcile_uncertain",
+            "schedule": 30.0,
+            "options": {"expires": 25},
         },
         # ★ M4 T4.4：支付轮询（每 2 分钟扫 pending 轮询态）
         "payment-poll": {

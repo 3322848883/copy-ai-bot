@@ -647,7 +647,7 @@ class GateScraper:
             if self._is_test_symbol(sym):
                 continue
             try:
-                qty = float(row.get("qty") or 0)
+                qty = abs(float(row.get("qty") or 0))
             except (TypeError, ValueError):
                 qty = 0.0
 
@@ -852,13 +852,22 @@ class GateScraper:
         profit_rate=-1 但 profit=+5121U、胜率/带单天数均正常）。盲目 ×100 会把健康
         交易员显示成 -100% 全亏。哨兵 → 回退备用字段，备用也无效则 0（未知）。
         """
-        pct = cls._to_pct(v)
-        if pct > -99.99:
-            return pct
+        # 缺失主字段不是 0%：应使用备用口径。旧实现先 _to_pct(None)->0，
+        # 导致 detail 只有 profit_rate 时累计收益永远显示 0。
+        if v is not None and str(v).strip() != "":
+            try:
+                raw = float(v)
+            except (TypeError, ValueError):
+                raw = -1.0
+            if raw != -1.0:
+                return cls._to_pct(raw)
         if fallback is not None:
-            fb = cls._to_pct(fallback)
-            if fb > -99.99:
-                return fb
+            try:
+                raw_fallback = float(fallback)
+            except (TypeError, ValueError):
+                raw_fallback = -1.0
+            if raw_fallback != -1.0:
+                return cls._to_pct(raw_fallback)
         return 0.0
 
     async def get_leader_by_id(self, leader_id: str, fetcher=None) -> dict | None:
@@ -1006,6 +1015,21 @@ class GateScraper:
         settings = get_settings()
         out: list[RawPosition] = []
         now = datetime.now(timezone.utc)
+
+        def _source_time(row: dict) -> datetime:
+            """优先保留 Gate 的真实仓位时间；兼容秒/毫秒时间戳。"""
+            for key in ("open_time", "create_time", "update_time"):
+                value = row.get(key)
+                if value in (None, "", 0, "0"):
+                    continue
+                try:
+                    ts = float(value)
+                    if ts > 10_000_000_000:  # 毫秒
+                        ts /= 1000
+                    return datetime.fromtimestamp(ts, tz=timezone.utc)
+                except (TypeError, ValueError, OSError):
+                    continue
+            return now
         for row in resp.get("data") or []:
             market = row.get("market", "")
             if not market or market.lower() in ("others", "usdt"):
@@ -1046,7 +1070,7 @@ class GateScraper:
                     leverage=lev,
                     qty=qty,
                     entry_price=entry,
-                    opened_at=now,
+                    opened_at=_source_time(row),
                     raw=row,
                 )
             )

@@ -7,9 +7,11 @@ import { useToast } from "@/components/Toast";
 
 type OrderRow = {
   id: number; user_email: string; strategy_name: string; action: string; action_label: string;
-  symbol: string; side: string; leverage: number; qty: number; required_margin_usdt: number;
+  symbol: string; side: string; leverage: number; qty: number; filled_qty: number; avg_price: number | null;
+  exchange_order_id: string; required_margin_usdt: number;
   status: string; status_label: string; failure_category: string | null; fail_reason?: string | null;
   latency_ms: number | null; created_at?: string | null; executed_at: string | null;
+  source_opened_at?: string | null; signal_received_at?: string | null;
 };
 type Kpi = { total: number; filled: number; failed: number; risk_blocked: number; fill_rate: number; avg_latency_ms: number | null };
 type Failure = { kpi: Kpi; breakdown: Record<string, number> };
@@ -46,10 +48,9 @@ function fmtTime(iso: string | null): string {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-/** 后端未返回成交价：由 required_margin × leverage / qty 估算（开仓单 qty 即按该式推导）。 */
+/** 只展示交易所真实成交均价。缺少历史成交价时宁可显示“—”，不能忽略合约乘数估价。 */
 function estPrice(o: OrderRow): number | null {
-  if (!o.qty || !o.required_margin_usdt || !o.leverage) return null;
-  return (o.required_margin_usdt * o.leverage) / o.qty;
+  return o.avg_price && o.avg_price > 0 ? o.avg_price : null;
 }
 function fmtPrice(p: number | null): string {
   if (p == null) return "-";
@@ -59,7 +60,14 @@ function fmtPrice(p: number | null): string {
 }
 
 function statusBadge(o: OrderRow) {
-  if (o.status === "filled") return <span className="badge badge-ok">已成交</span>;
+  if (o.status === "filled") {
+    // 旧版本只凭 Gate status=finished 写 filled，且没有保存真实成交量/均价/订单号。
+    // 数据库升级后这些历史行 filled_qty=0，必须显式标为待核验，不能继续冒充成交。
+    if (!(o.filled_qty > 0) || !(o.avg_price && o.avg_price > 0) || !o.exchange_order_id) {
+      return <span className="badge badge-warn" title="旧版未保存交易所成交凭证">历史待核验</span>;
+    }
+    return <span className="badge badge-ok">已成交</span>;
+  }
   if (o.status === "failed") {
     if (o.failure_category === "risk") return <span className="badge badge-warn">风控拦截</span>;
     return <span className="badge badge-err">已失败</span>;
@@ -220,7 +228,7 @@ export default function AdminOrdersPage() {
           <table className="ftx-table">
             <thead>
               <tr>
-                <th>时间</th><th>用户</th><th>策略</th><th>动作</th><th>方向</th>
+                <th>带单时间</th><th>执行时间</th><th>用户</th><th>策略</th><th>动作</th><th>方向</th>
                 <th className="num" style={{ textAlign: "right" }}>币对</th><th className="num" style={{ textAlign: "right" }}>数量</th>
                 <th className="num" style={{ textAlign: "right" }}>价格</th><th>状态</th>
               </tr>
@@ -228,7 +236,8 @@ export default function AdminOrdersPage() {
             <tbody>
               {orders.map((o) => (
                 <tr key={o.id}>
-                  <td className="sub-ref" title={o.executed_at ? "成交时间" : "下单时间"}>{fmtTime(o.executed_at ?? o.created_at ?? null)}</td>
+                  <td className="sub-ref" title="带单员源开仓时间">{fmtTime(o.source_opened_at ?? null)}</td>
+                  <td className="sub-ref" title={o.executed_at ? "交易所成交回写时间" : "网站下单时间"}>{fmtTime(o.executed_at ?? o.created_at ?? null)}</td>
                   <td style={{ fontFamily: "var(--font-geist-mono), monospace" }}>{o.user_email}</td>
                   <td>{o.strategy_name || "-"}</td>
                   <td>
@@ -240,7 +249,11 @@ export default function AdminOrdersPage() {
                     {o.side === "long" ? "多" : o.side === "short" ? "空" : "-"}
                   </td>
                   <td className="num">{o.symbol || "-"}</td>
-                  <td className="num">{o.qty != null ? o.qty : "-"}{o.leverage ? <span className="sub-ref"> ×{o.leverage}</span> : null}</td>
+                  <td className="num" title={o.exchange_order_id ? `交易所订单号：${o.exchange_order_id}` : "无交易所订单号"}>
+                    {o.status === "filled" ? o.filled_qty : o.qty}
+                    {o.status === "filled" && o.filled_qty !== o.qty ? <span className="sub-ref"> / {o.qty}</span> : null}
+                    {o.leverage ? <span className="sub-ref"> ×{o.leverage}</span> : null}
+                  </td>
                   <td className="num">{fmtPrice(estPrice(o))}</td>
                   <td>
                     {statusBadge(o)}
@@ -260,7 +273,7 @@ export default function AdminOrdersPage() {
                   </td>
                 </tr>
               ))}
-              {orders.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>暂无跟单订单</td></tr>}
+              {orders.length === 0 && <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>暂无跟单订单</td></tr>}
             </tbody>
           </table>
         </div>

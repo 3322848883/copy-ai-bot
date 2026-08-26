@@ -61,7 +61,13 @@ class ExchangeAdapter(ABC):
         reduce_only: bool,
         api_key: str,
         api_secret: str,
+        client_order_id: str | None = None,
     ) -> OrderResult: ...
+
+    @abstractmethod
+    async def fetch_order(
+        self, order_id: str, api_key: str, api_secret: str
+    ) -> OrderResult | None: ...
 
     @abstractmethod
     async def get_position(self, symbol: str, api_key: str, api_secret: str) -> dict[str, Any] | None: ...

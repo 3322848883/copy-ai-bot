@@ -125,7 +125,10 @@ DEFAULT_PLANS: list[dict] = [
 def _redis():
     from redis import Redis
 
-    return Redis.from_url(get_settings().redis_url, decode_responses=True)
+    return Redis.from_url(
+        get_settings().redis_url, decode_responses=True,
+        socket_connect_timeout=0.3, socket_timeout=0.3,
+    )
 
 
 # ── 平台参数 ──

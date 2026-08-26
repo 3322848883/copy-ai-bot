@@ -58,6 +58,10 @@ async def list_orders(
                 "side": sig.side if sig else "",
                 "leverage": o.leverage,
                 "qty": o.qty,
+                "filled_qty": o.filled_qty,
+                "avg_price": o.avg_price,
+                "exchange_order_id": o.exchange_order_id or "",
+                "client_order_id": o.client_order_id or "",
                 "required_margin_usdt": o.required_margin_usdt,
                 "status": o.status,
                 "status_label": STATUS_LABEL.get(o.status, o.status),
@@ -66,6 +70,8 @@ async def list_orders(
                 "latency_ms": o.latency_ms,
                 "created_at": o.created_at.isoformat() if o.created_at else None,
                 "executed_at": o.executed_at.isoformat() if o.executed_at else None,
+                "source_opened_at": sig.opened_at.isoformat() if sig and sig.opened_at else None,
+                "signal_received_at": sig.received_at.isoformat() if sig and sig.received_at else None,
             }
             for o, bot, s, u, sig in rows
         ],

@@ -116,10 +116,8 @@ class Settings(BaseSettings):
 
     # ── 实时信号轮询（★实测 2026-08：1 秒轮询公开接口 2000+ 请求 0 次 403）──
     signal_poll_interval: int = 1      # 轮询间隔(秒)；带单员分钟级交易，1 秒不丢单
-    signal_poll_loop_seconds: int = 110 # 单次任务连续运行时长(秒)；beat 调度间隔
-    #   = 本值 + 10s 余量（celery_app.py）：任务总耗时 = 循环 + 浏览器启停开销(~1-10s)，
-    #   若调度间隔 == 循环时长，相邻两轮任务永久重叠互抢 user_data_dir
-    #   （ProcessSingleton 锁），各损 ~30 轮询
+    # Celery 手工应急入口的单次运行时长；生产由 live_poller 常驻运行，不再周期重启。
+    signal_poll_loop_seconds: int = 110
     #   ★ 50→110（2026-08-20）：拉长单任务时长降低空窗占比（浏览器重启间隙不可轮询）：
     #     50s循环+65s调度 = 23% 时间盲区；110s+120s = 8%。更少冷启动也降低 Akamai 挑战概率
     signal_change_threshold: float = 0.005  # 持仓占比阈值：低于则视为噪音过滤(0.5%)

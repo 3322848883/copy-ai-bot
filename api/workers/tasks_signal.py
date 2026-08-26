@@ -132,8 +132,8 @@ def poll_live_signals() -> str:
     return asyncio.run(_poll_live_loop())
 
 
-async def _poll_live_loop() -> str:
-    """轮询主循环：按配置间隔连续跑，到 loop_seconds 返回。"""
+async def _poll_live_loop(*, continuous: bool = False) -> str:
+    """轮询主循环；生产 poller 常驻运行，Celery 手工入口仍可限时运行。"""
     import asyncio
     import time
 
@@ -146,9 +146,10 @@ async def _poll_live_loop() -> str:
     # ★ 单个 scraper + 单个 feed：浏览器会话跨轮复用，任务结束时统一关闭
     scraper = GateScraper()
     feed = IncrementalFeedService(scraper=scraper)
-    deadline = time.time() + loop_seconds
+    deadline = None if continuous else time.time() + loop_seconds
     rounds = 0
     events_total = 0
+    last_reconcile = time.monotonic()
     # ★ 完全自动：把「我账户跟单的交易员」同步为策略广场展示项。
     #   ★ 降频 60s→默认600s（可配 signal_follow_sync_interval）：同步需拉起登录会话浏览器，
     #     与 admin 远程操作/搜索争抢 user_data_dir（ProcessSingleton 锁）；跟单关系变化
@@ -158,9 +159,16 @@ async def _poll_live_loop() -> str:
     SYNC_INTERVAL = float(get_settings().signal_follow_sync_interval)
     _SYNC_TS_KEY = "signal:follow_sync:last_ts"
     try:
-        while time.time() < deadline:
+        while deadline is None or time.time() < deadline:
             try:
-                events_total += await _poll_live_round(feed)
+                reconcile_due = (
+                    continuous
+                    and time.monotonic() - last_reconcile >= settings.signal_reconcile_interval
+                )
+                events_total += await _poll_live_round(feed, reconcile=reconcile_due)
+                if reconcile_due:
+                    last_reconcile = time.monotonic()
+                _redis_set_float("signal:poller:heartbeat", time.time())
             except Exception as exc:  # noqa: BLE001 单轮失败不中断循环
                 logger.error("signal.poll_live 单轮失败: %s", exc)
             rounds += 1
@@ -201,7 +209,10 @@ def _redis_get_float(key: str) -> float | None:
     try:
         import redis as _redis
 
-        r = _redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
+        r = _redis.Redis.from_url(
+            get_settings().redis_url, decode_responses=True,
+            socket_connect_timeout=0.3, socket_timeout=0.3,
+        )
         v = r.get(key)
         r.close()
         return float(v) if v else None
@@ -213,7 +224,10 @@ def _redis_set_float(key: str, value: float) -> None:
     try:
         import redis as _redis
 
-        r = _redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
+        r = _redis.Redis.from_url(
+            get_settings().redis_url, decode_responses=True,
+            socket_connect_timeout=0.3, socket_timeout=0.3,
+        )
         r.set(key, value)
         r.close()
     except Exception:  # noqa: BLE001
@@ -221,19 +235,22 @@ def _redis_set_float(key: str, value: float) -> None:
 
 
 def _acquire_diff_lock(holder: str, ttl_s: int) -> tuple[bool, str]:
-    """返回 (是否获得锁, 持有令牌)。Redis 故障时放行（退回无锁旧行为）。"""
+    """返回 (是否获得锁, 持有令牌)。Redis 故障时停采，避免重复真实下单。"""
     import uuid
 
     from redis import Redis
 
     token = f"{holder}:{uuid.uuid4().hex[:8]}"
     try:
-        r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+        r = Redis.from_url(
+            get_settings().redis_url, decode_responses=True,
+            socket_connect_timeout=0.3, socket_timeout=0.3,
+        )
         got = bool(r.set(_DIFF_LOCK_KEY, token, nx=True, ex=ttl_s))
         r.close()
-    except Exception as exc:  # noqa: BLE001 Redis 故障不阻断差分（退回旧行为）
-        logger.warning("diff lock acquire failed: %s", exc)
-        return True, ""
+    except Exception as exc:  # noqa: BLE001 交易执行必须 fail-closed
+        logger.error("diff lock acquire failed; round blocked to prevent duplicate orders: %s", exc)
+        return False, ""
     return got, token if got else ""
 
 
@@ -243,7 +260,10 @@ def _release_diff_lock(token: str) -> None:
     try:
         from redis import Redis
 
-        r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+        r = Redis.from_url(
+            get_settings().redis_url, decode_responses=True,
+            socket_connect_timeout=0.3, socket_timeout=0.3,
+        )
         # 仅释放自己持有的锁（值匹配），防止误删他人的锁
         if r.get(_DIFF_LOCK_KEY) == token:
             r.delete(_DIFF_LOCK_KEY)
@@ -252,7 +272,7 @@ def _release_diff_lock(token: str) -> None:
         logger.warning("diff lock release failed: %s", exc)
 
 
-async def _poll_live_round(feed) -> int:
+async def _poll_live_round(feed, *, reconcile: bool = False) -> int:
     """单轮轮询：查活跃机器人 → 按模式对每个带单员做持仓差分 → 产出信号。
 
     ★ 模式路由（_load_leader_modes）：Strategy.source='B'（跟单同步上架）→ 模式2 镜像差分；
@@ -270,16 +290,20 @@ async def _poll_live_round(feed) -> int:
         mode_a = [lid for lid in leader_ids if lid not in follower_ids]
         mode_f = [lid for lid in leader_ids if lid in follower_ids]
         # ★ 差分互斥：reconcile 正在强制对齐基线时本轮跳过（由对账兜底），避免同一事件双发
-        got, token = _acquire_diff_lock("poll", ttl_s=30)
+        # 一轮还包含页面池请求、订单派发和持仓缓存刷新，30s 锁会在慢网络下提前过期，
+        # reconcile 随后可并发读写同一基线并重复下单。留足 5 分钟覆盖最慢一轮。
+        got, token = _acquire_diff_lock("poll", ttl_s=300)
         if not got:
             logger.info("poll round skipped: reconcile holding diff lock")
             return 0
         try:
             # ★ 页面池并发：一次并发拉取全部带单员持仓并差分，避免串行 N×往返
             events_map: dict[str, list] = {}
-            for tid, evs in (await feed.poll_leaders_many(mode_a)).items():
+            fetch_a = feed.reconcile_leaders_many if reconcile else feed.poll_leaders_many
+            fetch_b = feed.reconcile_followers_many if reconcile else feed.poll_followers_many
+            for tid, evs in (await fetch_a(mode_a)).items():
                 events_map[tid] = evs
-            for tid, evs in (await feed.poll_followers_many(mode_f)).items():
+            for tid, evs in (await fetch_b(mode_f)).items():
                 events_map[tid] = evs
             total = await _handle_events(db, events_map, follower_ids)
             await db.commit()
@@ -341,6 +365,8 @@ async def _handle_events(db, events_map: dict[str, list], follower_ids: set[str]
     """
     from datetime import datetime, timezone
 
+    from sqlalchemy import select
+
     from api.models.signal import SourceSignal
     from api.services.copyengine.service import CopyEngine
 
@@ -352,6 +378,18 @@ async def _handle_events(db, events_map: dict[str, list], follower_ids: set[str]
             logger.info("poll_live: drop test symbol %s", ev.symbol)
             continue
         is_mode_b = ev.trader_id in follower_ids
+        dedupe_key = (
+            f"feed-{ev.trader_id}-{ev.symbol}-{ev.action}-"
+            f"{int(ev.at.timestamp() * 1000)}-{ev.percent:.12g}"
+        )
+        # 实时 feed 不经过 SignalStore，因此必须在这里做持久化去重。
+        # 旧逻辑依赖唯一约束抛错，会中断整轮并连带漏掉后续交易员信号。
+        existing_id = await db.scalar(
+            select(SourceSignal.id).where(SourceSignal.dedupe_key == dedupe_key)
+        )
+        if existing_id is not None:
+            logger.info("poll_live: duplicate event skipped key=%s", dedupe_key)
+            continue
         sig = SourceSignal(
             exchange="gate",
             source_trader_id=ev.trader_id,
@@ -362,17 +400,28 @@ async def _handle_events(db, events_map: dict[str, list], follower_ids: set[str]
             # ★ 模式A：带单员持仓占比∈[0,1]，供 CopyEngine qty 换算。
             #   模式B：ev.percent 是跟单镜像张数（如 30 张）非占比——传入会被
             #   _effective_percent clamp 成 1.0（100% 全仓），必须置 None。
-            percent=(ev.percent if not is_mode_b else None),
+            # 模式A open：持仓占比；模式B add/reduce：数量变化比例。
+            # 模式B open 不带比例，按用户机器人配置建立首仓。
+            percent=(
+                ev.percent
+                if (not is_mode_b or ev.action in ("add", "reduce"))
+                else None
+            ),
             action=ev.action,
             source_mode="B" if is_mode_b else "A",
             opened_at=ev.at,
             received_at=datetime.now(timezone.utc),
-            dedupe_key=f"feed-{ev.trader_id}-{ev.symbol}-{ev.action}-{int(ev.at.timestamp())}",
+            dedupe_key=dedupe_key,
         )
         db.add(sig)
         await db.flush()
         await db.refresh(sig)
-        await CopyEngine(db).handle_signal(sig)
+        orders = await CopyEngine(db).handle_signal(sig)
+        logger.info(
+            "signal dispatched: id=%s mode=%s trader=%s symbol=%s action=%s source_at=%s orders=%s",
+            sig.id, sig.source_mode, sig.source_trader_id, sig.symbol, sig.action,
+            sig.opened_at.isoformat(), len(orders),
+        )
         total += 1
     return total
 

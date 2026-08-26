@@ -34,22 +34,42 @@ class GateAdapter(ExchangeAdapter):
     async def fetch_balance(self, api_key: str, api_secret: str) -> list[BalanceItem]:
         if self.mock:
             return [BalanceItem(asset="USDT", free=1000.0, locked=0.0)]
-        data = await self._signed_get("/futures/usdt/accounts", api_key, api_secret) or {}
+        data = await self._signed_get("/futures/usdt/accounts", api_key, api_secret)
+        if data is None:
+            # 查询失败不能伪装成 0 余额，否则真实网络/鉴权故障会被误报为余额不足，
+            # 且运维无法判断订单是否真正到达交易所。
+            raise RuntimeError("Gate 期货余额查询失败，请检查 API 权限、IP 白名单和网络")
         return [BalanceItem(asset="USDT", free=float(data.get("available", 0)), locked=float(data.get("unrealised_pnl", 0)))]
 
     async def check_permissions(self, api_key: str, api_secret: str) -> dict[str, bool]:
         if self.mock:
             # dev mock: 默认只读+交易，无提现
             return {"read": True, "trade": True, "withdraw": False}
-        # 生产：拉取期货账户，判定读写权限（期货 API Key 默认无提现权限）
-        # ★ 实测 /futures/usdt/accounts 返回的账户 ID 字段是 "user"（非 "user_id"）：
-        #   原判定恒为 False → 所有有效密钥被误报"缺少交易权限"，绑定从未成功过。
-        data = await self._signed_get("/futures/usdt/accounts", api_key, api_secret) or {}
-        uid = bool(data.get("user") or data.get("user_id"))
+        # Gate 官方 /account/main_keys 返回每把 Key 的 state 与 perms.read_only。
+        # 读取期货账户只能证明有读权限，不能证明能下单；旧实现把只读 Key 也标成 trade=True。
+        rows = await self._signed_get("/account/main_keys", api_key, api_secret)
+        if not isinstance(rows, list):
+            return {"read": False, "trade": False, "withdraw": False}
+        # 返回的 key 可能脱敏成 abc***，用可见前缀匹配当前 Key；仅一行时直接取。
+        matched = None
+        for row in rows:
+            shown = str((row or {}).get("key") or "")
+            prefix = shown.split("*", 1)[0]
+            if shown == api_key or (prefix and api_key.startswith(prefix)):
+                matched = row
+                break
+        if matched is None and len(rows) == 1:
+            matched = rows[0]
+        if not isinstance(matched, dict) or int(matched.get("state") or 0) != 1:
+            return {"read": False, "trade": False, "withdraw": False}
+        perms = {
+            str(p.get("name") or ""): not bool(p.get("read_only"))
+            for p in (matched.get("perms") or []) if isinstance(p, dict)
+        }
         return {
-            "read": uid,
-            "trade": uid,
-            "withdraw": False,  # 期货 API Key 无提现权限；如需真实验证走钱包接口
+            "read": "futures" in perms,
+            "trade": perms.get("futures") is True,
+            "withdraw": perms.get("withdrawal") is True,
         }
 
     # ── 交易 ──
@@ -97,6 +117,7 @@ class GateAdapter(ExchangeAdapter):
         api_key: str,
         api_secret: str,
         price: float | None = None,  # 滑点保护限价
+        client_order_id: str | None = None,
     ) -> OrderResult:
         """下单（★ 生产：限价单 + 滑点保护；失败 1 次不重试）。"""
         if self.mock:
@@ -105,7 +126,7 @@ class GateAdapter(ExchangeAdapter):
                 status="filled",
                 filled_qty=qty,
                 avg_price=price or 100.0,
-                raw={"mock": True},
+                raw={"mock": True, "text": client_order_id},
             )
         payload: dict[str, Any] = {
             "contract": self._gate_symbol(symbol),
@@ -116,13 +137,53 @@ class GateAdapter(ExchangeAdapter):
             "tif": "ioc",
             "reduce_only": reduce_only,
         }
+        if client_order_id:
+            # Gate 自定义订单文本必须以 t- 开头且不超过 28 个字符。
+            payload["text"] = client_order_id[:28]
         data = await self._signed_post("/futures/usdt/orders", api_key, api_secret, payload)
-        # ★ 市价单 price="0"，实际成交价在 fill_price；快照入场价取错会记 0
+        return self._parse_order_result(data)
+
+    async def fetch_order(
+        self, order_id: str, api_key: str, api_secret: str
+    ) -> OrderResult | None:
+        """按交易所订单号或 Gate text 查询单笔订单。"""
+        if self.mock:
+            return None
+        data = await self._signed_get(
+            f"/futures/usdt/orders/{order_id}", api_key, api_secret
+        )
+        if not isinstance(data, dict) or not data.get("id"):
+            return None
+        return self._parse_order_result(data)
+
+    @staticmethod
+    def _parse_order_result(data: dict[str, Any]) -> OrderResult:
+        # ★ Gate 的 status="finished" 只表示订单生命周期结束，不等于有成交。
+        # IOC 零成交同样返回 finished，必须按 fill_size / (size-left) 判定，否则平台
+        # 会显示已成交而交易所实际没有仓位。
         avg_price = float(data.get("fill_price") or data.get("price") or 0)
+        requested = abs(float(data.get("size") or 0))
+        try:
+            filled_qty = abs(float(data.get("fill_size") or 0))
+        except (TypeError, ValueError):
+            filled_qty = 0.0
+        if filled_qty <= 0 and data.get("left") is not None:
+            try:
+                filled_qty = max(requested - abs(float(data.get("left") or 0)), 0.0)
+            except (TypeError, ValueError):
+                filled_qty = 0.0
+        lifecycle = str(data.get("status") or "rejected")
+        finish_as = str(data.get("finish_as") or "")
+        if filled_qty > 0:
+            normalized_status = "filled"
+        elif lifecycle == "finished" or finish_as in {"cancelled", "ioc"}:
+            normalized_status = "cancelled"
+        else:
+            normalized_status = lifecycle
         return OrderResult(
             order_id=str(data.get("id", "")),
-            status="filled" if data.get("status") == "finished" else str(data.get("status", "rejected")),
-            filled_qty=float(data.get("size", 0)),
+            status=normalized_status,
+            filled_qty=filled_qty,
             avg_price=avg_price,
             raw=data,
         )
@@ -171,7 +232,7 @@ class GateAdapter(ExchangeAdapter):
             headers["Content-Type"] = "application/json"
         return headers
 
-    async def _signed_get(self, path: str, api_key: str, api_secret: str, query: str = "") -> dict | None:
+    async def _signed_get(self, path: str, api_key: str, api_secret: str, query: str = "") -> Any | None:
         from datetime import datetime, timezone
 
         import httpx
@@ -203,7 +264,10 @@ class GateAdapter(ExchangeAdapter):
             #   实际仓位已开但 copy_orders 记 failed、快照丢失）
             if resp.status_code not in (200, 201, 204):
                 logger.error("gate POST %s failed: %s", path, resp.text)
-                return {}
+                # 不能吞掉交易所错误并返回空字典：上层需要把真实失败原因落到
+                # copy_orders.fail_reason，才能区分权限、余额、参数与网络问题。
+                detail = resp.text[:1000] if resp.text else "empty response"
+                raise RuntimeError(f"Gate API {resp.status_code} {path}: {detail}")
             # 204 No Content / 空响应视为成功（如 set_leverage）
             if resp.status_code == 204 or not resp.text:
                 return {}

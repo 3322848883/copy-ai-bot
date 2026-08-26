@@ -150,6 +150,44 @@ services:
       - ./data/signal_session:/app/data/signal_session
     restart: unless-stopped
 
+  # ★ 实时信号常驻采集：单进程独占 scraper/signal_session，零任务交接空窗。
+  poller:
+    image: ai-api:latest
+    command: python -m api.workers.live_poller
+    init: true
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      VAULT_KEY_HEX: ${VAULT_KEY_HEX:?VAULT_KEY_HEX must be set}
+      DATABASE_URL: postgresql+asyncpg://signal:signal@db:5432/signal_saas
+      REDIS_URL: redis://redis:6379/0
+      SCRAPER_REAL: "1"
+      SCRAPER_HEADLESS: "false"
+      SCRAPER_DATA_DIR: /app/data/scraper
+      SCRAPER_BULK_DATA_DIR: /app/data/scraper-bulk
+      SIGNAL_SESSION_ENABLED: "true"
+      SIGNAL_SESSION_HEADLESS: "false"
+      SIGNAL_SESSION_DATA_DIR: /app/data/signal_session
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data/signal_session:/app/data/signal_session
+      - ./data/scraper:/app/data/scraper
+      - ./data/scraper-bulk:/app/data/scraper-bulk
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import os,time,redis; v=redis.Redis.from_url(os.environ['REDIS_URL']).get('signal:poller:heartbeat'); assert v and time.time()-float(v)<30"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
   # ★ 信号事件消费者（独立进程：订阅 Redis signal.new → 派发跟单任务）
   consumer:
     image: ai-api:latest

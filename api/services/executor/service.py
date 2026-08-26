@@ -52,6 +52,7 @@ class OrderRouter:
         signal_price: float | None,
         api_key: str,
         api_secret: str,
+        client_order_id: str | None = None,
     ) -> ExecResult:
         """执行下单。signal_price=None 表示市价（mock 允许）。"""
         start = datetime.now(timezone.utc)
@@ -66,10 +67,11 @@ class OrderRouter:
             factor = 1 + (self.slippage_bps / 10_000) * (1 if side == "buy" else -1)
             limit_price = round(signal_price * factor, 6)
 
-        # ★ G07：下单前 set_margin_mode + set_leverage
+        # ★ G07：先设杠杆、再设保证金模式。Gate 用 leverage=0 表示全仓；旧顺序
+        # set_margin_mode(cross→0) 后又 set_leverage(>0)，会把全仓立即改回逐仓。
         try:
-            await adapter.set_margin_mode(symbol, margin_mode, leverage, api_key, api_secret)
             await adapter.set_leverage(symbol, leverage, api_key, api_secret)
+            await adapter.set_margin_mode(symbol, margin_mode, leverage, api_key, api_secret)
         except Exception as exc:  # noqa: BLE001
             return ExecResult(False, "leverage", f"设置杠杆/保证金模式失败: {exc}")
 
@@ -85,6 +87,7 @@ class OrderRouter:
                 api_key=api_key,
                 api_secret=api_secret,
                 price=limit_price,
+                client_order_id=client_order_id,
             )
         except Exception as exc:  # noqa: BLE001
             category = self._classify_error(str(exc))

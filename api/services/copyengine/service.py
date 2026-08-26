@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import hashlib
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -47,7 +48,10 @@ class CopyEngine:
         try:
             from redis import Redis
 
-            r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+            r = Redis.from_url(
+                get_settings().redis_url, decode_responses=True,
+                socket_connect_timeout=0.3, socket_timeout=0.3,
+            )
             intent.emergency_stop = r.get("risk:emergency_stop") == "1"
             limit = r.get("risk:daily_loss_limit")
             if limit:
@@ -76,13 +80,27 @@ class CopyEngine:
     async def handle_signal(self, sig: SourceSignal) -> list[CopyOrder]:
         """处理一条新信号：匹配 → 每 bot 换算 → 风控 → 执行 → 落库。"""
         bots = await self.match_bots(sig.exchange, sig.source_trader_id)
+        if not bots:
+            logger.warning(
+                "signal %s has no active bots: exchange=%s trader=%s symbol=%s action=%s",
+                sig.id, sig.exchange, sig.source_trader_id, sig.symbol, sig.action,
+            )
         orders: list[CopyOrder] = []
         for bot in bots:
+            already_processed = await self.db.scalar(
+                select(CopyOrder.id).where(
+                    CopyOrder.bot_id == bot.id,
+                    CopyOrder.signal_id == sig.id,
+                ).limit(1)
+            )
+            if already_processed is not None:
+                logger.info("duplicate signal notification/execution skipped: bot=%s signal=%s", bot.id, sig.id)
+                continue
             # ★ M6 T5.19：signal.new 实时推送（通知匹配该策略的机器人主人）
             try:
-                from api.ws.hub import hub
+                from api.ws.broker import publish_user_event
 
-                await hub.push(
+                await publish_user_event(
                     bot.user_id,
                     "signal.new",
                     {
@@ -97,10 +115,56 @@ class CopyEngine:
                 )
             except Exception:  # noqa: BLE001
                 pass
-            order = await self._process_bot(bot, sig)
+            try:
+                order = await self._process_bot(bot, sig)
+            except Exception as exc:  # noqa: BLE001
+                # 单个用户的凭证、网络或交易所异常不能中断同一信号下其他机器人，
+                # 更不能让 source_signal + 已处理订单整批回滚而后台毫无记录。
+                logger.exception("bot %s unhandled execution failure for signal %s", bot.id, sig.id)
+                reason = f"执行链异常: {type(exc).__name__}: {exc}"[:255]
+                order = self._fail_order(bot, sig, "other", reason)
+                self.db.add(order)
+                await self.db.commit()
             if order is not None:
                 orders.append(order)
+                await self._push_order_update(bot, sig, order)
         return orders
+
+    @staticmethod
+    async def _push_order_update(bot, sig, order: CopyOrder) -> None:
+        """所有成功/失败路径统一推送，避免前置风控失败在前端静默。"""
+        from api.ws.broker import publish_user_event
+
+        await publish_user_event(
+            bot.user_id,
+            "bot.order",
+            {
+                "order_id": order.id,
+                "bot_id": bot.id,
+                "strategy_id": bot.strategy_id,
+                "action": order.action,
+                "symbol": sig.symbol,
+                "qty": order.qty,
+                "filled_qty": getattr(order, "filled_qty", 0.0),
+                "avg_price": getattr(order, "avg_price", None),
+                "exchange_order_id": getattr(order, "exchange_order_id", None),
+                "status": order.status,
+                "failure_category": order.failure_category,
+                "fail_reason": order.fail_reason,
+                "latency_ms": order.latency_ms,
+            },
+        )
+        if order.status == "filled":
+            await publish_user_event(
+                bot.user_id,
+                "bot.position",
+                {
+                    "bot_id": bot.id,
+                    "symbol": sig.symbol,
+                    "action": sig.action,
+                    "virtual_locked_usdt": bot.virtual_locked_usdt,
+                },
+            )
 
     @staticmethod
     def _gray_allowed(strategy_id: int, user_id: int, gray_pct: int) -> bool:
@@ -120,12 +184,41 @@ class CopyEngine:
 
     async def _process_bot(self, bot: CopyBot, sig: SourceSignal) -> CopyOrder | None:
         """单个机器人的处理链。"""
+        # Celery 重投或重复消费时，同一机器人不得再次执行同一信号。
+        existing_order = await self.db.scalar(
+            select(CopyOrder).where(
+                CopyOrder.bot_id == bot.id,
+                CopyOrder.signal_id == sig.id,
+            ).order_by(CopyOrder.id.asc())
+        )
+        if existing_order is not None:
+            logger.info("duplicate execution skipped: bot=%s signal=%s", bot.id, sig.id)
+            return None
         # ★ M6 T6.1 灰度发布：strategy.gray_pct < 100 时按 user 哈希放量
         from api.models.signal import Strategy
 
         strategy = await self.db.get(Strategy, bot.strategy_id)
         if strategy is None:
             return None
+        if sig.action in ("open", "add") and (
+            strategy.status != "listed" or not strategy.follow_enabled
+        ):
+            return await self._fail_persist(
+                bot, sig, "risk", "策略已暂停、下架或关闭跟单，禁止开仓/加仓",
+            )
+        from api.models.user import Identity as _Identity, User as _User
+
+        user_row = await self.db.get(_User, bot.user_id)
+        ident = await self.db.get(_Identity, bot.user_id)
+        if sig.action in ("open", "add") and (
+            user_row is None
+            or not user_row.is_active
+            or user_row.is_frozen
+            or bool(ident and ident.locked)
+        ):
+            return await self._fail_persist(
+                bot, sig, "risk", "用户账号未激活、已冻结或身份已锁定，禁止开仓/加仓",
+            )
         if not self._gray_allowed(strategy.id, bot.user_id, strategy.gray_pct):
             logger.info("bot %s gray-skipped: strategy %s pct=%s", bot.id, strategy.id, strategy.gray_pct)
             return None
@@ -141,6 +234,15 @@ class CopyEngine:
         api_key_row = await self.db.get(ApiKey, bot.api_key_id)
         if api_key_row is None:
             order = self._fail_order(bot, sig, "permission", "API 凭据不存在")
+            self.db.add(order)
+            await self.db.commit()
+            return order
+        if (
+            api_key_row.status != "active"
+            or api_key_row.user_id != bot.user_id
+            or api_key_row.exchange != bot.exchange
+        ):
+            order = self._fail_order(bot, sig, "permission", "API 凭据已停用、归属错误或交易所不匹配")
             self.db.add(order)
             await self.db.commit()
             return order
@@ -178,7 +280,7 @@ class CopyEngine:
         try:
             intent = sizer.compute(
                 amount_mode=bot.amount_mode,
-                fixed_amount_usdt=bot.fixed_amount_usdt,
+                fixed_amount_usdt=self._effective_fixed_amount(bot, sig),
                 percent=self._effective_percent(bot, sig),
                 account_free_usdt=balance,
                 leverage=bot.leverage,
@@ -206,7 +308,7 @@ class CopyEngine:
         #   （此前 identity_type 硬编码 normal，sub_account 免订阅永不生效）
         from api.models.user import Identity as _Identity
 
-        _ident = await self.db.get(_Identity, bot.user_id)
+        ident = await self.db.get(_Identity, bot.user_id)
         risk_res = await self.risk.evaluate(
             OrderIntent(
                 user_id=bot.user_id,
@@ -216,12 +318,14 @@ class CopyEngine:
                 symbol=sig.symbol,
                 action=sig.action,
                 margin_usdt=intent.margin_usdt,
-                signal_received_at=sig.received_at,
+                # 延迟红线必须从带单员源时间计算。旧实现使用 received_at（本机发现时间），
+                # 95 分钟前的仓位即使刚被补采，也会被误认为 0ms 新信号并追价开仓。
+                signal_received_at=self._risk_timestamp(sig),
                 source_mode=sig.source_mode,
                 subscription_active=await self._subscription_active(bot.user_id),
-                identity_type=(_ident.identity_type if _ident else "normal") or "normal",
+                identity_type=(ident.identity_type if ident else "normal") or "normal",
                 exchange_invite_bound=bool(
-                    _ident and _ident.exchange_invite_code and _ident.exchange_invite_status == "approved"
+                    ident and ident.exchange_invite_code and ident.exchange_invite_status == "approved"
                 ),
                 bot_virtual_locked=bot.virtual_locked_usdt,
                 bot_max_total_position=bot.max_total_position_usdt,
@@ -243,12 +347,13 @@ class CopyEngine:
             return await self._fail_persist(bot, sig, "risk", f"{risk_res.rule}: {risk_res.reason}", latency=risk_res.latency_ms)
 
         side = "buy" if sig.side == "long" else "sell"
+        pending = await self._reserve_order(bot, sig, intent.qty, intent.margin_usdt)
         exec_res = await self._execute_order(
             bot=bot, sig=sig, side=side, qty=intent.qty,
             leverage=bot.leverage, margin_mode=bot.margin_mode, reduce_only=False,
             api_key=api_row.api_key, api_secret=api_secret,
         )
-        return await self._finalize(bot, sig, intent.qty, intent.margin_usdt, exec_res, api_row)
+        return await self._finalize(bot, sig, intent.qty, intent.margin_usdt, exec_res, api_row, order=pending)
 
     # ── REDUCE：按比例减仓 ──
     async def _exec_reduce(self, bot: CopyBot, sig: SourceSignal, api_row, api_secret: str) -> CopyOrder:
@@ -257,14 +362,20 @@ class CopyEngine:
             return await self._fail_persist(
                 bot, sig, "no_position", f"无持仓可减: {sig.symbol}（带单员减仓时本账户无该仓位，常见于中途开始跟单）"
             )
-        reduce_qty = pos["qty"] * min(getattr(sig, "reduce_ratio", 0.5) or 0.5, 1.0)
+        ratio = getattr(sig, "percent", None)
+        try:
+            ratio = float(ratio) if ratio is not None else 0.5
+        except (TypeError, ValueError):
+            ratio = 0.5
+        reduce_qty = pos["qty"] * max(0.0, min(ratio, 1.0))
         side = self._closing_side(pos, sig)
+        pending = await self._reserve_order(bot, sig, reduce_qty, 0.0)
         exec_res = await self._execute_order(
             bot=bot, sig=sig, side=side, qty=reduce_qty,
             leverage=bot.leverage, margin_mode=bot.margin_mode, reduce_only=True,
             api_key=api_row.api_key, api_secret=api_secret,
         )
-        return await self._finalize(bot, sig, reduce_qty, 0.0, exec_res, api_row)
+        return await self._finalize(bot, sig, reduce_qty, 0.0, exec_res, api_row, order=pending)
 
     # ── CLOSE：全部平仓 ──
     async def _exec_close(self, bot: CopyBot, sig: SourceSignal, api_row, api_secret: str) -> CopyOrder:
@@ -274,12 +385,13 @@ class CopyEngine:
                 bot, sig, "no_position", f"无持仓可平: {sig.symbol}（带单员平仓时本账户无该仓位，常见于中途开始跟单）"
             )
         side = self._closing_side(pos, sig)
+        pending = await self._reserve_order(bot, sig, pos["qty"], 0.0)
         exec_res = await self._execute_order(
             bot=bot, sig=sig, side=side, qty=pos["qty"],
             leverage=bot.leverage, margin_mode=bot.margin_mode, reduce_only=True,
             api_key=api_row.api_key, api_secret=api_secret,
         )
-        return await self._finalize(bot, sig, pos["qty"], 0.0, exec_res, api_row)
+        return await self._finalize(bot, sig, pos["qty"], 0.0, exec_res, api_row, order=pending)
 
     @staticmethod
     def _closing_side(pos: dict, sig: SourceSignal) -> str:
@@ -313,7 +425,7 @@ class CopyEngine:
         仅对 open 生效；add/reduce/close 走既有持仓路径，不缩放。
         """
         percent = float(bot.percent or 0)
-        if sig.action != "open":
+        if sig.action not in ("open", "add"):
             return percent
         leader = getattr(sig, "percent", None)
         if leader is None:
@@ -323,6 +435,25 @@ class CopyEngine:
         except (TypeError, ValueError):
             return percent
         return round(percent * leader, 6)
+
+    @staticmethod
+    def _effective_fixed_amount(bot, sig) -> float | None:
+        """固定金额表示每一笔 open/add 委托使用的保证金，不随带单员比例缩放。"""
+        return getattr(bot, "fixed_amount_usdt", None)
+
+    @staticmethod
+    def _risk_timestamp(sig) -> datetime:
+        """开仓/加仓使用源事件时间，平仓类保留接收时间（且延迟规则本就豁免）。"""
+        at = (
+            getattr(sig, "opened_at", None)
+            if getattr(sig, "action", None) in {"open", "add"}
+            else getattr(sig, "received_at", None)
+        )
+        if at is None:
+            at = getattr(sig, "received_at", None) or datetime.now(timezone.utc)
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=timezone.utc)
+        return at.astimezone(timezone.utc)
 
     def _fail_order(self, bot, sig, category: str, reason: str, latency: int = 0) -> CopyOrder:
         logger.warning("bot %s fail(%s): %s", bot.id, category, reason)
@@ -340,17 +471,44 @@ class CopyEngine:
         await self.db.commit()
         return order
 
-    async def _finalize(self, bot, sig, qty: float, margin: float, exec_res: ExecResult, api_row) -> CopyOrder:
-        status = "filled" if exec_res.success else "failed"
+    async def _reserve_order(self, bot, sig, qty: float, margin: float) -> CopyOrder:
+        """先提交 pending 再触达交易所，进程崩溃后仍可按 client_order_id 对账。"""
         order = CopyOrder(
-            bot_id=bot.id, signal_id=sig.id, action=sig.action, qty=qty,
-            leverage=bot.leverage, required_margin_usdt=margin, status=status,
-            failure_category=None if exec_res.success else (exec_res.failure_category or "other"),
-            fail_reason=None if exec_res.success else (exec_res.reason or "")[:255],
-            latency_ms=exec_res.latency_ms,
-            executed_at=datetime.now(timezone.utc) if exec_res.success else None,
+            bot_id=bot.id,
+            signal_id=sig.id,
+            action=sig.action,
+            qty=qty,
+            filled_qty=0.0,
+            client_order_id=self._client_order_id(bot.id, sig.id),
+            leverage=bot.leverage,
+            required_margin_usdt=margin,
+            status="pending",
         )
         self.db.add(order)
+        await self.db.commit()
+        await self.db.refresh(order)
+        return order
+
+    async def _finalize(
+        self, bot, sig, qty: float, margin: float, exec_res: ExecResult, api_row,
+        *, order: CopyOrder | None = None,
+    ) -> CopyOrder:
+        status = "filled" if exec_res.success else "failed"
+        if order is None:
+            order = CopyOrder(
+                bot_id=bot.id, signal_id=sig.id, action=sig.action, qty=qty,
+                leverage=bot.leverage, required_margin_usdt=margin,
+                client_order_id=self._client_order_id(bot.id, sig.id),
+            )
+            self.db.add(order)
+        order.status = status
+        order.filled_qty = exec_res.filled_qty if exec_res.success else 0.0
+        order.avg_price = exec_res.avg_price if exec_res.success and exec_res.avg_price > 0 else None
+        order.exchange_order_id = exec_res.order_id or None
+        order.failure_category = None if exec_res.success else (exec_res.failure_category or "other")
+        order.fail_reason = None if exec_res.success else (exec_res.reason or "")[:255]
+        order.latency_ms = exec_res.latency_ms
+        order.executed_at = datetime.now(timezone.utc) if exec_res.success else None
         if exec_res.success:
             # 更新虚拟账本锁定（open/add 增加；reduce/close 的释放在 _sync_position
             # 按该 symbol 现有持仓名义价值精确递减——★ P1 修复：此前 close 一律清零，
@@ -360,35 +518,6 @@ class CopyEngine:
             await self._sync_position(bot, sig, exec_res)
         await self.db.commit()
         await self.db.refresh(order)
-        # ★ M6 P0：实时推送下单结果 + 仓位变化
-        from api.ws.hub import hub
-
-        await hub.push(
-            bot.user_id,
-            "bot.order",
-            {
-                "order_id": order.id,
-                "bot_id": bot.id,
-                "strategy_id": bot.strategy_id,
-                "action": order.action,
-                "symbol": sig.symbol,
-                "qty": order.qty,
-                "status": order.status,
-                "failure_category": order.failure_category,
-                "fail_reason": order.fail_reason,
-                "latency_ms": order.latency_ms,
-            },
-        )
-        await hub.push(
-            bot.user_id,
-            "bot.position",
-            {
-                "bot_id": bot.id,
-                "symbol": sig.symbol,
-                "action": sig.action,
-                "virtual_locked_usdt": bot.virtual_locked_usdt,
-            },
-        )
         return order
 
     async def _sync_position(self, bot: CopyBot, sig: SourceSignal, exec_res: ExecResult) -> None:
@@ -534,6 +663,12 @@ class CopyEngine:
                 leverage=leverage, margin_mode=margin_mode,
                 reduce_only=reduce_only, signal_price=getattr(sig, "_price", None),
             )
+        client_order_id = self._client_order_id(bot.id, sig.id)
+        if not self._claim_live_execution(client_order_id):
+            return ExecResult(
+                False, "other",
+                "重复或并发信号已被幂等锁拦截，未再次发送交易所订单",
+            )
         return await self.router.execute(
             exchange=bot.exchange,
             symbol=sig.symbol,
@@ -545,7 +680,32 @@ class CopyEngine:
             signal_price=getattr(sig, "_price", None),
             api_key=api_key,
             api_secret=api_secret,
+            client_order_id=client_order_id,
         )
+
+    @staticmethod
+    def _client_order_id(bot_id: int, signal_id: int) -> str:
+        """生成稳定 Gate text：同一 bot+signal 永远得到相同值，且满足 t-/28 字符限制。"""
+        digest = hashlib.sha256(f"{bot_id}:{signal_id}".encode()).hexdigest()[:20]
+        return f"t-cp{digest}"
+
+    def _claim_live_execution(self, client_order_id: str) -> bool:
+        """Redis 原子占位 7 天；Redis 故障时停止真实下单，避免并发重复成交。"""
+        try:
+            from redis import Redis
+
+            r = Redis.from_url(
+                self.settings.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=0.3,
+                socket_timeout=0.3,
+            )
+            claimed = bool(r.set(f"copy:execute:{client_order_id}", "1", nx=True, ex=7 * 86400))
+            r.close()
+            return claimed
+        except Exception as exc:  # noqa: BLE001
+            logger.error("live execution idempotency claim failed; order blocked: %s", exc)
+            return False
 
     async def _count_open_positions(self) -> int:
         """全局并发持仓数（distinct bot，规则 3 全局节流的数据源）。"""

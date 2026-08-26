@@ -63,6 +63,8 @@ def _install_fake_tronpy(monkeypatch, info=None, now_block=None, raise_exc: Exce
 def _install_fake_web3(monkeypatch, receipt=None, latest=100, transfer_events=None, raise_exc: Exception | None = None):
     """安装假 web3 模块（生产分支 import 路径）。"""
     mod = types.ModuleType("web3")
+    middleware = types.ModuleType("web3.middleware")
+    middleware.ExtraDataToPOAMiddleware = object()
 
     class HTTPProvider:
         def __init__(self, url, request_kwargs=None):
@@ -93,6 +95,7 @@ def _install_fake_web3(monkeypatch, receipt=None, latest=100, transfer_events=No
     class Web3Class:
         def __init__(self, provider=None):
             self.eth = Eth()
+            self.middleware_onion = types.SimpleNamespace(inject=lambda *args, **kwargs: None)
 
         @staticmethod
         def to_checksum_address(addr):
@@ -104,6 +107,7 @@ def _install_fake_web3(monkeypatch, receipt=None, latest=100, transfer_events=No
 
     mod.Web3 = Web3Class
     monkeypatch.setitem(sys.modules, "web3", mod)
+    monkeypatch.setitem(sys.modules, "web3.middleware", middleware)
 
 
 # ── mock 行为 ──
@@ -122,9 +126,10 @@ class TestMockChainClient:
 
     async def test_validate_always_pass(self):
         client = MockChainClient()
-        ok, reason = await client.validate_tx("mock_confirm_abc", "Txxx", 5.0)
+        ok, reason, actual = await client.validate_tx("mock_confirm_abc", "Txxx", 5.0)
         assert ok is True
         assert reason == ""
+        assert actual == 5.0
 
 
 # ── TRON 生产分支 ──
@@ -209,31 +214,35 @@ class TestEvmClient:
         assert meta.get("error") == "network_error"
 
     async def test_validate_tx_ok(self, prod_env, monkeypatch):
-        event = {"args": {"to": "0xPlatform", "value": int(10.0 * 10**6)}}
+        event = {"args": {"to": "0xPlatform", "value": int(10.0 * 10**18)}}
         _install_fake_web3(monkeypatch, receipt={"blockNumber": 1, "status": 1}, transfer_events=[event])
-        ok, reason = await BscClient().validate_tx("0xabc", "0xplatform", 10.0)
+        ok, reason, actual = await BscClient().validate_tx("0xabc", "0xplatform", 10.0)
         assert ok is True
         assert reason == ""
+        assert actual == 10.0
 
     async def test_validate_tx_to_mismatch(self, prod_env, monkeypatch):
-        event = {"args": {"to": "0xOther", "value": int(10.0 * 10**6)}}
+        event = {"args": {"to": "0xOther", "value": int(10.0 * 10**18)}}
         _install_fake_web3(monkeypatch, receipt={"blockNumber": 1, "status": 1}, transfer_events=[event])
-        ok, reason = await BscClient().validate_tx("0xabc", "0xplatform", 10.0)
+        ok, reason, actual = await BscClient().validate_tx("0xabc", "0xplatform", 10.0)
         assert ok is False
-        assert "mismatch" in reason
+        assert "target" in reason
+        assert actual is None
 
     async def test_validate_tx_value_insufficient(self, prod_env, monkeypatch):
-        event = {"args": {"to": "0xPlatform", "value": int(5.0 * 10**6)}}
+        event = {"args": {"to": "0xPlatform", "value": int(5.0 * 10**18)}}
         _install_fake_web3(monkeypatch, receipt={"blockNumber": 1, "status": 1}, transfer_events=[event])
-        ok, reason = await BscClient().validate_tx("0xabc", "0xplatform", 10.0)
+        ok, reason, actual = await BscClient().validate_tx("0xabc", "0xplatform", 10.0)
         assert ok is False
         assert "insufficient" in reason
+        assert actual == 5.0
 
     async def test_validate_tx_no_event(self, prod_env, monkeypatch):
         _install_fake_web3(monkeypatch, receipt={"blockNumber": 1, "status": 1}, transfer_events=[])
-        ok, reason = await BscClient().validate_tx("0xabc", "0xplatform", 10.0)
+        ok, reason, actual = await BscClient().validate_tx("0xabc", "0xplatform", 10.0)
         assert ok is False
         assert "no usdt transfer" in reason
+        assert actual is None
 
 
 # ── 工厂 ──

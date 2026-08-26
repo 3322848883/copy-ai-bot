@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime, timezone
+from types import SimpleNamespace
 
 
 from api.services.signalfeed.service import IncrementalFeedService
@@ -247,6 +249,114 @@ def test_parse_follower_pos_takes_top_level_leader_id():
     assert p.side == "short"               # 真实方向
     assert p.qty == 0.001                  # ★ 跟单数量 qty，非 size
     assert p.leverage == 50                # ★ leverage="0" 回退 cross_leverage_limit
+
+
+def test_parse_follower_pos_preserves_gate_open_time():
+    """模式B必须使用 Gate 源时间，不能把采集时刻伪装成带单员开仓时间。"""
+    scraper = _gate_scraper()
+    source_ts = 1_777_000_000
+    resp = {
+        "code": 200,
+        "data": [{
+            "leader_id": 32801, "market": "ETH_USDT", "qty": "0.001",
+            "side": "long", "entry_price": "1886.04", "leverage": "10",
+            "open_time": source_ts,
+        }],
+    }
+    parsed = scraper._parse_follower_positions(resp)
+    assert parsed[0].opened_at == datetime.fromtimestamp(source_ts, tz=timezone.utc)
+
+
+def test_poll_follower_open_event_uses_source_time():
+    """镜像仓位新出现时，FeedEvent.at 应等于源仓位时间。"""
+    source_at = datetime(2026, 8, 26, 1, 2, 3, tzinfo=timezone.utc)
+
+    class FollowerScraper:
+        def __init__(self):
+            self.round = 0
+
+        async def fetch_follower_positions_many(self, leader_ids):
+            self.round += 1
+            if self.round == 1:
+                return {"32801": []}
+            pos = SimpleNamespace(
+                symbol="ETHUSDT", qty=0.001, side="long", opened_at=source_at,
+            )
+            return {"32801": [pos]}
+
+    svc = make_service(FollowerScraper())
+    assert run(svc.poll_followers_many(["32801"]))["32801"] == []
+    events = run(svc.poll_followers_many(["32801"]))["32801"]
+    assert len(events) == 1
+    assert events[0].at == source_at
+
+
+def test_mode_b_small_quantity_is_not_filtered_by_mode_a_percent_threshold():
+    """模式B的 0.001 ETH 是有效数量，不能被模式A的 0.5%阈值过滤。"""
+    source_at = datetime(2026, 8, 26, 1, 2, 3, tzinfo=timezone.utc)
+
+    class FollowerScraper:
+        def __init__(self):
+            self.round = 0
+
+        async def fetch_follower_positions_many(self, leader_ids):
+            self.round += 1
+            if self.round == 1:
+                return {"32801": []}
+            return {"32801": [SimpleNamespace(
+                symbol="ETHUSDT", qty=0.001, side="long", opened_at=source_at,
+            )]}
+
+    svc = make_service(FollowerScraper(), threshold=0.005)
+    run(svc.poll_followers_many(["32801"]))
+    events = run(svc.poll_followers_many(["32801"]))["32801"]
+    assert [(e.symbol, e.action) for e in events] == [("ETHUSDT", "open")]
+
+
+def test_mode_b_same_symbol_quantity_changes_emit_add_and_reduce():
+    """同一币种连续开单会聚合到持仓数量，差分必须生成同比例加仓/减仓。"""
+    class FollowerScraper:
+        def __init__(self):
+            self.quantities = iter([1.0, 1.5, 0.75])
+
+        async def fetch_follower_positions_many(self, leader_ids):
+            qty = next(self.quantities)
+            return {"32801": [SimpleNamespace(
+                symbol="MSTRXUSDT", qty=qty, side="short", opened_at=None,
+            )]}
+
+    svc = make_service(FollowerScraper())
+    assert run(svc.poll_followers_many(["32801"]))["32801"] == []
+    added = run(svc.poll_followers_many(["32801"]))["32801"]
+    reduced = run(svc.poll_followers_many(["32801"]))["32801"]
+    assert [(e.action, e.percent, e.side) for e in added] == [("add", 0.5, "short")]
+    assert [(e.action, e.percent, e.side) for e in reduced] == [("reduce", 0.5, "short")]
+
+
+def test_mode_a_weight_fluctuation_does_not_emit_add_or_reduce():
+    """公开组合占比会随价格波动，模式 A 不得把占比变化误当成真实加减仓。"""
+    events = IncrementalFeedService._diff(
+        "32801", {"BTCUSDT": 0.20}, {"BTCUSDT": 0.25}, emit_size_changes=False,
+    )
+    assert events == []
+
+
+def test_mode_b_direction_flip_emits_close_then_open_with_real_sides():
+    """同一币种由多翻空，即使数量不变，也必须先平多再开空。"""
+    class FollowerScraper:
+        def __init__(self):
+            self.sides = iter(["long", "short"])
+
+        async def fetch_follower_positions_many(self, leader_ids):
+            side = next(self.sides)
+            return {"32801": [SimpleNamespace(
+                symbol="MSTRXUSDT", qty=23.76, side=side, opened_at=None,
+            )]}
+
+    svc = make_service(FollowerScraper())
+    assert run(svc.poll_followers_many(["32801"]))["32801"] == []
+    events = run(svc.poll_followers_many(["32801"]))["32801"]
+    assert [(e.action, e.side) for e in events] == [("close", "long"), ("open", "short")]
 
 
 def test_parse_follower_pos_multi_trader_isolated():

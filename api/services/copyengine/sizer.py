@@ -50,7 +50,10 @@ class PositionSizer:
         此前按 qty = target/face 计算，BTC 放大约 1/price 倍（实测 7.7 万倍）、
         GUA 缩小 price 倍——真实/模拟盘下单量全部失真。
 
-        Step1 target_notional_usdt = fixed 或 percent × free
+        Step1 所有金额配置都表示保证金：
+              固定模式 target_margin = fixed_amount_usdt
+              比例模式 target_margin = percent × free
+              target_notional_usdt = target_margin × leverage
         Step2 face = contract.face_value_usdt（基础资产/张）
         Step3 qty_raw = target / (face × price)
               qty_raw < min_size → qty = min_size（向上补足）
@@ -63,15 +66,17 @@ class PositionSizer:
         if not price or price <= 0:
             raise ValidationError("无法获取当前行情价，无法换算下单数量")
 
-        # Step1: 目标名义价值
+        # Step1: 先按所选模式算本单保证金，再乘杠杆得到目标名义价值。
+        # 例如固定 5 USDT、10x，应建立约 50 USDT 名义仓位并占用约 5 USDT 保证金。
         if amount_mode == "fixed":
-            target = fixed_amount_usdt if fixed_amount_usdt is not None else 0.0
+            target_margin = fixed_amount_usdt if fixed_amount_usdt is not None else 0.0
         elif amount_mode == "percent":
-            target = account_free_usdt * (percent or 0) / 100.0
+            target_margin = account_free_usdt * (percent or 0) / 100.0
         else:
             raise ValidationError(f"amount_mode 非法: {amount_mode}")
-        if target <= 0:
-            raise ValidationError("目标名义价值必须 > 0")
+        if target_margin <= 0:
+            raise ValidationError("目标保证金必须 > 0")
+        target = target_margin * leverage
 
         # Step2/3: 数量换算（★ G08 合约级参数）
         face = Decimal(str(self.contract.face_value_usdt))

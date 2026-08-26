@@ -36,17 +36,23 @@ class MockAdapterMixin(ExchangeAdapter):
         api_key: str,
         api_secret: str,
         price: float | None = None,
+        client_order_id: str | None = None,
     ) -> OrderResult:
         return OrderResult(
             order_id=f"mock-{self.exchange}-{symbol}-{side}-{qty}",
             status="filled",
             filled_qty=qty,
             avg_price=price or 100.0,
-            raw={"mock": True, "exchange": self.exchange},
+            raw={"mock": True, "exchange": self.exchange, "text": client_order_id},
         )
 
     async def get_position(self, symbol: str, api_key: str, api_secret: str) -> dict[str, Any] | None:
         return {"symbol": symbol, "size": 0.5, "entry_price": 96000.0, "mark_price": 96500.0, "unrealised_pnl": 250.0}
+
+    async def fetch_order(
+        self, order_id: str, api_key: str, api_secret: str
+    ) -> OrderResult | None:
+        return None
 
     async def fetch_contract_spec(self, symbol: str) -> dict[str, Any]:
         return {"face_value_usdt": 1.0, "min_size": 0.1, "size_precision": 3}

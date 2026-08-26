@@ -44,6 +44,9 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:?MAIL_FROM must be set}
+  poller:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://signal:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/signal_saas
   consumer:
     environment:
       DATABASE_URL: postgresql+asyncpg://signal:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/signal_saas
